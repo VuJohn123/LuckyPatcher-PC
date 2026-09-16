@@ -55,7 +55,6 @@ def test_get_smali_dirs_fallback(tmp_path):
 
 def test_get_smali_dirs_invalid_path():
     dirs = get_smali_dirs("/nonexistent/xyz")
-    # Fallback vẫn trả về 1 path
     assert len(dirs) == 1
 
 
@@ -80,19 +79,16 @@ def test_get_all_smali_files_empty(tmp_path):
 
 
 # ============================================================
-# FileContentCache — expanded
+# FileContentCache
 # ============================================================
 def test_file_cache_write_then_read(tmp_path):
     f = tmp_path / "test.smali"
     f.write_text("original")
 
     cache = FileContentCache(str(tmp_path))
-    # Lần đầu đọc → load from disk
     assert cache.read(str(f)) == "original"
 
-    # Write vào cache
     cache.write(str(f), "modified")
-    # Read lại → từ cache, không đọc disk
     assert cache.read(str(f)) == "modified"
 
 
@@ -105,20 +101,42 @@ def test_file_cache_flush(tmp_path):
     logs = []
     cache.flush(logs.append)
 
-    # Disk đã update
     assert f.read_text() == "modified"
-    # Cache cleared
     assert cache.cache == {}
 
 
 def test_file_cache_flush_error_isolated(tmp_path):
-    """Flush lỗi 1 file → không crash, log warning."""
+    """
+    Flush lỗi 1 file (null char trong path) → không crash pipeline,
+    log warning, tiếp tục xử lý các file khác.
+
+    Windows: null char → ValueError (không phải OSError).
+    """
     cache = FileContentCache(str(tmp_path))
-    # Path không tồn tại
-    cache.write("/invalid\x00path/file.smali", "content")
+    # File với null char — os.makedirs raise ValueError
+    cache.write("/invalid\x00path/file.smali", "bad")
+    # File hợp lệ — phải flush được dù có file lỗi phía trước
+    good = tmp_path / "good.smali"
+    good.write_text("orig")
+    cache.write(str(good), "modified-good")
+
     logs = []
     cache.flush(logs.append)  # Không raise
+
+    # Verify file tốt đã flush
+    assert good.read_text() == "modified-good"
+    # Verify có log warning cho file lỗi
     assert any("FileCache" in l for l in logs)
+    # Cache đã clear
+    assert cache.cache == {}
+
+
+def test_file_cache_flush_type_error_isolated(tmp_path):
+    """Cache chứa key không phải str → không crash (TypeError)."""
+    cache = FileContentCache(str(tmp_path))
+    cache.cache[12345] = "content"  # key là int, không phải str
+    logs = []
+    cache.flush(logs.append)  # Không raise
 
 
 def test_file_cache_get_modified_files(tmp_path):
@@ -138,7 +156,7 @@ def test_file_cache_is_modified(tmp_path):
 
 
 # ============================================================
-# APKCache — expanded
+# APKCache
 # ============================================================
 def test_apk_cache_save_and_get(tmp_path):
     apk = tmp_path / "test.apk"
@@ -179,10 +197,7 @@ def test_apk_cache_corrupted_json(tmp_path):
 
 
 def test_apk_cache_save_handles_oserror(tmp_path):
-    """Save khi không ghi được → không raise."""
     cache = APKCache(str(tmp_path / "cache"))
-    # APK không tồn tại → get_cache_path sẽ raise FileNotFoundError
-    # Test này kiểm tra behavior khi APK path invalid
     with pytest.raises((FileNotFoundError, OSError)):
         cache.get_cache_path("/nonexistent.apk")
 

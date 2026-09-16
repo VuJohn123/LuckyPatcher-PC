@@ -1,23 +1,26 @@
 """
 Tiện ích xử lý Smali — regex + file cache + APK cache.
-Tối ưu: re2 > re, orjson > json, memory-mapped files.
+Tối ưu: orjson > json, memory-mapped files.
+
+LƯU Ý VỀ REGEX ENGINE:
+  - Dùng stdlib `re` (ổn định, đầy đủ API: DOTALL, IGNORECASE, lookahead)
+  - KHÔNG dùng google-re2: API khác biệt (không có re.DOTALL), thiếu
+    lookahead/lookbehind, và regex trong module này không phải hot path
+    (chỉ chạy trên file smali ~KB, không phải string MB).
+  - Nếu cần tốc độ regex cao hơn trong tương lai, viết adapter class
+    riêng wrap re2.Options() để tương thích flag.
 """
 from __future__ import annotations
 
 import hashlib
 import mmap
 import os
+import re  # stdlib — ổn định, đầy đủ API
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
-# Regex engine
-try:
-    import re2 as re  # type: ignore
-    RE_ENGINE = "re2"
-except ImportError:
-    import re  # type: ignore
-    RE_ENGINE = "re"
+RE_ENGINE = "re"  # constant để hiển thị startup info
 
-# JSON engine
+# JSON engine: orjson (Rust) > stdlib json
 try:
     import orjson as _orjson
     JSON_FAST = True
@@ -149,7 +152,7 @@ class FileContentCache:
                     with open(filepath, "r", encoding="utf-8",
                               errors="ignore") as f:
                         self.cache[filepath] = f.read()
-            except (OSError, IOError):
+            except (OSError, IOError, ValueError):
                 self.cache[filepath] = ""
         return self.cache[filepath]
 
@@ -157,6 +160,12 @@ class FileContentCache:
         self.cache[filepath] = content
 
     def flush(self, log_callback=print) -> None:
+        """
+        Ghi tất cả file đã cache xuống disk.
+
+        Error isolation: lỗi 1 file không dừng flush các file khác.
+        Catch ValueError (null char trong path) và TypeError (key không phải str).
+        """
         count = 0
         for filepath, content in self.cache.items():
             try:
@@ -165,7 +174,7 @@ class FileContentCache:
                           buffering=128 * 1024) as f:
                     f.write(content)
                 count += 1
-            except (OSError, IOError) as e:
+            except (OSError, IOError, ValueError, TypeError) as e:
                 log_callback(f"[!] [FileCache] {filepath}: {e}")
         log_callback(f"[*] [FileCache] Đã ghi {count} file")
         self.cache.clear()
