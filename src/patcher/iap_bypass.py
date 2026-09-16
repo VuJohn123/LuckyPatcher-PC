@@ -8,6 +8,11 @@ import socket
 import threading
 import time
 
+from patcher.iap_dex_patcher import IAPDexPatcher
+from patcher.iap_proxy_server import IAPProxyServer
+from patcher.iap_smali_patcher import IAPSmaliPatcher
+from patcher.signature_patcher import SignatureVerifyPatcher
+
 logger = logging.getLogger(__name__)
 
 
@@ -34,7 +39,6 @@ class IAPBypass:
         return False
 
     def _run_dex_mode(self) -> int:
-        from patcher.iap_dex_patcher import IAPDexPatcher
         patcher = IAPDexPatcher(
             self.decompiled_path,
             log_callback=self.log,
@@ -43,9 +47,6 @@ class IAPBypass:
         return patcher.patch()
 
     def _run_proxy_mode(self) -> int:
-        from patcher.iap_proxy_server import IAPProxyServer
-        from patcher.iap_smali_patcher import IAPSmaliPatcher
-        from patcher.signature_patcher import SignatureVerifyPatcher
         from core.device_bridge import setup_reverse_port
 
         # 1. Disable signature checks
@@ -97,7 +98,6 @@ class IAPBypass:
         report = {"patterns": {}, "total_patched": 0}
         try:
             if self.mode == "dex":
-                from patcher.iap_dex_patcher import IAPDexPatcher
                 patcher = IAPDexPatcher(
                     self.decompiled_path,
                     log_callback=self.log,

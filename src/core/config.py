@@ -22,6 +22,7 @@ _DEFAULTS: dict[str, Any] = {
     },
     "conversion": {
         "auto_convert_xapk": True,
+        "auto_convert_apks": True,
         "allow_split_apk": True,
     },
     "signing": {

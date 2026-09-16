@@ -191,4 +191,51 @@ QMenu {
 }
 QMenu::item:selected { background-color: #1f6feb; }
 QDialog { background-color: #0d1117; }
+
+/* === Switches panel === */
+QWidget#switchesPanel {
+    background-color: #161b22;
+    border-bottom: 1px solid #30363d;
+}
+
+/* === App list item hover/selected mạnh hơn === */
+QListWidget::item {
+    margin: 2px 4px;
+    border-radius: 8px;
+    border-left: 3px solid transparent;
+}
+QListWidget::item:selected {
+    background-color: #1f6feb22;
+    border-left: 3px solid #1f6feb;
+    color: #f0f6fc;
+}
+QListWidget::item:hover {
+    background-color: #21262d;
+}
+
+/* === Sidebar active state mạnh hơn === */
+QWidget#sidebar QPushButton:checked {
+    background-color: #1f6feb;
+    color: #ffffff;
+    border-left: 4px solid #58a6ff;
+    padding-left: 12px;
+}
+QWidget#sidebar QPushButton {
+    text-align: left;
+    padding-left: 16px;
+    border-left: 4px solid transparent;
+}
+
+/* === Log container === */
+QPlainTextEdit {
+    border: none;
+    border-radius: 0;
+    background-color: #0a0d12;
+}
+
+/* === Dialog styling === */
+QDialog QPushButton {
+    min-height: 32px;
+    padding: 6px 18px;
+}
 """

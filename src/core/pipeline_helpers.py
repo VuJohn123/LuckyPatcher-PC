@@ -32,7 +32,6 @@ def setup_logging(config: dict) -> logging.Logger:
         ))
         logger.addHandler(handler)
     except OSError:
-        # Fallback: không ghi file, chỉ dùng console
         logging.basicConfig(level=level)
     return logger
 
@@ -41,24 +40,31 @@ def normalize_input(path: str, config: dict, log) -> str:
     """
     Chuẩn hóa input:
       - .apk   → giữ nguyên
-      - .xapk  → convert thành .apk (BẮT BUỘC)
-      - folder → merge split APK thành .apk
+      - .xapk  → convert (BẮT BUỘC)
+      - .apks  → convert (bundletool hoặc APKPure layout)
+      - folder → merge split APK
     """
     if not path:
         raise ValueError("Đường dẫn input rỗng")
     if not os.path.exists(path):
         raise ValueError(f"Input không tồn tại: {path}")
 
+    # ============================================================
     # Case 1: .apk
+    # ============================================================
     if os.path.isfile(path) and path.lower().endswith(".apk"):
         log("[*] Input là .apk — bỏ qua conversion")
         return path
 
-    # Case 2: .xapk
+    # ============================================================
+    # Case 2: .xapk  (APKPure XAPK có manifest.json)
+    # ============================================================
     from core.xapk_converter import (
         XAPKConversionError, convert_xapk_to_apk, is_xapk,
     )
-    if os.path.isfile(path) and (path.lower().endswith(".xapk") or is_xapk(path)):
+    if os.path.isfile(path) and (
+        path.lower().endswith(".xapk") or is_xapk(path)
+    ):
         if not config.get("conversion", {}).get("auto_convert_xapk", True):
             raise ValueError("Input là .xapk nhưng auto_convert_xapk bị tắt")
         try:
@@ -66,14 +72,37 @@ def normalize_input(path: str, config: dict, log) -> str:
         except XAPKConversionError as e:
             raise ValueError(f"Convert .xapk thất bại: {e}") from e
 
-    # Case 3: folder split APK
+    # ============================================================
+    # Case 3: .apks  (bundletool HOẶC APKPure apkcube)
+    # ============================================================
+    from core.apks_converter import (
+        APKSConversionError, convert_apks_to_apk, is_bundle_zip,
+    )
+    if os.path.isfile(path) and (
+        path.lower().endswith(".apks") or is_bundle_zip(path)
+    ):
+        if not config.get("conversion", {}).get("auto_convert_apks", True):
+            raise ValueError("Input là .apks nhưng auto_convert_apks bị tắt")
+        try:
+            return convert_apks_to_apk(path, log_callback=log)
+        except APKSConversionError as e:
+            raise ValueError(f"Convert .apks thất bại: {e}") from e
+
+    # ============================================================
+    # Case 4: folder split APK (đã extract sẵn)
+    # ============================================================
     if os.path.isdir(path):
         if not config.get("conversion", {}).get("allow_split_apk", True):
             raise ValueError("Input là folder nhưng allow_split_apk bị tắt")
         from core.apk_utils import merge_split_apks
-        apks = [f for f in os.listdir(path) if f.lower().endswith(".apk")]
+
+        apks = [
+            f for f in os.listdir(path)
+            if f.lower().endswith(".apk")
+        ]
         if not apks:
             raise ValueError(f"Folder không chứa .apk: {path}")
+
         out = os.path.join(os.path.dirname(path), "merged.apk")
         merge_split_apks(path, out, log)
         return out

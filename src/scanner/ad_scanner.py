@@ -4,6 +4,11 @@ from __future__ import annotations
 import logging
 import re
 
+try:
+    from androguard.core.apk import APK
+except ImportError:  # pragma: no cover
+    APK = None  # type: ignore[assignment]
+
 logger = logging.getLogger(__name__)
 
 AD_PATTERNS = [
@@ -27,7 +32,10 @@ AD_PATTERNS = [
 
 class AdScanner:
     def __init__(self, apk_path: str):
-        from androguard.core.apk import APK
+        if APK is None:
+            raise RuntimeError(
+                "androguard không được cài đặt — cần thiết cho AdScanner"
+            )
         self.apk = APK(apk_path)
 
     def scan_manifest(self) -> tuple[list[str], list[str]]:

@@ -1,6 +1,7 @@
 """Test IAP dex patcher — core IAP logic."""
 import os
 import tempfile
+from unittest.mock import patch
 
 from patcher.iap_dex_patcher import IAPDexPatcher
 
@@ -84,21 +85,26 @@ def test_no_patch_for_unrelated():
 
 
 def test_skip_long_path():
-    """File path > 250 ký tự phải bị skip."""
+    """File path > 250 ký tự phải bị skip.
+
+    Windows giới hạn CreateDirectoryW ~247 ký tự (sớm hơn MAX_PATH 260),
+    nên không thể tạo file thật để test. Mock get_all_smali_files để
+    trả về path dài → verify logic length-check của patcher.
+    """
     with tempfile.TemporaryDirectory() as tmp:
-        deep = os.path.join(
+        long_path = os.path.join(
             tmp, "smali",
             *[("x" * 40) for _ in range(7)],
             "A.smali",
         )
-        _write(deep, (
-            ".class public LA;\n"
-            ".method public static launchBillingFlow()V\n"
-            "    invoke-static {}, Lcom/x;->launchBillingFlow()V\n"
-            ".end method\n"
-        ))
-        patcher = IAPDexPatcher(tmp, log_callback=lambda *_: None)
-        assert patcher.patch() == 0
+        assert len(long_path) > 250, f"Path chưa đủ dài: {len(long_path)}"
+
+        with patch(
+            "patcher.iap_dex_patcher.get_all_smali_files",
+            return_value=[long_path],
+        ):
+            patcher = IAPDexPatcher(tmp, log_callback=lambda *_: None)
+            assert patcher.patch() == 0
 
 
 def test_unity_purchasing_detected():

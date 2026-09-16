@@ -7,7 +7,7 @@ import logging
 import os
 import re
 
-from core.smali_utils import get_all_smali_files
+from core.smali_utils import get_all_smali_files, _METHOD_MODS
 
 logger = logging.getLogger(__name__)
 
@@ -87,9 +87,11 @@ class GMSSpoofer:
             count += 1
             self.log("[+] Added GoogleApiAvailability stub")
 
+        # Multi-modifier aware (public static, protected final, ...)
         pattern_avail = re.compile(
-            r'(\.method\s+(?:public|private|static)\s+(?:final\s+)?(\S+)\s*\(.*?\)\s*I\s*'
-            r'.*?invoke.*?isGooglePlayServicesAvailable.*?\.end\s+method)',
+            r"\.method\s+" + _METHOD_MODS +
+            r"(\S+)\s*\(.*?\)\s*I\s*"
+            r".*?invoke.*?isGooglePlayServicesAvailable.*?\.end\s+method",
             re.DOTALL,
         )
         pattern_signin = re.compile(
@@ -108,7 +110,8 @@ class GMSSpoofer:
 
             if "isGooglePlayServicesAvailable" in content:
                 for match in pattern_avail.finditer(content):
-                    header = match.group(0).split("\n")[0]
+                    full = match.group(0)
+                    header = full.split("\n", 1)[0]
                     replacement = (
                         f"{header}\n"
                         "    .locals 1\n"
@@ -116,7 +119,7 @@ class GMSSpoofer:
                         "    return v0\n"
                         ".end method"
                     )
-                    content = content.replace(match.group(0), replacement)
+                    content = content.replace(full, replacement)
                     modified = True
                     count += 1
 
