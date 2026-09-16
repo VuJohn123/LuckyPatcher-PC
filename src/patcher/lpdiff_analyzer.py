@@ -1,98 +1,81 @@
-# patcher/lpdiff_analyzer.py
+"""So sánh 2 file smali → sinh custom patch pattern có mask operand."""
+from __future__ import annotations
+
+import logging
 import re
 import zipfile
 import os
 import tempfile
 import shutil
 
+logger = logging.getLogger(__name__)
+
+
 class LPDiffAnalyzer:
-    """
-    Công cụ tạo custom patch từ sự khác biệt giữa file gốc và file đã vá.
-    Hỗ trợ mask toán hạng để pattern có thể sống sót qua các bản cập nhật nhỏ.
-    """
-    def __init__(self, original_smali, patched_smali):
+    def __init__(self, original_smali: str, patched_smali: str):
         self.orig = original_smali
         self.patched = patched_smali
 
-    def generate_pattern(self, mask_operands=True):
-        """Trả về nội dung file patch."""
-        with open(self.orig, 'r', encoding='utf-8', errors='ignore') as f:
+    def generate_pattern(self, mask_operands: bool = True) -> str:
+        with open(self.orig, "r", encoding="utf-8", errors="ignore") as f:
             orig_lines = f.readlines()
-        with open(self.patched, 'r', encoding='utf-8', errors='ignore') as f:
+        with open(self.patched, "r", encoding="utf-8", errors="ignore") as f:
             patched_lines = f.readlines()
 
-        instructions_orig = self._extract_instructions(orig_lines)
-        instructions_patched = self._extract_instructions(patched_lines)
+        orig_insts = self._extract_instructions(orig_lines)
+        patch_insts = self._extract_instructions(patched_lines)
 
-        patch_lines = []
-        i = 0
-        j = 0
-        while i < len(instructions_orig) and j < len(instructions_patched):
-            if instructions_orig[i] == instructions_patched[j]:
+        lines: list[str] = []
+        i = j = 0
+        while i < len(orig_insts) and j < len(patch_insts):
+            if orig_insts[i] == patch_insts[j]:
                 i += 1
                 j += 1
-            else:
-                # Tìm block thay đổi
-                orig_block = self._get_change_block(instructions_orig, i)
-                patch_block = self._get_change_block(instructions_patched, j)
+                continue
+            orig_block = orig_insts[i:i + 5]
+            patch_block = patch_insts[j:j + 5]
+            pattern = self._block_to_pattern(orig_block, mask_operands)
+            replacement = "\n".join(patch_block)
+            lines.append(f"{pattern} -> {replacement}")
+            i += len(orig_block)
+            j += len(patch_block)
 
-                pattern = self._block_to_pattern(orig_block, mask_operands)
-                replacement = '\n'.join(patch_block)
+        return "\n".join(lines)
 
-                patch_lines.append(f"{pattern} -> {replacement}")
-                i += len(orig_block)
-                j += len(patch_block)
-
-        return '\n'.join(patch_lines)
-
-    def _extract_instructions(self, lines):
-        """Trích xuất danh sách các instruction, bỏ qua comment và label."""
-        insts = []
+    def _extract_instructions(self, lines: list[str]) -> list[str]:
+        out = []
         for line in lines:
-            line = line.strip()
-            if line and not line.startswith('.') and not line.startswith('#') and ':' not in line:
-                insts.append(line)
-        return insts
+            s = line.strip()
+            if s and not s.startswith(".") and not s.startswith("#") and ":" not in s:
+                out.append(s)
+        return out
 
-    def _get_change_block(self, insts, start, max_size=5):
-        """Lấy block các dòng thay đổi liên tiếp."""
-        return insts[start:start+max_size]
-
-    def _block_to_pattern(self, block, mask_operands):
-        """
-        Chuyển block thành regex pattern.
-        Nếu mask_operands=True, tự động mask các toán hạng có thể thay đổi.
-        """
-        pattern = ''
+    def _block_to_pattern(self, block: list[str], mask: bool) -> str:
+        parts = []
         for inst in block:
-            if mask_operands:
-                # Mask register (v0, v1, p0...)
-                masked = re.sub(r'\bv\d+\b', r'v\\d+', inst)
-                masked = re.sub(r'\bp\d+\b', r'p\\d+', masked)
-                # Mask label (:cond_xx, :goto_xx...)
-                masked = re.sub(r':\w+', r':\\w+', masked)
-                # Mask string literals (giữ nguyên cấu trúc)
+            if mask:
+                masked = re.sub(r"\bv\d+\b", r"v\\d+", inst)
+                masked = re.sub(r"\bp\d+\b", r"p\\d+", masked)
+                masked = re.sub(r":\w+", r":\\w+", masked)
                 masked = re.sub(r'"(.*?)"', r'"\\w*"', masked)
-                # Mask các tham số invoke
-                masked = re.sub(r'\{.*?\}', r'\\{.*?\\}', masked)
-                # Escape regex đặc biệt
-                pattern += re.escape(masked).replace(r'\{\.\*\?\}', r'\{.*?\}') + '\n'
+                parts.append(re.escape(masked)
+                             .replace(r"\{\.\*\?\}", r"{.*?}")
+                             .replace(r"\(\.\*\)", r"(.*)"))
             else:
-                pattern += re.escape(inst) + '\n'
-        return pattern.rstrip('\n')
+                parts.append(re.escape(inst))
+        return "\n".join(parts)
 
-    def save_patch(self, output_path, target_filename="classes.dex"):
-        """Lưu patch ra file .txt."""
-        content = f"[{target_filename}]\n{self.generate_pattern()}"
-        with open(output_path, 'w', encoding='utf-8') as f:
-            f.write(content)
+    def save_lpzip(self, output_zip: str, target_filename: str = "classes.dex") -> str:
+        tmp = tempfile.mkdtemp()
+        try:
+            txt = os.path.join(tmp, "patch.txt")
+            with open(txt, "w", encoding="utf-8") as f:
+                f.write(f"[{target_filename}]\n{self.generate_pattern()}")
+            with zipfile.ZipFile(output_zip, "w") as z:
+                z.write(txt, arcname="patch.txt")
+            return output_zip
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
 
-    def save_lpzip(self, output_zip, target_filename="classes.dex"):
-        """Lưu patch ra file .lpzip."""
-        tmp_dir = tempfile.mkdtemp()
-        txt_path = os.path.join(tmp_dir, "patch.txt")
-        self.save_patch(txt_path, target_filename)
-        with zipfile.ZipFile(output_zip, 'w') as zf:
-            zf.write(txt_path, arcname=os.path.basename(txt_path))
-        shutil.rmtree(tmp_dir)
-        return output_zip
+    def patch(self) -> int:
+        return 0

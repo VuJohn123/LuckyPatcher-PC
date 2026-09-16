@@ -1,18 +1,51 @@
-import os, shutil, tempfile
+"""Helper tạo Magisk module tối thiểu."""
+from __future__ import annotations
 
-def create_magisk_module(services_jar_path, output_zip):
-    tmp = tempfile.mkdtemp()
-    framework_dir = os.path.join(tmp, 'system', 'framework')
-    os.makedirs(framework_dir, exist_ok=True)
-    shutil.copy(services_jar_path, os.path.join(framework_dir, 'services.jar'))
+import logging
+import os
+import shutil
+import tempfile
+import zipfile
 
-    with open(os.path.join(tmp, 'module.prop'), 'w') as f:
-        f.write("id=lp_pc_signature_patch\nname=LP-PC Signature Patch\nversion=v1\nversionCode=1\nauthor=LP-PC Suite\ndescription=Disable APK signature verification\n")
+logger = logging.getLogger(__name__)
 
-    with open(os.path.join(tmp, 'post-fs-data.sh'), 'w') as f:
-        f.write("#!/system/bin/sh\nmount -o bind $MODDIR/system/framework/services.jar /system/framework/services.jar\n")
-    os.chmod(os.path.join(tmp, 'post-fs-data.sh'), 0o755)
 
-    shutil.make_archive(output_zip.replace('.zip', ''), 'zip', tmp)
-    shutil.rmtree(tmp)
-    return output_zip
+def create_magisk_module(services_jar_path: str, output_zip: str) -> str | None:
+    tmp = tempfile.mkdtemp(prefix="magisk_")
+    try:
+        fw_dir = os.path.join(tmp, "system", "framework")
+        os.makedirs(fw_dir, exist_ok=True)
+        if os.path.exists(services_jar_path):
+            shutil.copy2(services_jar_path,
+                         os.path.join(fw_dir, "services.jar"))
+
+        with open(os.path.join(tmp, "module.prop"), "w") as f:
+            f.write(
+                "id=lp_pc_signature_patch\n"
+                "name=LP-PC Signature Patch\n"
+                "version=v1\n"
+                "versionCode=1\n"
+                "author=LP-PC Suite\n"
+                "description=Disable APK signature verification\n"
+            )
+        with open(os.path.join(tmp, "post-fs-data.sh"), "w") as f:
+            f.write(
+                "#!/system/bin/sh\n"
+                "mount -o bind "
+                "$MODDIR/system/framework/services.jar "
+                "/system/framework/services.jar\n"
+            )
+        os.chmod(os.path.join(tmp, "post-fs-data.sh"), 0o755)
+
+        with zipfile.ZipFile(output_zip, "w", zipfile.ZIP_DEFLATED) as z:
+            for root, _, files in os.walk(tmp):
+                for f in files:
+                    full = os.path.join(root, f)
+                    rel = os.path.relpath(full, tmp)
+                    z.write(full, arcname=rel)
+        return output_zip
+    except OSError as e:
+        logger.warning("create_magisk_module failed: %s", e)
+        return None
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)

@@ -1,54 +1,55 @@
-from PyQt6.QtWidgets import QDialog, QVBoxLayout, QRadioButton, QPushButton, QLabel, QButtonGroup, QHBoxLayout, QGroupBox
+"""Dialog chọn chế độ Ads removal."""
+from __future__ import annotations
+
+from PyQt6.QtWidgets import (
+    QDialog, QVBoxLayout, QRadioButton, QPushButton,
+    QButtonGroup, QHBoxLayout, QLabel,
+)
 from PyQt6.QtCore import pyqtSignal
+
 
 class AdsPatchDialog(QDialog):
     patch_requested = pyqtSignal(str)
 
-    def __init__(self, app_name, parent=None):
+    OPTIONS = [
+        ("remove", "Xóa activity quảng cáo khỏi manifest"),
+        ("offline", "Làm module nghĩ rằng offline"),
+        ("links", "Xóa URL quảng cáo trong smali"),
+        ("full_offline", "Full offline (kết hợp)"),
+    ]
+
+    def __init__(self, app_name: str = "", parent=None):
         super().__init__(parent)
-        self.setWindowTitle(f"Remove Google Ads - {app_name}")
-        self.setMinimumSize(500, 420)
-        self.selected_mode = "remove_links"
-        self.initUI()
+        self.setWindowTitle(f"Remove Ads - {app_name}")
+        self.setMinimumSize(450, 320)
+        self._selected = "remove"
+        self._init_ui()
 
-    def initUI(self):
-        layout = QVBoxLayout()
-        layout.addWidget(QLabel("<b style='color:#58a6ff;'>Chọn phương pháp loại bỏ quảng cáo:</b>"))
-        options_group = QGroupBox("Các chế độ loại bỏ quảng cáo:")
-        options_layout = QVBoxLayout()
-        self.mode_group = QButtonGroup(self)
+    def _init_ui(self) -> None:
+        layout = QVBoxLayout(self)
+        layout.addWidget(QLabel("<b>Chọn chế độ Ads:</b>"))
 
-        options = [
-            ("remove_links", "Xoá liên kết khỏi APK", "Loại bỏ các liên kết http:// dùng AdsBlockList"),
-            ("break_receiver", "Làm hỏng phần nhận quảng cáo", "Phá vỡ cơ chế nhận Google Ads"),
-            ("offline", "Vá ngoại tuyến", "Làm module quảng cáo nghĩ rằng thiết bị đang ngoại tuyến"),
-            ("other", "Các bản vá khác", "Bản vá bổ sung loại bỏ quảng cáo"),
-            ("full_offline", "Tạo ngoại tuyến đầy đủ", "Thử làm ứng dụng hoạt động hoàn toàn ngoại tuyến"),
-        ]
-        for mode, title, desc in options:
-            radio = QRadioButton(title)
-            radio.setChecked(mode == self.selected_mode)
-            radio.toggled.connect(lambda checked, m=mode: self._on_select(m) if checked else None)
-            self.mode_group.addButton(radio)
-            options_layout.addWidget(radio)
-            options_layout.addWidget(QLabel(f"    ↳ {desc}"))
-        options_group.setLayout(options_layout)
-        layout.addWidget(options_group)
+        self._group = QButtonGroup(self)
+        for key, label in self.OPTIONS:
+            rb = QRadioButton(label)
+            rb.setChecked(key == self._selected)
+            rb.toggled.connect(lambda on, k=key: self._select(k) if on else None)
+            self._group.addButton(rb)
+            layout.addWidget(rb)
 
-        btn_layout = QHBoxLayout()
-        btn_apply = QPushButton("Áp dụng")
-        btn_apply.clicked.connect(self._on_apply)
-        btn_apply.setStyleSheet("background-color: #238636; color: white; font-weight: bold;")
-        btn_cancel = QPushButton("Hủy")
-        btn_cancel.clicked.connect(self.reject)
-        btn_layout.addStretch()
-        btn_layout.addWidget(btn_cancel)
-        btn_layout.addWidget(btn_apply)
-        layout.addLayout(btn_layout)
-        self.setLayout(layout)
+        btns = QHBoxLayout()
+        ok = QPushButton("Áp dụng")
+        ok.clicked.connect(self._apply)
+        cancel = QPushButton("Hủy")
+        cancel.clicked.connect(self.reject)
+        btns.addStretch()
+        btns.addWidget(cancel)
+        btns.addWidget(ok)
+        layout.addLayout(btns)
 
-    def _on_select(self, mode): self.selected_mode = mode
+    def _select(self, key: str) -> None:
+        self._selected = key
 
-    def _on_apply(self):
-        self.patch_requested.emit(f"ads:{self.selected_mode}")
+    def _apply(self) -> None:
+        self.patch_requested.emit(f"ads:{self._selected}")
         self.accept()

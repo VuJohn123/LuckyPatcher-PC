@@ -1,57 +1,66 @@
+"""Panel công tắc — bật/tắt các tính năng runtime."""
+from __future__ import annotations
+
 from PyQt6.QtWidgets import QWidget, QHBoxLayout, QPushButton
-from PyQt6.QtCore import Qt
+
 
 class SwitchesPanel(QWidget):
     def __init__(self, iap_manager, parent=None):
         super().__init__(parent)
-        self.iap_manager = iap_manager
-        layout = QHBoxLayout()
+        self.iap = iap_manager
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(8, 4, 8, 4)
         layout.setSpacing(8)
 
-        self.btn_billing = QPushButton("💰 Giả lập Google Thanh toán: BẬT")
+        self.btn_billing = QPushButton("💰 Billing: ON")
         self.btn_billing.setCheckable(True)
         self.btn_billing.setChecked(True)
-        self.btn_billing.toggled.connect(self.toggle_billing)
+        self.btn_billing.toggled.connect(self._toggle_billing)
         layout.addWidget(self.btn_billing)
 
-        self.btn_proxy = QPushButton("🌐 Máy chủ Proxy: BẬT")
+        self.btn_proxy = QPushButton("🌐 Proxy: ON")
         self.btn_proxy.setCheckable(True)
         self.btn_proxy.setChecked(True)
-        self.btn_proxy.toggled.connect(self.toggle_proxy)
+        self.btn_proxy.toggled.connect(self._toggle_proxy)
         layout.addWidget(self.btn_proxy)
 
-        self.btn_autorepeat = QPushButton("🔄 Tự động lặp: TẮT")
+        self.btn_autorepeat = QPushButton("🔄 Auto-repeat: OFF")
         self.btn_autorepeat.setCheckable(True)
-        self.btn_autorepeat.toggled.connect(self.toggle_autorepeat)
+        self.btn_autorepeat.toggled.connect(self._toggle_autorepeat)
         layout.addWidget(self.btn_autorepeat)
 
-        self.btn_save = QPushButton("💾 Lưu giao dịch: TẮT")
+        self.btn_save = QPushButton("💾 Save: OFF")
         self.btn_save.setCheckable(True)
-        self.btn_save.toggled.connect(self.toggle_save)
+        self.btn_save.toggled.connect(self._toggle_save)
         layout.addWidget(self.btn_save)
 
-        self.btn_reset = QPushButton("♻️ Đặt mặc định")
-        self.btn_reset.clicked.connect(self.reset_defaults)
+        self.btn_reset = QPushButton("♻️ Reset")
+        self.btn_reset.clicked.connect(self._reset)
         layout.addWidget(self.btn_reset)
 
         layout.addStretch()
-        self.setLayout(layout)
 
-    def toggle_billing(self, checked):
-        self.btn_billing.setText(f"💰 Giả lập Google Thanh toán: {'BẬT' if checked else 'TẮT'}")
+    def _toggle_billing(self, on: bool) -> None:
+        self.btn_billing.setText(f"💰 Billing: {'ON' if on else 'OFF'}")
 
-    def toggle_proxy(self, checked):
-        self.btn_proxy.setText(f"🌐 Máy chủ Proxy: {'BẬT' if checked else 'TẮT'}")
+    def _toggle_proxy(self, on: bool) -> None:
+        self.btn_proxy.setText(f"🌐 Proxy: {'ON' if on else 'OFF'}")
 
-    def toggle_autorepeat(self, checked):
-        self.btn_autorepeat.setText(f"🔄 Tự động lặp: {'BẬT' if checked else 'TẮT'}")
-        self.iap_manager.auto_repeat_enabled = checked
+    def _toggle_autorepeat(self, on: bool) -> None:
+        self.btn_autorepeat.setText(f"🔄 Auto-repeat: {'ON' if on else 'OFF'}")
+        try:
+            self.iap.auto_repeat_enabled = on
+        except Exception:
+            pass
 
-    def toggle_save(self, checked):
-        self.btn_save.setText(f"💾 Lưu giao dịch: {'BẬT' if checked else 'TẮT'}")
-        self.iap_manager.save_for_restore_enabled = checked
+    def _toggle_save(self, on: bool) -> None:
+        self.btn_save.setText(f"💾 Save: {'ON' if on else 'OFF'}")
+        try:
+            self.iap.save_for_restore_enabled = on
+        except Exception:
+            pass
 
-    def reset_defaults(self):
+    def _reset(self) -> None:
         self.btn_billing.setChecked(True)
         self.btn_proxy.setChecked(True)
         self.btn_autorepeat.setChecked(False)

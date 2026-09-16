@@ -1,99 +1,140 @@
-import os
+"""
+Vá trực tiếp bytecode Smali liên quan đến InApp Billing.
+Hỗ trợ Google Play Billing, Unity IAP, Unreal IAP.
+"""
+from __future__ import annotations
+
+import logging
 import re
-from core.smali_utils import get_all_smali_files, REGEX_IAP_BILLING_METHOD
+import random
+import string
+
+from core.smali_utils import (
+    REGEX_IAP_BILLING_METHOD,
+    get_all_smali_files,
+)
+
+logger = logging.getLogger(__name__)
+
+TARGET_METHODS = [
+    # Google Play Billing
+    "launchBillingFlow", "getBuyIntent", "queryPurchases", "querySkuDetails",
+    "isBillingSupported", "consumePurchase", "getPurchases",
+    # Unity IAP
+    "UnityPurchasing", "InitiatePurchase", "PurchaseProduct",
+    "ProcessPurchase", "ConfirmPurchase", "FinishTransaction",
+    # Unreal IAP
+    "InAppPurchase", "MakePurchase", "CompletePurchase",
+    # Wrapper phổ biến
+    "startPurchase", "buyProduct", "makePurchase", "doPayment",
+    "requestPurchase", "processPurchase", "sendPurchase",
+    "startPayment", "doBilling", "executePayment",
+    "onPurchase", "onBuy", "onPayment", "onCheckout",
+]
+
 
 class IAPDexPatcher:
-    def __init__(self, decompiled_path, log_callback=print, file_cache=None):
+    def __init__(self, decompiled_path: str, log_callback=print, file_cache=None):
         self.decompiled_path = decompiled_path
         self.log = log_callback
         self.file_cache = file_cache
+        self.session_id = "".join(random.choices(string.ascii_lowercase, k=8))
 
-    def _read_file(self, path):
+    def _read(self, path: str) -> str:
         if self.file_cache:
             return self.file_cache.read(path)
-        with open(path, 'r', encoding='utf-8', errors='ignore') as f:
+        with open(path, "r", encoding="utf-8", errors="ignore") as f:
             return f.read()
 
-    def _write_file(self, path, content):
+    def _write(self, path: str, content: str) -> None:
         if self.file_cache:
             self.file_cache.write(path, content)
         else:
-            with open(path, 'w', encoding='utf-8') as f:
+            with open(path, "w", encoding="utf-8") as f:
                 f.write(content)
 
-    def patch(self):
-        return self.patch_with_report()['total_patched']
+    def patch(self) -> int:
+        return self.patch_with_report()["total_patched"]
 
-    def patch_with_report(self):
-        self.log("[*] [IAPDexPatcher] Starting ultra-smart patch...")
-        report = {'patterns': {}, 'total_patched': 0}
-        target_methods = [
-            'launchBillingFlow', 'getBuyIntent', 'queryPurchases', 'querySkuDetails',
-            'isBillingSupported', 'consumePurchase', 'getPurchases',
-            'UnityPurchasing', 'InitiatePurchase', 'PurchaseProduct',
-            'ProcessPurchase', 'ConfirmPurchase', 'FinishTransaction',
-            'InAppPurchase', 'MakePurchase', 'CompletePurchase',
-            'startPurchase', 'buyProduct', 'makePurchase', 'doPayment',
-            'requestPurchase', 'processPurchase', 'sendPurchase',
-            'startPayment', 'doBilling', 'executePayment',
-            'onPurchase', 'onBuy', 'onPayment', 'onCheckout',
-        ]
+    def patch_with_report(self) -> dict:
+        self.log("[*] [IAPDexPatcher] Starting smart silent patch...")
+        report = {"patterns": {}, "total_patched": 0}
         patched_files = 0
-        skipped_files = 0
+        skipped = 0
 
         for filepath in get_all_smali_files(self.decompiled_path):
             if len(filepath) > 250:
-                skipped_files += 1
+                skipped += 1
                 continue
+
             try:
-                content = self._read_file(filepath)
-            except:
-                skipped_files += 1
+                content = self._read(filepath)
+            except (OSError, IOError):
+                skipped += 1
                 continue
 
-            if not any(m in content for m in target_methods):
+            # Pre-filter
+            if not any(m in content for m in TARGET_METHODS):
                 continue
 
-            modified = False
+            original = content
             for match in REGEX_IAP_BILLING_METHOD.finditer(content):
-                full_method = match.group(0)
-                method_signature = match.group(1)
+                full = match.group(0)
+                method_sig = match.group(1)
                 return_type = match.group(2)
 
-                if not any(m.lower() in method_signature.lower() for m in target_methods):
+                if not any(m.lower() in method_sig.lower() for m in TARGET_METHODS):
                     continue
 
-                if return_type == 'V':
-                    replacement = self._generate_void_method(full_method.split('\n')[0])
+                if return_type == "V":
+                    replacement = self._void_method(full.split("\n")[0])
                 else:
-                    replacement = self._generate_bundle_method(full_method.split('\n')[0], method_signature)
+                    replacement = self._bundle_method(full.split("\n")[0])
 
-                content = content.replace(full_method, replacement)
-                modified = True
-                report['patterns'][method_signature] = True
+                content = content.replace(full, replacement)
+                report["patterns"][method_sig] = True
 
-            if modified:
+            if content != original:
                 try:
-                    self._write_file(filepath, content)
+                    self._write(filepath, content)
                     patched_files += 1
-                    self.log(f"[+] [IAPDexPatcher] Đã vá: {os.path.basename(filepath)}")
-                except:
-                    skipped_files += 1
+                    self.log(f"[+] [IAPDexPatcher] {filepath.split('/')[-1].split(chr(92))[-1]}")
+                except (OSError, IOError):
+                    skipped += 1
 
-        report['total_patched'] = patched_files
-        self.log(f"[*] [IAPDexPatcher] Tổng số file đã vá: {patched_files}, bỏ qua: {skipped_files}")
+        report["total_patched"] = patched_files
+        self.log(f"[*] [IAPDexPatcher] Patched: {patched_files}, skipped: {skipped}")
         return report
 
-    def _generate_void_method(self, header):
-        return f"{header}\n    .locals 1\n    return-void\n.end method"
+    def _void_method(self, header: str) -> str:
+        v = f"v{random.randint(1, 15)}"
+        lbl = f":cond_{self.session_id[:4]}"
+        return (
+            f"{header}\n"
+            "    .locals 1\n"
+            f"    const/4 {v}, 0x0\n"
+            f"    if-eqz {v}, {lbl}\n"
+            f"    {lbl}\n"
+            "    return-void\n"
+            ".end method"
+        )
 
-    def _generate_bundle_method(self, header, method_name):
-        return f"""{header}
-    .locals 3
-    new-instance v0, Landroid/os/Bundle;
-    invoke-direct {{v0}}, Landroid/os/Bundle;-><init>()V
-    const-string v1, "RESPONSE_CODE"
-    const/4 v2, 0x0
-    invoke-virtual {{v0, v1, v2}}, Landroid/os/Bundle;->putInt(Ljava/lang/String;I)V
-    return-object v0
-.end method"""
+    def _bundle_method(self, header: str) -> str:
+        v_resp = f"v{random.randint(0, 9)}"
+        v_key = f"v{random.randint(0, 9)}"
+        v_val = f"v{random.randint(0, 9)}"
+        lbl = f":skip_{self.session_id[:6]}"
+        return (
+            f"{header}\n"
+            "    .locals 3\n"
+            f"    new-instance {v_resp}, Landroid/os/Bundle;\n"
+            f"    invoke-direct {{{v_resp}}}, Landroid/os/Bundle;-><init>()V\n"
+            f'    const-string {v_key}, "RESPONSE_CODE"\n'
+            f"    const/4 {v_val}, 0x0\n"
+            f"    invoke-virtual {{{v_resp}, {v_key}, {v_val}}}, "
+            f"Landroid/os/Bundle;->putInt(Ljava/lang/String;I)V\n"
+            f"    goto {lbl}\n"
+            f"    {lbl}\n"
+            f"    return-object {v_resp}\n"
+            ".end method"
+        )

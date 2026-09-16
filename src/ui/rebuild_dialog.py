@@ -1,273 +1,250 @@
+"""
+Dialog tạo APK đã sửa — cho phép chọn nhiều patch với cấu hình riêng.
+"""
+from __future__ import annotations
+
 import os
+
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
     QScrollArea, QWidget, QCheckBox, QFrame, QMessageBox,
-    QComboBox, QSpinBox, QGroupBox
+    QComboBox, QSpinBox, QGroupBox,
 )
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QFont
+
 from .patch_config_dialog import PatchConfigDialog
 from .preview_dialog import PreviewDialog
 
 
 class RebuildDialog(QDialog):
-    """Hộp thoại 'Tạo tệp tin APK đã sửa' mô phỏng Lucky Patcher."""
     rebuild_requested = pyqtSignal(str)
 
-    def __init__(self, app_name, package, parent=None):
+    PATCHES = [
+        {
+            "name": "license",
+            "label": "🔑 Gỡ xác minh giấy phép (License)",
+            "configurable": True,
+            "default_mode": "auto",
+            "options": {
+                "auto": "Chế độ tự động",
+                "dex": "Chế độ tự động (dex)",
+                "extreme": "Cực đoan (Bytecode Pattern)",
+                "reverse": "Đảo ngược (Reverse Auto)",
+            },
+        },
+        {
+            "name": "ads",
+            "label": "🚫 Xóa Google Ads",
+            "configurable": True,
+            "default_mode": "remove",
+            "options": {
+                "remove": "Xóa Activity quảng cáo",
+                "offline": "Làm hỏng nhận quảng cáo (Offline)",
+                "links": "Xoá liên kết quảng cáo",
+                "full_offline": "Tạo ngoại tuyến đầy đủ",
+            },
+        },
+        {
+            "name": "iap",
+            "label": "💳 Mô phỏng InApp Purchase",
+            "configurable": True,
+            "default_mode": "dex",
+            "options": {
+                "dex": "Tái cấu trúc Dex",
+                "proxy": "Máy chủ Proxy",
+                "aidl": "AIDL Proxy",
+            },
+        },
+        {
+            "name": "change_perms",
+            "label": "⚙️ Thay đổi quyền (Permissions)",
+            "configurable": False,
+            "default_mode": None,
+            "options": {},
+        },
+        {
+            "name": "custom",
+            "label": "📄 Custom Patch (.txt/.lpzip)",
+            "configurable": False,
+            "default_mode": None,
+            "options": {},
+        },
+        {
+            "name": "resign",
+            "label": "✍️ Ký lại APK",
+            "configurable": False,
+            "default_mode": None,
+            "options": {},
+        },
+    ]
+
+    EXTRA_OPTIONS = [
+        ("save_purchase", "💾 Lưu giao dịch IAP"),
+        ("auto_repeat", "🔄 Tự động lặp lại IAP"),
+        ("sig_disable", "🔓 Vô hiệu hóa self-signature"),
+        ("sig_integrity", "🛡️ Bỏ kiểm tra integrity"),
+        ("sig_fake_archive", "📦 Giả mạo archive"),
+    ]
+
+    def __init__(self, app_name: str, package: str = "", parent=None):
         super().__init__(parent)
-        self.setWindowTitle(f"Tạo tệp tin APK đã sửa - {app_name}")
-        self.setMinimumSize(550, 650)
-        self.resize(600, 700)
         self.app_name = app_name
         self.package = package
+        self.patch_widgets: dict[str, dict] = {}
+        self.extra_widgets: dict[str, QCheckBox] = {}
 
-        # Định nghĩa các patch có sẵn
-        self.patches = [
-            {
-                'name': 'license', 'label': '🔑 Gỡ xác minh giấy phép (License)',
-                'configurable': True, 'mode': 'auto',
-                'options': {
-                    'auto': 'Chế độ tự động',
-                    'dex': 'Chế độ tự động (dex)',
-                    'extreme': 'Cực đoan (Bytecode Pattern)',
-                    'reverse': 'Đảo ngược (Reverse Auto)'
-                },
-                'tooltip': (
-                    '🔑 Gỡ xác minh giấy phép:\n'
-                    '• Auto: Tự động tìm và vá method allow/dontAllow\n'
-                    '• Dex: Chế độ tối thiểu, cần Google Play\n'
-                    '• Extreme: Dùng bytecode pattern cho app obfuscate\n'
-                    '• Reverse: Vô hiệu hóa ServerManagedPolicy'
-                )
-            },
-            {
-                'name': 'ads', 'label': '🚫 Xóa Google Ads',
-                'configurable': True, 'mode': 'remove',
-                'options': {
-                    'remove': 'Xóa Activity quảng cáo',
-                    'offline': 'Làm hỏng nhận quảng cáo (Offline)',
-                    'links': 'Xoá liên kết quảng cáo',
-                    'full_offline': 'Tạo ngoại tuyến đầy đủ'
-                },
-                'tooltip': (
-                    '🚫 Xóa Google Ads:\n'
-                    '• Remove: Xóa activity quảng cáo khỏi manifest\n'
-                    '• Break: Làm hỏng cơ chế nhận quảng cáo\n'
-                    '• Offline: Ép module quảng cáo nghĩ rằng ngoại tuyến\n'
-                    '• Full: Kết hợp tất cả phương pháp'
-                )
-            },
-            {
-                'name': 'iap', 'label': '💳 Mô phỏng InApp Purchase',
-                'configurable': True, 'mode': 'dex',
-                'options': {
-                    'dex': 'Tái cấu trúc Dex (Im lặng & Tự động)',
-                    'proxy': 'Máy chủ Proxy (Cần PC chạy proxy)',
-                    'aidl': 'Nhúng AIDL Proxy Service'
-                },
-                'tooltip': (
-                    '💳 Mô phỏng InApp Purchase:\n'
-                    '• Dex: Vá trực tiếp code, tự động trả về thành công\n'
-                    '• Proxy: Dùng PC làm máy chủ giả mạo billing (cần ADB)\n'
-                    '• AIDL: Nhúng service proxy vào APK'
-                )
-            },
-            {
-                'name': 'change_perms', 'label': '⚙️ Thay đổi quyền (Permissions)',
-                'configurable': False, 'mode': None, 'options': {},
-                'tooltip': '⚙️ Thay đổi quyền:\nXóa các quyền nguy hiểm như SMS, Contacts khỏi ứng dụng'
-            },
-            {
-                'name': 'custom', 'label': '📄 Custom Patch (.txt/.lpzip)',
-                'configurable': False, 'mode': None, 'options': {},
-                'tooltip': '📄 Custom Patch:\nÁp dụng bản vá tùy chỉnh từ file .txt hoặc .lpzip\nCó thể tải từ cộng đồng patch.chelpus.com'
-            },
-            {
-                'name': 'resign', 'label': '✍️ Ký lại APK',
-                'configurable': False, 'mode': None, 'options': {},
-                'tooltip': '✍️ Ký lại APK:\nKý APK với chữ ký mới để cài đặt được trên thiết bị\nCần "Patch to Android" để update app mà không mất data'
-            },
-        ]
+        self.setWindowTitle(f"Create Modified APK - {app_name}")
+        self.setMinimumSize(600, 720)
+        self._init_ui()
 
-        # Các tùy chọn bổ sung
-        self.extra_options = [
-            {'name': 'save_purchase', 'label': '💾 Lưu giao dịch để khôi phục (Save purchase for restore)', 'checked': False,
-             'tooltip': 'Lưu các giao dịch IAP đã thành công để có thể khôi phục sau'},
-            {'name': 'auto_repeat', 'label': '🔄 Tự động lặp lại giao dịch (Auto-repeat purchases)', 'checked': False,
-             'tooltip': 'Tự động lặp lại các giao dịch IAP đã lưu với cài đặt hiện tại'},
-            {'name': 'sig_disable', 'label': '🔓 Vô hiệu hóa xác minh chữ ký (Disable signature verification)', 'checked': False,
-             'tooltip': 'Vô hiệu hóa self-check chữ ký bên trong ứng dụng'},
-            {'name': 'sig_zip_disable', 'label': '📦 Vô hiệu hóa xác minh chữ ký Zip', 'checked': False,
-             'tooltip': 'Vô hiệu hóa kiểm tra chữ ký của file zip/APK'},
-        ]
+    def _init_ui(self) -> None:
+        layout = QVBoxLayout(self)
+        layout.setSpacing(10)
 
-        self.patch_widgets = {}
-        self.extra_widgets = {}
-        self.initUI()
+        title = QLabel(f"<b style='font-size:13px;'>Chọn patch cho {self.app_name}</b>")
+        layout.addWidget(title)
 
-    def initUI(self):
-        main_layout = QVBoxLayout()
-        main_layout.setSpacing(10)
-
-        title = QLabel(f"<b style='color:#58a6ff;'>Chọn các bản vá cho {self.app_name}</b>")
-        title.setFont(QFont("Segoe UI", 11))
-        main_layout.addWidget(title)
-
+        # Scroll area
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
-        scroll_content = QWidget()
-        self.scroll_layout = QVBoxLayout(scroll_content)
+        content = QWidget()
+        self.scroll_layout = QVBoxLayout(content)
         self.scroll_layout.setSpacing(6)
 
-        # Các patch chính
-        for patch in self.patches:
-            row = self._create_patch_row(patch)
-            self.scroll_layout.addWidget(row)
+        for patch in self.PATCHES:
+            self.scroll_layout.addWidget(self._create_patch_row(patch))
 
-        # Separator
         self.scroll_layout.addWidget(QLabel("<b>Tùy chọn bổ sung:</b>"))
-
-        # Các tùy chọn bổ sung
-        for opt in self.extra_options:
-            chk = QCheckBox(opt['label'])
-            chk.setChecked(opt['checked'])
-            if 'tooltip' in opt:
-                chk.setToolTip(opt['tooltip'])
+        for key, label in self.EXTRA_OPTIONS:
+            chk = QCheckBox(label)
             self.scroll_layout.addWidget(chk)
-            self.extra_widgets[opt['name']] = chk
+            self.extra_widgets[key] = chk
 
-        # Tùy chọn nâng cao
+        # Advanced options
         adv_group = QGroupBox("Tùy chọn nâng cao")
-        adv_layout = QVBoxLayout()
-        key_layout = QHBoxLayout()
-        key_layout.addWidget(QLabel("Loại chữ ký:"))
+        adv_layout = QVBoxLayout(adv_group)
+
+        key_row = QHBoxLayout()
+        key_row.addWidget(QLabel("Loại chữ ký:"))
         self.key_combo = QComboBox()
-        self.key_combo.addItems(['testkey', 'platform', 'media', 'shared'])
-        self.key_combo.setToolTip('Chọn loại chữ ký để ký APK sau khi rebuild')
-        key_layout.addWidget(self.key_combo)
-        adv_layout.addLayout(key_layout)
-        pkg_layout = QHBoxLayout()
-        pkg_layout.addWidget(QLabel("Forced Package ID (127 = auto):"))
-        self.package_id_spin = QSpinBox()
-        self.package_id_spin.setRange(1, 127)
-        self.package_id_spin.setValue(127)
-        self.package_id_spin.setToolTip('Thay đổi package ID để cài song song với app gốc. 127 = tự động')
-        pkg_layout.addWidget(self.package_id_spin)
-        adv_layout.addLayout(pkg_layout)
-        adv_group.setLayout(adv_layout)
+        self.key_combo.addItems(["testkey", "platform", "media", "shared"])
+        key_row.addWidget(self.key_combo)
+        adv_layout.addLayout(key_row)
+
+        pkg_row = QHBoxLayout()
+        pkg_row.addWidget(QLabel("Forced Package ID (127=auto):"))
+        self.pkg_spin = QSpinBox()
+        self.pkg_spin.setRange(1, 127)
+        self.pkg_spin.setValue(127)
+        pkg_row.addWidget(self.pkg_spin)
+        adv_layout.addLayout(pkg_row)
+
         self.scroll_layout.addWidget(adv_group)
+        scroll.setWidget(content)
+        layout.addWidget(scroll)
 
-        scroll.setWidget(scroll_content)
-        main_layout.addWidget(scroll)
+        # Bottom buttons
+        btns = QHBoxLayout()
+        preview = QPushButton("🔍 Xem trước")
+        preview.clicked.connect(self._show_preview)
+        btns.addWidget(preview)
 
-        # Nút Preview
-        btn_preview = QPushButton("🔍 Xem trước thay đổi")
-        btn_preview.clicked.connect(self.show_preview)
-        main_layout.addWidget(btn_preview)
+        btns.addStretch()
 
-        # Nút Build và Cancel
-        btn_layout = QHBoxLayout()
-        self.btn_build = QPushButton("🛠 Xây dựng lại")
-        self.btn_build.clicked.connect(self.on_build)
-        self.btn_build.setStyleSheet("background-color: #238636; color: white; font-weight: bold; padding: 10px 20px;")
-        btn_layout.addStretch()
-        btn_layout.addWidget(self.btn_build)
-        btn_cancel = QPushButton("Hủy")
-        btn_cancel.clicked.connect(self.reject)
-        btn_layout.addWidget(btn_cancel)
-        main_layout.addLayout(btn_layout)
+        build = QPushButton("🛠 Xây dựng lại")
+        build.setStyleSheet("background-color:#238636; color:white; font-weight:bold; padding:8px 20px;")
+        build.clicked.connect(self._on_build)
+        btns.addWidget(build)
 
-        self.setLayout(main_layout)
+        cancel = QPushButton("Hủy")
+        cancel.clicked.connect(self.reject)
+        btns.addWidget(cancel)
+        layout.addLayout(btns)
 
-    def _create_patch_row(self, patch):
-        """Tạo một hàng gồm: checkbox | label + tooltip | nút cấu hình (nếu có)"""
+    def _create_patch_row(self, patch: dict) -> QFrame:
         row = QFrame()
         row.setFrameShape(QFrame.Shape.StyledPanel)
-        row_layout = QHBoxLayout(row)
-        row_layout.setContentsMargins(8, 4, 8, 4)
+        row.setStyleSheet("QFrame { padding:4px; }")
+        rl = QHBoxLayout(row)
 
         chk = QCheckBox()
-        chk.setChecked(False)
-        chk.toggled.connect(lambda checked, p=patch: self._on_patch_toggled(p, checked))
-        row_layout.addWidget(chk)
+        rl.addWidget(chk)
 
-        label = QLabel(patch['label'])
+        label = QLabel(patch["label"])
         label.setFont(QFont("Segoe UI", 10))
-        if 'tooltip' in patch:
-            label.setToolTip(patch['tooltip'])
-        row_layout.addWidget(label, 1)
+        rl.addWidget(label, 1)
 
-        if patch['configurable']:
-            btn_config = QPushButton("⚙️")
-            btn_config.setFixedSize(30, 30)
-            btn_config.setToolTip("Cấu hình chế độ")
-            btn_config.clicked.connect(lambda checked, p=patch: self._open_config_dialog(p))
-            row_layout.addWidget(btn_config)
+        if patch["configurable"]:
+            btn = QPushButton("⚙️")
+            btn.setFixedSize(32, 32)
+            btn.setToolTip("Cấu hình chế độ")
+            btn.clicked.connect(lambda _=None, p=patch: self._open_config(p))
+            rl.addWidget(btn)
         else:
             spacer = QWidget()
-            spacer.setFixedSize(30, 30)
-            row_layout.addWidget(spacer)
+            spacer.setFixedSize(32, 32)
+            rl.addWidget(spacer)
 
-        self.patch_widgets[patch['name']] = {'checkbox': chk, 'mode': patch['mode']}
+        self.patch_widgets[patch["name"]] = {
+            "checkbox": chk,
+            "mode": patch["default_mode"],
+        }
         return row
 
-    def _on_patch_toggled(self, patch, checked):
-        pass
-
-    def _open_config_dialog(self, patch):
-        current = self.patch_widgets[patch['name']]['mode']
-        dlg = PatchConfigDialog(patch['label'], patch['options'], current, self)
+    def _open_config(self, patch: dict) -> None:
+        current = self.patch_widgets[patch["name"]]["mode"]
+        dlg = PatchConfigDialog(
+            patch["label"], patch["options"], current, self
+        )
         if dlg.exec():
-            new_mode = dlg.get_mode()
-            self.patch_widgets[patch['name']]['mode'] = new_mode
+            self.patch_widgets[patch["name"]]["mode"] = dlg.get_mode()
 
-    def show_preview(self):
-        """Hiển thị dialog xem trước thay đổi."""
-        patches = []
-        for patch in self.patches:
-            name = patch['name']
-            if self.patch_widgets[name]['checkbox'].isChecked():
-                patches.append({
-                    'label': patch['label'],
-                    'mode': self.patch_widgets[name]['mode'],
-                    'description': patch.get('tooltip', '')
-                })
-        # Thêm các tùy chọn bổ sung
-        for opt in self.extra_options:
-            if self.extra_widgets[opt['name']].isChecked():
-                patches.append({
-                    'label': opt['label'],
-                    'mode': 'N/A',
-                    'description': opt.get('tooltip', '')
-                })
-        if not patches:
-            QMessageBox.warning(self, "Chưa chọn", "Vui lòng chọn ít nhất một bản vá.")
-            return
-        dlg = PreviewDialog(patches, self)
-        if dlg.exec():
-            self.on_build()
+    def _collect_selection(self) -> list[str]:
+        selected: list[str] = []
+        for patch in self.PATCHES:
+            name = patch["name"]
+            w = self.patch_widgets[name]
+            if not w["checkbox"].isChecked():
+                continue
+            mode = w["mode"]
+            if mode:
+                selected.append(f"{name}:{mode}")
+            else:
+                selected.append(name)
+        for key, chk in self.extra_widgets.items():
+            if chk.isChecked():
+                selected.append(key)
+        return selected
 
-    def on_build(self):
-        selected = []
-        for patch in self.patches:
-            name = patch['name']
-            if self.patch_widgets[name]['checkbox'].isChecked():
-                mode = self.patch_widgets[name]['mode']
-                if mode:
-                    selected.append(f"{name}:{mode}")
-                else:
-                    selected.append(name)
-
-        # Thêm các tùy chọn bổ sung vào mode
-        for opt in self.extra_options:
-            if self.extra_widgets[opt['name']].isChecked():
-                selected.append(opt['name'])
-
+    def _show_preview(self) -> None:
+        selected = self._collect_selection()
         if not selected:
-            QMessageBox.warning(self, "Chưa chọn", "Vui lòng chọn ít nhất một bản vá.")
+            QMessageBox.warning(self, "Chưa chọn", "Vui lòng chọn ít nhất 1 patch")
             return
+        items = []
+        for s in selected:
+            if ":" in s:
+                name, mode = s.split(":", 1)
+                items.append({"label": name, "mode": mode})
+            else:
+                items.append({"label": s})
+        dlg = PreviewDialog(items, self)
+        if dlg.exec():
+            self._on_build()
 
-        mode_string = ','.join(selected)
+    def _on_build(self) -> None:
+        selected = self._collect_selection()
+        if not selected:
+            QMessageBox.warning(self, "Chưa chọn", "Vui lòng chọn ít nhất 1 patch")
+            return
+        mode_string = ",".join(selected)
         self.rebuild_requested.emit(mode_string)
         self.accept()
+
+    def get_key_type(self) -> str:
+        return self.key_combo.currentText()
+
+    def get_forced_package_id(self) -> int | None:
+        v = self.pkg_spin.value()
+        return None if v == 127 else v

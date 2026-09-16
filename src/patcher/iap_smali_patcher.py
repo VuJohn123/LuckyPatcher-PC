@@ -1,61 +1,84 @@
+"""
+Chuyển hướng Intent billing sang proxy package.
+"""
+from __future__ import annotations
+
+import logging
 import os
 import re
 
+from core.smali_utils import get_all_smali_files
+
+logger = logging.getLogger(__name__)
+
+TARGET_ACTION = "com.android.vending.billing.InAppBillingService.BIND"
+TARGET_PACKAGE = "com.android.vending"
+PROXY_PACKAGE = "com.android.vending.billing"
+
+
 class IAPSmaliPatcher:
-    def __init__(self, decompiled_path: str):
+    def __init__(self, decompiled_path: str, log_callback=print):
         self.decompiled_path = decompiled_path
+        self.log = log_callback
 
-    def patch_billing_calls(self, proxy_host: str = 'localhost', proxy_port: int = 8888) -> int:
-        print("[*] [IAPSmaliPatcher] Đang tìm intent Billing Service để chuyển hướng...")
-        patched_count = 0
-        target_intent_action = "com.android.vending.billing.InAppBillingService.BIND"
-        target_package = "com.android.vending"
-        proxy_package = "com.android.vending.billing"
+    def patch_billing_calls(self, proxy_host: str = "localhost",
+                            proxy_port: int = 8888) -> int:
+        self.log("[*] [IAPSmaliPatcher] Redirecting billing intents...")
+        patched = 0
 
-        for root, dirs, files in os.walk(self.decompiled_path):
-            for file in files:
-                if not file.endswith('.smali'): continue
-                path = os.path.join(root, file)
-                with open(path, 'r', encoding='utf-8', errors='ignore') as f:
+        # Regex thay thế
+        action_re = re.compile(
+            r'const-string\s+(\S+),\s*"' + re.escape(TARGET_ACTION) + r'"'
+        )
+        pkg_const_re = re.compile(
+            r'const-string\s+(\S+),\s*"' + re.escape(TARGET_PACKAGE) + r'"'
+        )
+        setpkg_re = re.compile(
+            r'(invoke-virtual\s+\{.*?\},\s+'
+            r'Landroid/content/Intent;->setPackage\()"'
+            + re.escape(TARGET_PACKAGE) + r'"'
+        )
+
+        for filepath in get_all_smali_files(self.decompiled_path):
+            if len(filepath) > 250:
+                continue
+            try:
+                with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
                     content = f.read()
-                if target_intent_action not in content and target_package not in content: continue
+            except OSError:
+                continue
 
-                original = content
-                modified = False
+            if TARGET_ACTION not in content and TARGET_PACKAGE not in content:
+                continue
 
-                if target_intent_action in content:
-                    new_content = content.replace(
-                        f'"{target_intent_action}"',
-                        f'"com.android.vending.billing.IInAppBillingServiceProxy.BIND"'
-                    )
-                    if new_content != content:
-                        content = new_content
-                        modified = True
-                        print(f"  - Replaced intent action in {os.path.basename(path)}")
+            original = content
 
-                if target_package in content:
-                    new_content = re.sub(
-                        r'(invoke-virtual\s+\{.*?\},\s+Landroid/content/Intent;->setPackage\()"com\.android\.vending"',
-                        f'\\1"{proxy_package}"',
-                        content
-                    )
-                    if new_content != content:
-                        content = new_content
-                        modified = True
-                        print(f"  - Replaced setPackage in {os.path.basename(path)}")
-                    new_content = re.sub(
-                        r'(const-string\s+\S+,\s*)"com\.android\.vending"',
-                        f'\\1"{proxy_package}"',
-                        content
-                    )
-                    if new_content != content:
-                        content = new_content
-                        modified = True
-                        print(f"  - Replaced const-string com.android.vending in {os.path.basename(path)}")
+            # 1. Đổi intent action
+            content = action_re.sub(
+                rf'const-string \1, "{TARGET_ACTION}.PROXY"',
+                content,
+            )
+            # 2. Đổi const-string package
+            content = pkg_const_re.sub(
+                rf'const-string \1, "{PROXY_PACKAGE}"',
+                content,
+            )
+            # 3. Đổi setPackage
+            content = setpkg_re.sub(
+                rf'\1"{PROXY_PACKAGE}"',
+                content,
+            )
 
-                if modified:
-                    with open(path, 'w', encoding='utf-8') as f: f.write(content)
-                    patched_count += 1
+            if content != original:
+                try:
+                    with open(filepath, "w", encoding="utf-8") as f:
+                        f.write(content)
+                    patched += 1
+                except OSError as e:
+                    logger.warning("write failed %s: %s", filepath, e)
 
-        print(f"[*] [IAPSmaliPatcher] Tổng số file đã vá: {patched_count}")
-        return patched_count
+        self.log(f"[*] [IAPSmaliPatcher] Patched {patched} files")
+        return patched
+
+    def patch(self) -> int:
+        return self.patch_billing_calls()

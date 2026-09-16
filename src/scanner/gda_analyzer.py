@@ -1,46 +1,74 @@
-import subprocess
+"""
+GDA integration — phân tích APK bằng GDA.exe (nếu có).
+Graceful: không crash nếu GDA không tồn tại.
+"""
+from __future__ import annotations
+
+import logging
 import os
-import tempfile
 import re
+import subprocess
+import tempfile
+
+logger = logging.getLogger(__name__)
+
 
 class GDAAnalyzer:
-    def __init__(self, gda_path=None):
-        self.gda_exe = gda_path or os.path.join(
-            os.path.dirname(__file__), '..', '..', 'tools', 'GDA', 'GDA.exe'
-        )
+    def __init__(self, gda_path: str | None = None):
+        if gda_path is None:
+            tools_dir = os.path.join(
+                os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                "tools",
+            )
+            gda_path = os.path.join(tools_dir, "GDA.exe")
+        self.gda_exe = gda_path
 
-    def analyze(self, apk_path, output_report=None):
-        print(f"[*] [GDA] Analyzing {os.path.basename(apk_path)}...")
-        findings = {'license_classes': [], 'iap_classes': [], 'ad_urls': []}
+    def analyze(self, apk_path: str, timeout: int = 120) -> dict:
+        findings = {"license_classes": [], "iap_classes": [], "ad_urls": []}
+
         if not os.path.exists(self.gda_exe):
-            print("[!] GDA not found. Skipping.")
+            logger.debug("GDA không tìm thấy: %s", self.gda_exe)
             return findings
-        
-        if not output_report:
-            output_report = tempfile.mktemp(suffix='.txt')
-        
+
+        report = tempfile.mktemp(suffix=".txt")
         try:
-            cmd = [self.gda_exe, '-a', apk_path, '-o', output_report]
-            subprocess.run(cmd, capture_output=True, text=True, timeout=120)
-            
-            if os.path.exists(output_report):
-                with open(output_report, 'r', encoding='utf-8', errors='ignore') as f:
-                    content = f.read()
-                
-                # Tìm class dựa trên pattern thực tế từ GDA output
-                license_pattern = r'L(?:com/google/android/vending/licensing/LicenseValidator;?)'
-                findings['license_classes'] = re.findall(license_pattern, content)
-                
-                iap_pattern = r'L(?:com/android/vending/billing/IInAppBillingService\$Stub;?)'
-                findings['iap_classes'] = re.findall(iap_pattern, content)
-                
-                ad_urls = re.findall(r'https?://[^"\'\s]+(?:doubleclick|admob|applovin|unityads|googlesyndication)[^"\'\s]*', content)
-                findings['ad_urls'] = ad_urls[:20]
-        except Exception as e:
-            print(f"[!] GDA analysis error: {e}")
+            proc = subprocess.run(
+                [self.gda_exe, "-a", apk_path, "-o", report],
+                capture_output=True, text=True, timeout=timeout,
+            )
+            if proc.returncode != 0:
+                logger.debug("GDA exit %d", proc.returncode)
+                return findings
+
+            if not os.path.exists(report):
+                return findings
+
+            with open(report, "r", encoding="utf-8", errors="ignore") as f:
+                content = f.read()
+
+            findings["license_classes"] = re.findall(
+                r"L(?:com/google/android/vending/licensing/LicenseValidator;?)",
+                content,
+            )
+            findings["iap_classes"] = re.findall(
+                r"L(?:com/android/vending/billing/IInAppBillingService\$Stub;?)",
+                content,
+            )
+            findings["ad_urls"] = re.findall(
+                r'https?://[^"\'\s]+(?:doubleclick|admob|applovin|unityads|'
+                r"googlesyndication)[^\"'\s]*",
+                content,
+            )[:20]
+
+        except subprocess.TimeoutExpired:
+            logger.warning("GDA timeout")
+        except (OSError, ValueError) as e:
+            logger.warning("GDA error: %s", e)
         finally:
-            if output_report and os.path.exists(output_report):
-                try: os.remove(output_report)
-                except: pass
-        
+            if os.path.exists(report):
+                try:
+                    os.remove(report)
+                except OSError:
+                    pass
+
         return findings

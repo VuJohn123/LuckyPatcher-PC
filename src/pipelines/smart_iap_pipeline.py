@@ -1,41 +1,31 @@
+"""Tự động chạy IAP dex patch khi phát hiện app có BILLING."""
+from __future__ import annotations
+
+import logging
+
 from core.event_bus import event_bus
-from patcher.iap_bypass import IAPBypass
-from patcher.iap_manager import IAPManager
-import os, tempfile, shutil
-from core.apk_utils import decompile_apk, recompile_apk, sign_apk
+
+logger = logging.getLogger(__name__)
+
 
 class SmartIAPPipeline:
-    """
-    Tự động áp dụng bản vá IAP khi phát hiện ứng dụng có hỗ trợ IAP.
-    """
-    def __init__(self):
-        event_bus.subscribe('apk.analysis.complete', self.on_analysis_complete)
+    def __init__(self, pipeline_callback=None, log_callback=print):
+        self.cb = pipeline_callback
+        self.log = log_callback
+        event_bus.subscribe("apk.analysis.complete", self._on_analysis)
 
-    def on_analysis_complete(self, data):
-        apk_path = data['apk_path']
-        findings = data['findings']
-        has_iap = any(f['type'] == 'iap' for f in findings)
-        
-        if has_iap:
-            print(f"[SmartIAP] Phát hiện IAP trong {os.path.basename(apk_path)}, tự động vá...")
-            self._apply_iap_patch(apk_path)
-
-    def _apply_iap_patch(self, apk_path):
-        temp_dir = tempfile.mkdtemp()
-        decompiled_dir = os.path.join(temp_dir, "decompiled")
+    def _on_analysis(self, data: dict) -> None:
+        if not data:
+            return
+        findings = data.get("findings", [])
+        apk_path = data.get("apk_path")
+        if not apk_path:
+            return
+        has_iap = any(f.get("type") == "iap" for f in findings)
+        if not has_iap or not self.cb:
+            return
+        self.log(f"[*] [SmartIAP] Auto-patching {apk_path}")
         try:
-            decompile_apk(apk_path, decompiled_dir, jobs=4, max_memory="4096m")
-            bypass = IAPBypass(decompiled_dir, mode='dex')
-            bypass.execute()
-            patched_apk = os.path.join(temp_dir, "patched.apk")
-            recompile_apk(decompiled_dir, patched_apk)
-            signed_apk = sign_apk(patched_apk)
-            
-            output_dir = os.path.join(os.path.dirname(apk_path), "patched")
-            os.makedirs(output_dir, exist_ok=True)
-            dest = os.path.join(output_dir, os.path.basename(signed_apk))
-            shutil.copy(signed_apk, dest)
-            print(f"[SmartIAP] APK đã vá được lưu tại: {dest}")
-            event_bus.emit('apk.patched', {'path': dest, 'original': apk_path})
-        finally:
-            shutil.rmtree(temp_dir, ignore_errors=True)
+            self.cb(apk_path, "iap_dex")
+        except Exception as e:
+            logger.warning("SmartIAP failed: %s", e)

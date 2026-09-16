@@ -1,51 +1,53 @@
-import os, shutil, tempfile, zipfile
-from core.apk_utils import decompile_apk, recompile_apk, sign_apk
+"""Fast patcher — sửa trực tiếp file cụ thể, không decompile toàn bộ."""
+from __future__ import annotations
+
+import logging
+import os
+import re
+import tempfile
+import zipfile
+
+logger = logging.getLogger(__name__)
+
 
 class FastAPKPatcher:
     """
-    Vá APK nhanh bằng cách chỉ dịch ngược các class chính.
-    Phù hợp với các tác vụ đơn giản: xóa ads, sửa license, thay đổi quyền.
+    Sửa trực tiếp nội dung file trong APK (ZIP) mà không cần decompile.
+    Chỉ phù hợp với thay đổi nhỏ (manifest string, specific smali).
     """
-    def __init__(self, apk_path, output_dir=None):
+
+    def __init__(self, apk_path: str, log_callback=print):
         self.apk_path = apk_path
-        self.temp_dir = tempfile.mkdtemp()
-        self.decompiled_dir = os.path.join(self.temp_dir, "decompiled")
-        self.output_apk = output_dir or os.path.join(self.temp_dir, "patched.apk")
+        self.log = log_callback
 
-    def patch_manifest(self, modifier_func):
-        """Nhận một hàm sửa nội dung AndroidManifest.xml, áp dụng rồi build lại."""
-        # Giải nén nhanh chỉ main classes
-        decompile_apk(self.apk_path, self.decompiled_dir, no_main_classes=True, jobs=2)
-        manifest_path = os.path.join(self.decompiled_dir, "AndroidManifest.xml")
-        with open(manifest_path, 'r', encoding='utf-8') as f:
-            manifest = f.read()
-        modified = modifier_func(manifest)
-        with open(manifest_path, 'w', encoding='utf-8') as f:
-            f.write(modified)
-        # Build lại, bổ sung file từ APK gốc
-        recompile_apk(self.decompiled_dir, self.output_apk, no_main_classes=True, original_apk=self.apk_path)
-        signed = sign_apk(self.output_apk)
-        return signed
+    def patch_zip_entry(self, entry_name: str, pattern: str,
+                        replacement: str, output_apk: str | None = None) -> str | None:
+        """Thay thế pattern trong 1 file entry của APK."""
+        if output_apk is None:
+            output_apk = self.apk_path.replace(".apk", "_patched.apk")
 
-    def patch_smali_files(self, target_files, search_replace_dict):
-        """
-        Chỉ giải nén các file smali cần thiết (theo đường dẫn tương đối), sửa và build.
-        search_replace_dict: {pattern: replacement}
-        """
-        # Giải nén toàn bộ vẫn cần cho smali (có thể tối ưu bằng cách chỉ extract các file đó từ ZIP)
-        # Nhưng để đơn giản, ta dùng apktool với --only-main-classes cũng giúp giảm thời gian.
-        decompile_apk(self.apk_path, self.decompiled_dir, no_main_classes=True, jobs=4)
-        for target in target_files:
-            full_path = os.path.join(self.decompiled_dir, target)
-            if os.path.exists(full_path):
-                with open(full_path, 'r', encoding='utf-8', errors='ignore') as f:
-                    content = f.read()
-                for pattern, replacement in search_replace_dict.items():
-                    content = content.replace(pattern, replacement)
-                with open(full_path, 'w', encoding='utf-8') as f:
-                    f.write(content)
-        recompile_apk(self.decompiled_dir, self.output_apk, no_main_classes=True, original_apk=self.apk_path)
-        return sign_apk(self.output_apk)
+        tmp = tempfile.mkdtemp(prefix="fast_")
+        try:
+            with zipfile.ZipFile(self.apk_path, "r") as zin:
+                with zipfile.ZipFile(output_apk, "w", zipfile.ZIP_DEFLATED) as zout:
+                    for item in zin.infolist():
+                        data = zin.read(item.filename)
+                        if item.filename == entry_name:
+                            try:
+                                text = data.decode("utf-8", errors="ignore")
+                                text = re.sub(pattern, replacement, text)
+                                data = text.encode("utf-8")
+                            except Exception as e:
+                                logger.warning("Patch entry failed: %s", e)
+                        zout.writestr(item, data)
+            return output_apk
+        except (zipfile.BadZipFile, OSError) as e:
+            self.log(f"[!] FastAPKPatcher failed: {e}")
+            return None
+        finally:
+            import shutil
+            shutil.rmtree(tmp, ignore_errors=True)
 
-    def cleanup(self):
-        shutil.rmtree(self.temp_dir, ignore_errors=True)
+    def patch(self) -> int:
+        """Interface tương thích — trả về 0 vì cần tham số cụ thể."""
+        return 0

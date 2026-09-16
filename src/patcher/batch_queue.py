@@ -1,44 +1,58 @@
-import os
+"""Hàng đợi xử lý APK hàng loạt — chạy tuần tự nền."""
+from __future__ import annotations
+
+import logging
 import threading
-import time
 from queue import Queue
 
+logger = logging.getLogger(__name__)
+
+
 class BatchQueue:
-    """
-    Hàng đợi xử lý nhiều APK tuần tự.
-    """
     def __init__(self, pipeline_callback, log_callback=print):
-        self.queue = Queue()
-        self.pipeline_callback = pipeline_callback  # Hàm (apk_path, mode) -> None
+        self.cb = pipeline_callback
         self.log = log_callback
-        self.stop_event = threading.Event()
-        self.current_apk = None
-        self.progress_callback = None  # (current, total, apk_name)
+        self.queue: Queue = Queue()
+        self._stop = threading.Event()
+        self._thread: threading.Thread | None = None
+        self.progress_cb = None
 
-    def add(self, apk_path, mode='all'):
+    def add(self, apk_path: str, mode: str = "all") -> None:
         self.queue.put((apk_path, mode))
-        self.log(f"[+] [BatchQueue] Đã thêm vào hàng đợi: {os.path.basename(apk_path)}")
+        self.log(f"[+] [Batch] Queued: {apk_path}")
 
-    def start(self):
-        threading.Thread(target=self._process_queue, daemon=True).start()
-        self.log("[*] [BatchQueue] Bắt đầu xử lý hàng đợi...")
+    def start(self) -> None:
+        if self._thread and self._thread.is_alive():
+            return
+        self._stop.clear()
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
 
-    def _process_queue(self):
+    def _run(self) -> None:
         total = self.queue.qsize()
-        processed = 0
-        while not self.stop_event.is_set() and not self.queue.empty():
-            apk_path, mode = self.queue.get()
-            self.current_apk = apk_path
-            self.log(f"[*] [BatchQueue] Đang xử lý ({processed + 1}/{total}): {os.path.basename(apk_path)}")
-            if self.progress_callback:
-                self.progress_callback(processed, total, os.path.basename(apk_path))
+        done = 0
+        while not self._stop.is_set():
             try:
-                self.pipeline_callback(apk_path, mode)
+                apk, mode = self.queue.get(timeout=1)
+            except Exception:
+                if self.queue.empty():
+                    break
+                continue
+            self.log(f"[*] [Batch] Processing {done + 1}/{total}: {apk}")
+            if self.progress_cb:
+                try:
+                    self.progress_cb(done, total, apk)
+                except Exception:
+                    pass
+            try:
+                self.cb(apk, mode)
             except Exception as e:
-                self.log(f"[!] [BatchQueue] Lỗi xử lý {os.path.basename(apk_path)}: {e}")
-            processed += 1
+                logger.warning("Batch item failed %s: %s", apk, e)
+            done += 1
             self.queue.task_done()
-        self.log("[*] [BatchQueue] Hoàn thành tất cả!")
+        self.log("[*] [Batch] Queue finished")
 
-    def stop(self):
-        self.stop_event.set()
+    def stop(self) -> None:
+        self._stop.set()
+        if self._thread:
+            self._thread.join(timeout=2)

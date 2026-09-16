@@ -1,63 +1,50 @@
-from PyQt6.QtWidgets import QDialog, QVBoxLayout, QRadioButton, QPushButton, QLabel, QButtonGroup, QHBoxLayout, QGroupBox
+"""Dialog chọn chế độ IAP emulation."""
+from __future__ import annotations
+
+from PyQt6.QtWidgets import (
+    QDialog, QVBoxLayout, QRadioButton, QPushButton,
+    QButtonGroup, QHBoxLayout, QLabel,
+)
+
 
 class IAPModeDialog(QDialog):
+    OPTIONS = [
+        ("iap_dex", "Reassembly Dex — Im lặng & Tự động"),
+        ("iap_proxy", "Proxy Server — cần ADB + PC proxy"),
+        ("aidl_proxy", "AIDL Proxy — nhúng service vào APK"),
+    ]
+
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("InApp Purchase Emulation Mode")
-        self.setMinimumSize(500, 350)
-        self.selected_mode = 'dex'
-        self.initUI()
+        self.setWindowTitle("IAP Emulation Mode")
+        self.setMinimumSize(450, 300)
+        self._selected = "iap_dex"
+        self._init_ui()
 
-    def initUI(self):
-        layout = QVBoxLayout()
-        layout.setSpacing(12)
-        layout.addWidget(QLabel("<b style='color:#58a6ff;'>Chọn phương pháp giả lập InApp Purchase:</b>"))
-        options_group = QGroupBox("Chế độ giả lập:")
-        options_layout = QVBoxLayout()
-        self.mode_group = QButtonGroup(self)
+    def _init_ui(self) -> None:
+        layout = QVBoxLayout(self)
+        layout.addWidget(QLabel("<b>Chọn phương pháp IAP:</b>"))
 
-        self.radio_dex = QRadioButton("Tái cấu trúc Dex (Im lặng & Tự động) - Khuyên dùng")
-        self.radio_dex.setChecked(True)
-        self.mode_group.addButton(self.radio_dex)
-        options_layout.addWidget(self.radio_dex)
-        options_layout.addWidget(QLabel("    ↳ Vô hiệu hóa các hàm launchBillingFlow/getBuyIntent..."))
+        self._group = QButtonGroup(self)
+        for key, label in self.OPTIONS:
+            rb = QRadioButton(label)
+            rb.setChecked(key == self._selected)
+            rb.toggled.connect(lambda on, k=key: self._select(k) if on else None)
+            self._group.addButton(rb)
+            layout.addWidget(rb)
 
-        self.radio_proxy = QRadioButton("Máy chủ Proxy (Cần PC chạy proxy server)")
-        self.mode_group.addButton(self.radio_proxy)
-        options_layout.addWidget(self.radio_proxy)
-        options_layout.addWidget(QLabel("    ↳ Chuyển hướng yêu cầu billing đến proxy server trên PC..."))
+        btns = QHBoxLayout()
+        ok = QPushButton("Tiếp tục")
+        ok.clicked.connect(self.accept)
+        cancel = QPushButton("Hủy")
+        cancel.clicked.connect(self.reject)
+        btns.addStretch()
+        btns.addWidget(cancel)
+        btns.addWidget(ok)
+        layout.addLayout(btns)
 
-        self.radio_support = QRadioButton("Hỗ trợ bản vá cho mô phỏng LVL và Inapp")
-        self.mode_group.addButton(self.radio_support)
-        options_layout.addWidget(self.radio_support)
-        options_layout.addWidget(QLabel("    ↳ Chế độ đầy đủ, chuyển hướng mọi yêu cầu..."))
+    def _select(self, key: str) -> None:
+        self._selected = key
 
-        self.radio_update = QRadioButton("Cập nhật bản vá trong ứng dụng đã vá")
-        self.mode_group.addButton(self.radio_update)
-        options_layout.addWidget(self.radio_update)
-        options_layout.addWidget(QLabel("    ↳ Dành cho ứng dụng đã được patch..."))
-
-        options_group.setLayout(options_layout)
-        layout.addWidget(options_group)
-
-        note = QLabel("<i>💡 Lưu ý: Để có kết quả tốt nhất, bạn nên sử dụng bản vá 'Signature Verification status always True'...</i>")
-        note.setStyleSheet("color: #d29922; font-size: 11px;")
-        layout.addWidget(note)
-
-        btn_layout = QHBoxLayout()
-        btn_ok = QPushButton("Tiếp tục")
-        btn_ok.clicked.connect(self.accept)
-        btn_ok.setStyleSheet("background-color: #238636; color: white; font-weight: bold;")
-        btn_cancel = QPushButton("Hủy")
-        btn_cancel.clicked.connect(self.reject)
-        btn_layout.addStretch()
-        btn_layout.addWidget(btn_cancel)
-        btn_layout.addWidget(btn_ok)
-        layout.addLayout(btn_layout)
-        self.setLayout(layout)
-
-    def get_mode(self):
-        if self.radio_dex.isChecked(): return 'iap_dex'
-        elif self.radio_proxy.isChecked(): return 'iap_proxy'
-        elif self.radio_support.isChecked(): return 'iap:support_lvl_inapp'
-        else: return 'iap_update'
+    def get_mode(self) -> str:
+        return self._selected

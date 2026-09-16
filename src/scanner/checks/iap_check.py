@@ -1,61 +1,76 @@
+"""IAP detection — BILLING permission + BillingClient class."""
+from __future__ import annotations
+
+import logging
+
 from androguard.core.dex import DEX
 
-def check_iap(apk, get_all_dex_bytes, findings, available_patches):
-    permissions = apk.get_permissions()
-    if 'com.android.vending.BILLING' in permissions:
+logger = logging.getLogger(__name__)
+
+
+def check_iap(apk, get_all_dex_bytes, findings, available_patches) -> None:
+    # Cách 1: BILLING permission
+    try:
+        perms = apk.get_permissions()
+    except Exception:
+        perms = []
+
+    if "com.android.vending.BILLING" in perms:
         findings.append({
-            'type': 'iap', 'color': 'green',
-            'title': 'InApp Purchases Available',
-            'description': 'Manifest requests BILLING permission',
-            'details': ['com.android.vending.BILLING permission found'],
-            'action': 'iap_emulation'
+            "type": "iap",
+            "color": "green",
+            "title": "InApp Purchases Available",
+            "description": "Manifest requests BILLING permission",
+            "details": ["com.android.vending.BILLING permission found"],
+            "action": "iap_emulation",
         })
-        if 'iap' not in available_patches:
-            available_patches.append('iap')
+        if "iap" not in available_patches:
+            available_patches.append("iap")
         return
 
-    dex_list = get_all_dex_bytes()
-    for dex_name, dex_bytes in dex_list:
+    # Cách 2: Scan DEX
+    for dex_name, dex_bytes in get_all_dex_bytes():
         try:
             dex = DEX(dex_bytes)
+        except Exception:
+            continue
+
+        try:
             for cls in dex.get_classes():
-                class_name = cls.get_name()
-                if 'com/android/billingclient/api/BillingClient' in class_name:
+                cname = cls.get_name()
+                if "com/android/billingclient/api/BillingClient" in cname:
                     findings.append({
-                        'type': 'iap', 'color': 'green',
-                        'title': 'InApp Purchases Available',
-                        'description': 'BillingClient library found',
-                        'details': [class_name], 'action': 'iap_emulation'
+                        "type": "iap",
+                        "color": "green",
+                        "title": "InApp Purchases Available",
+                        "description": "BillingClient library found",
+                        "details": [cname],
+                        "action": "iap_emulation",
                     })
-                    if 'iap' not in available_patches: available_patches.append('iap')
+                    if "iap" not in available_patches:
+                        available_patches.append("iap")
                     return
-                if 'IInAppBillingService' in class_name:
+                if "IInAppBillingService" in cname:
                     findings.append({
-                        'type': 'iap', 'color': 'green',
-                        'title': 'InApp Purchases Available',
-                        'description': 'IInAppBillingService interface detected',
-                        'details': [class_name], 'action': 'iap_emulation'
+                        "type": "iap",
+                        "color": "green",
+                        "title": "InApp Purchases Available",
+                        "description": "IInAppBillingService detected",
+                        "details": [cname],
+                        "action": "iap_emulation",
                     })
-                    if 'iap' not in available_patches: available_patches.append('iap')
+                    if "iap" not in available_patches:
+                        available_patches.append("iap")
                     return
-            for cls in dex.get_classes():
-                for method in cls.get_methods():
-                    if method.get_name() in ['launchBillingFlow', 'queryPurchases', 'querySkuDetails']:
-                        findings.append({
-                            'type': 'iap', 'color': 'green',
-                            'title': 'InApp Purchases Available',
-                            'description': f'Method {method.get_name()} found',
-                            'details': [f'Class: {cls.get_name()}'], 'action': 'iap_emulation'
-                        })
-                        if 'iap' not in available_patches: available_patches.append('iap')
-                        return
         except Exception as e:
-            print(f"[!] [AppDeepAnalyzer] Lỗi phân tích DEX {dex_name}: {e}")
+            logger.debug("DEX scan failed %s: %s", dex_name, e)
             continue
 
     findings.append({
-        'type': 'no_iap', 'color': None,
-        'title': 'InApp Purchases', 'description': 'Not detected',
-        'details': ['No billing permission, BillingClient, IInAppBillingService or known methods found'],
-        'action': None
+        "type": "no_iap",
+        "color": None,
+        "title": "InApp Purchases",
+        "description": "Not detected",
+        "details": ["No billing found"],
+        "action": None,
     })

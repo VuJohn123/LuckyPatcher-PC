@@ -1,144 +1,141 @@
-# src/ui/menu_of_patches_tree.py
+"""
+Menu of Patches dạng cây — mô phỏng Lucky Patcher.
+Mỗi mục là 1 hành động; double-click để kích hoạt.
+"""
+from __future__ import annotations
+
 from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QPushButton, QLabel, QTreeWidget, QTreeWidgetItem,
-    QHBoxLayout, QMessageBox
+    QDialog, QVBoxLayout, QTreeWidget, QTreeWidgetItem,
+    QLabel, QPushButton, QHBoxLayout,
 )
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QFont
 
-class MenuOfPatchesTreeDialog(QDialog):
-    """Menu dạng cây mô phỏng Lucky Patcher."""
-    action_requested = pyqtSignal(str, str)  # category, action
 
-    def __init__(self, app_name, package, colors, findings, parent=None):
+class MenuOfPatchesTreeDialog(QDialog):
+    action_requested = pyqtSignal(str, str)  # (category, action)
+
+    # category: "direct" | "open_rebuild"
+    def __init__(self, app_name: str, package: str,
+                 colors: list[str] | None = None,
+                 findings: list[dict] | None = None,
+                 parent=None):
         super().__init__(parent)
-        self.setWindowTitle(f"Menu of Patches - {app_name}")
-        self.resize(520, 620)
         self.app_name = app_name
         self.package = package
-        self.colors = colors
-        self.findings = findings
-        self.initUI()
+        self.colors = colors or []
+        self.findings = findings or []
 
-    def initUI(self):
-        layout = QVBoxLayout()
-        layout.setSpacing(10)
+        self.setWindowTitle(f"Menu of Patches (Tree) - {app_name}")
+        self.setMinimumSize(560, 680)
+        self._init_ui()
 
-        # Header
-        title = QLabel(f"<b style='color:#58a6ff;'>Menu các bản vá cho {self.app_name}</b>")
-        title.setFont(QFont("Segoe UI", 12, QFont.Weight.Bold))
+    def _init_ui(self) -> None:
+        layout = QVBoxLayout(self)
+
+        title = QLabel(f"<b style='font-size:14px;'>{self.app_name}</b>")
         layout.addWidget(title)
-        layout.addWidget(QLabel(f"Package: {self.package}"))
 
-        # Color indicators
+        pkg = QLabel(f"Package: {self.package}")
+        pkg.setStyleSheet("color:#8b949e; font-size:11px;")
+        pkg.setWordWrap(True)
+        layout.addWidget(pkg)
+
         color_names = {
-            'green': '🟢 Có thể tách khỏi Google Play',
-            'blue': '🔵 Chứa Google Ads',
-            'yellow': '🟡 Có custom patch',
-            'purple': '🟣 Ứng dụng hệ thống (boot)',
-            'orange': '🟠 Ứng dụng hệ thống',
-            'red': '🔴 Không thể patch'
+            "green": "🟢 License",
+            "blue": "🔵 Ads",
+            "yellow": "🟡 Custom patch",
+            "purple": "🟣 System (boot)",
+            "orange": "🟠 System",
+            "red": "🔴 Protected",
         }
-        for c in self.colors:
-            if c in color_names:
-                layout.addWidget(QLabel(color_names[c]))
+        if self.colors:
+            badges = " | ".join(color_names.get(c, c) for c in self.colors)
+            badge = QLabel(badges)
+            badge.setStyleSheet("color:#58a6ff; font-size:11px;")
+            layout.addWidget(badge)
 
-        # Tree widget
         self.tree = QTreeWidget()
         self.tree.setHeaderHidden(True)
         self.tree.setIndentation(20)
         self.tree.setAnimated(True)
-        self.tree.setExpandsOnDoubleClick(True)
-        self.tree.itemDoubleClicked.connect(self.on_item_double_clicked)
-        self.build_tree()
+        self.tree.setExpandsOnDoubleClick(False)
+        self.tree.itemDoubleClicked.connect(self._on_double_click)
+        self._build_tree()
         layout.addWidget(self.tree)
 
-        # Buttons
-        btn_layout = QHBoxLayout()
-        btn_close = QPushButton("Đóng")
-        btn_close.clicked.connect(self.accept)
-        btn_layout.addStretch()
-        btn_layout.addWidget(btn_close)
-        layout.addLayout(btn_layout)
+        btns = QHBoxLayout()
+        btns.addStretch()
+        close = QPushButton("Đóng")
+        close.clicked.connect(self.accept)
+        btns.addWidget(close)
+        layout.addLayout(btns)
 
-        self.setLayout(layout)
-
-    def build_tree(self):
-        """Xây dựng cây menu."""
-        # Root: Menu of Patches
+    def _build_tree(self) -> None:
         root = QTreeWidgetItem(self.tree, ["📋 Menu of Patches"])
         root.setExpanded(True)
 
-        # 1. Create Modified APK File
-        modified_apk = QTreeWidgetItem(root, ["🔧 Create Modified APK File"])
-        modified_apk.setToolTip(0, "Tạo file APK đã chỉnh sửa với các bản vá")
+        # ============ Create Modified APK ============
+        rebuild_root = QTreeWidgetItem(root, ["🔨 Create Modified APK File"])
+        rebuild_root.setExpanded(True)
 
-        # Sub-menu cho Create Modified APK
-        self.add_item(modified_apk, "📦 Apk với Multi-patch", "multi_patch",
-                      "Kết hợp nhiều bản vá trong một lần rebuild")
+        multi = QTreeWidgetItem(rebuild_root, ["📦 Multi-patch (chọn nhiều)"])
+        multi.setData(0, Qt.ItemDataRole.UserRole, ("open_rebuild", "multi_patch"))
 
-        license_menu = QTreeWidgetItem(modified_apk, ["🔑 APK không có Giấy phép Xác minh"])
-        self.add_item(license_menu, "Chế độ tự động (dex)", "license_auto_dex", "Số lượng bản vá tối thiểu")
-        self.add_item(license_menu, "Chế độ tự động", "license_auto", "Phù hợp hầu hết ứng dụng")
-        self.add_item(license_menu, "Chế độ tự động (Đảo ngược)", "license_reverse_auto", "Khác biệt so với Auto mode")
-        self.add_item(license_menu, "Các bản vá khác (Chế độ đặc biệt)", "license_extreme", "Có thể gây mất ổn định")
-        self.add_item(license_menu, "Chế độ tự động (SamsungApps)", "license_samsung", "Cho ứng dụng từ Samsung")
+        # License submenu
+        lic_parent = QTreeWidgetItem(rebuild_root, ["🔑 APK không có Giấy phép Xác minh"])
+        self._add_leaf(lic_parent, "Chế độ tự động", "open_rebuild", "license:auto")
+        self._add_leaf(lic_parent, "Chế độ tự động (dex)", "open_rebuild", "license:dex")
+        self._add_leaf(lic_parent, "Chế độ đảo ngược", "open_rebuild", "license:reverse")
+        self._add_leaf(lic_parent, "Chế độ cực đoan", "open_rebuild", "license:extreme")
+        self._add_leaf(lic_parent, "Amazon Market", "open_rebuild", "license:amazon")
+        self._add_leaf(lic_parent, "Samsung Apps", "open_rebuild", "license:samsung")
 
-        ads_menu = QTreeWidgetItem(modified_apk, ["🚫 APK không có Google Ads"])
-        self.add_item(ads_menu, "Xoá liên kết khỏi APK", "ads_remove_links", "Dùng AdsBlockList")
-        self.add_item(ads_menu, "Làm hỏng phần nhận quảng cáo", "ads_offline", "Phá vỡ cơ chế nhận Ads")
-        self.add_item(ads_menu, "Tạo ngoại tuyến đầy đủ", "ads_full_offline", "Làm ứng dụng ngoại tuyến")
+        # Ads submenu
+        ads_parent = QTreeWidgetItem(rebuild_root, ["🚫 APK không có Google Ads"])
+        self._add_leaf(ads_parent, "Xóa activity quảng cáo", "open_rebuild", "ads:remove")
+        self._add_leaf(ads_parent, "Offline mode", "open_rebuild", "ads:offline")
+        self._add_leaf(ads_parent, "Xóa URL quảng cáo", "open_rebuild", "ads:links")
+        self._add_leaf(ads_parent, "Full offline", "open_rebuild", "ads:full_offline")
 
-        iap_menu = QTreeWidgetItem(modified_apk, ["💳 APK đã xây dựng lại cho giả lập InApp và LVL"])
-        self.add_item(iap_menu, "Tái cấu trúc Dex", "iap_dex", "Không cần proxy server")
-        self.add_item(iap_menu, "Máy Chủ Proxy", "iap_proxy", "Dùng PC làm fake billing server")
+        # IAP submenu
+        iap_parent = QTreeWidgetItem(rebuild_root, ["💳 Giả lập InApp & LVL"])
+        self._add_leaf(iap_parent, "Reassembly Dex", "open_rebuild", "iap:dex")
+        self._add_leaf(iap_parent, "Proxy Server", "open_rebuild", "iap:proxy")
+        self._add_leaf(iap_parent, "AIDL Proxy", "open_rebuild", "aidl_proxy")
 
-        self.add_item(modified_apk, "⚙️ APK với quyền và hoạt động đã được thay đổi", "change_perms",
-                      "Sửa permissions và components")
-        self.add_item(modified_apk, "✍️ Ký lại với phép kiểm tra chữ ký", "resign",
-                      "Ký lại APK với chữ ký mới")
+        # Others
+        self._add_leaf(rebuild_root, "⚙️ Đổi quyền",
+                       "open_rebuild", "change_perms")
+        self._add_leaf(rebuild_root, "✍️ Ký lại APK",
+                       "open_rebuild", "resign")
 
-        # 2. Remove License Verification
-        self.add_item(root, "🔑 Remove License Verification", "remove_license",
-                      "Vô hiệu hóa kiểm tra giấy phép Google")
+        # ============ Direct actions ============
+        self._add_leaf(root, "🔑 Remove License Verification",
+                       "direct", "remove_license")
+        self._add_leaf(root, "🚫 Remove Google Ads",
+                       "direct", "remove_ads")
+        self._add_leaf(root, "📄 Apply Custom Patch",
+                       "direct", "apply_custom_patch")
+        self._add_leaf(root, "⚙️ Change Permissions",
+                       "direct", "change_perms")
+        self._add_leaf(root, "💾 Backup App",
+                       "direct", "backup_app")
+        self._add_leaf(root, "▶ Launch App",
+                       "direct", "launch")
+        self._add_leaf(root, "ℹ App Info",
+                       "direct", "info")
 
-        # 3. Remove Google Ads
-        self.add_item(root, "🚫 Remove Google Ads", "remove_ads",
-                      "Loại bỏ quảng cáo Google")
-
-        # 4. Custom Patch
-        self.add_item(root, "📄 Custom Patch", "apply_custom_patch",
-                      "Áp dụng bản vá tùy chỉnh (.txt/.lpzip)")
-
-        # 5. Change Permissions
-        self.add_item(root, "⚙️ Change Permissions", "change_perms",
-                      "Thay đổi quyền ứng dụng")
-
-        # 6. Backup App
-        self.add_item(root, "💾 Backup App", "backup_app",
-                      "Sao lưu ứng dụng và dữ liệu")
-
-    def add_item(self, parent, text, action, tooltip=""):
-        """Thêm một mục vào cây."""
+    def _add_leaf(self, parent: QTreeWidgetItem, text: str,
+                  category: str, action: str) -> QTreeWidgetItem:
         item = QTreeWidgetItem(parent, [text])
-        item.setData(0, Qt.ItemDataRole.UserRole, action)
-        if tooltip:
-            item.setToolTip(0, tooltip)
-        # Bold cho các mục chính
-        if parent.text(0).startswith("📋"):
-            item.setFont(0, QFont("Segoe UI", 10, QFont.Weight.Bold))
+        item.setData(0, Qt.ItemDataRole.UserRole, (category, action))
         return item
 
-    def on_item_double_clicked(self, item, column):
-        action = item.data(0, Qt.ItemDataRole.UserRole)
-        if action:
-            # Nếu là một trong các chế độ rebuild, mở dialog rebuild
-            if action in ['multi_patch', 'license_auto_dex', 'license_auto', 
-                          'license_reverse_auto', 'license_extreme', 'license_samsung',
-                          'ads_remove_links', 'ads_offline', 'ads_full_offline',
-                          'iap_dex', 'iap_proxy', 'change_perms', 'resign']:
-                self.action_requested.emit('open_rebuild', action)
-            else:
-                # Gọi trực tiếp pipeline
-                self.action_requested.emit('direct_action', action)
-            self.accept()
+    def _on_double_click(self, item: QTreeWidgetItem, _col: int) -> None:
+        data = item.data(0, Qt.ItemDataRole.UserRole)
+        if not data:
+            return
+        category, action = data
+        self.action_requested.emit(category, action)
+        self.accept()

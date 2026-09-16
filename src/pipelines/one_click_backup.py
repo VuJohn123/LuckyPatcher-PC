@@ -1,19 +1,35 @@
-import shutil
+"""Tự động sao lưu APK khi phát hiện event apk.detected."""
+from __future__ import annotations
+
+import logging
 import os
+import shutil
+
 from core.event_bus import event_bus
 
-class OneClickBackupPipeline:
-    """
-    Tự động sao lưu APK gốc khi phát hiện sự kiện 'apk.ready'.
-    """
-    def __init__(self, backup_dir=None):
-        self.backup_dir = backup_dir or os.path.join(os.path.expanduser("~"), "LP_Backups")
-        os.makedirs(self.backup_dir, exist_ok=True)
-        event_bus.subscribe('apk.detected', self.on_apk_detected)
+logger = logging.getLogger(__name__)
 
-    def on_apk_detected(self, data):
-        apk_path = data['path']
-        print(f"[OneClickBackup] Đang sao lưu: {apk_path}")
-        dest = os.path.join(self.backup_dir, os.path.basename(apk_path))
-        shutil.copy2(apk_path, dest)
-        print(f"[OneClickBackup] Đã sao lưu vào: {dest}")
+
+class OneClickBackupPipeline:
+    def __init__(self, backup_dir: str | None = None, log_callback=print):
+        if backup_dir is None:
+            backup_dir = os.path.join(
+                os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                "workspace", "backups",
+            )
+        self.backup_dir = backup_dir
+        os.makedirs(self.backup_dir, exist_ok=True)
+        self.log = log_callback
+        event_bus.subscribe("apk.detected", self._on_apk)
+
+    def _on_apk(self, data: dict) -> None:
+        apk_path = (data or {}).get("path")
+        if not apk_path or not os.path.exists(apk_path):
+            return
+        try:
+            dest = os.path.join(self.backup_dir, os.path.basename(apk_path))
+            if not os.path.exists(dest):
+                shutil.copy2(apk_path, dest)
+                self.log(f"[✔] [Backup] {dest}")
+        except OSError as e:
+            logger.warning("Backup failed: %s", e)

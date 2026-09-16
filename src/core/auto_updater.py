@@ -1,86 +1,90 @@
-import os
-import time
-import json
-from pathlib import Path
+"""
+Auto-update watcher — theo dõi thư mục, tự động patch APK mới.
+Chỉ áp dụng khi có lịch sử patch khớp package.
+"""
+from __future__ import annotations
+
+import logging
 import threading
+import time
+from pathlib import Path
+
+from core.patch_history import PatchHistory
+
+logger = logging.getLogger(__name__)
+
 
 class AutoUpdater:
-    """
-    Tự động phát hiện APK mới trong thư mục Downloads,
-    so sánh với lịch sử patch và tự động áp dụng lại patch.
-    """
-    def __init__(self, watch_dir=None, history_dir=None, log_callback=print, pipeline_callback=None):
-        self.watch_dir = Path(watch_dir or os.path.join(os.path.expanduser("~"), "Downloads"))
-        self.history_dir = Path(history_dir or os.path.join(
-            os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'workspace', 'history'
-        ))
-        self.patch_history_file = self.history_dir / 'patch_history.json'
+    def __init__(self, watch_dir: str | None = None,
+                 log_callback=print, pipeline_callback=None,
+                 poll_interval: float = 5.0):
+        self.watch_dir = Path(
+            watch_dir or (Path.home() / "Downloads")
+        )
         self.log = log_callback
-        self.pipeline_callback = pipeline_callback  # Hàm gọi run_pipeline
-        self.known_files = set()
-        self.stop_event = threading.Event()
+        self.pipeline_cb = pipeline_callback
+        self.interval = poll_interval
 
-    def start(self, interval=10):
-        self.log(f"[*] [AutoUpdater] Đang theo dõi thư mục: {self.watch_dir}")
-        self.known_files = set(self.watch_dir.glob('*.apk'))
-        self.known_files.update(set(self.watch_dir.glob('*.xapk')))
-        self._run(interval)
+        self._known: set[str] = set()
+        self._stop = threading.Event()
+        self._thread: threading.Thread | None = None
 
-    def _run(self, interval):
-        while not self.stop_event.is_set():
-            current_files = set(self.watch_dir.glob('*.apk'))
-            current_files.update(set(self.watch_dir.glob('*.xapk')))
-            new_files = current_files - self.known_files
+    def start(self) -> None:
+        if self._thread and self._thread.is_alive():
+            return
+        self.watch_dir.mkdir(parents=True, exist_ok=True)
+        self._known = self._scan()
+        self._stop.clear()
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+        self.log(f"[*] [AutoUpdater] Watching {self.watch_dir}")
 
-            for apk_file in new_files:
-                self._process_new_apk(str(apk_file))
+    def stop(self) -> None:
+        self._stop.set()
+        if self._thread:
+            self._thread.join(timeout=2)
 
-            self.known_files = current_files
-            time.sleep(interval)
+    def _scan(self) -> set[str]:
+        out = set()
+        for ext in ("*.apk", "*.xapk"):
+            for p in self.watch_dir.glob(ext):
+                out.add(str(p))
+        return out
 
-    def _process_new_apk(self, apk_path):
-        self.log(f"[*] [AutoUpdater] Phát hiện file mới: {os.path.basename(apk_path)}")
+    def _run(self) -> None:
+        while not self._stop.is_set():
+            current = self._scan()
+            new_files = current - self._known
+            for path in new_files:
+                self._process(path)
+            self._known = current
+            self._stop.wait(self.interval)
 
-        # Xử lý .xapk
-        if apk_path.endswith('.xapk'):
-            from core.apk_downloader import APKDownloader
-            downloader = APKDownloader(log_callback=self.log)
-            apk_path = downloader.process_xapk(apk_path)
+    def _process(self, apk_path: str) -> None:
+        self.log(f"[*] [AutoUpdater] New: {Path(apk_path).name}")
+        if not self.pipeline_cb:
+            return
 
-        # Trích xuất package name
         try:
             from androguard.core.apk import APK
             apk = APK(apk_path)
-            package_name = apk.get_package()
+            package = apk.get_package()
         except Exception as e:
-            self.log(f"[!] [AutoUpdater] Không thể phân tích APK: {e}")
+            logger.warning("Không đọc được package: %s", e)
             return
 
-        # Tìm trong lịch sử
-        history = self._load_history()
-        patches = None
+        history = PatchHistory().get_history()
+        mode = None
         for record in history:
-            if record.get('apk', '').find(package_name) != -1:
-                patches = record.get('patches', [])
+            if record.get("success") and package in str(record.get("apk", "")):
+                mode = record.get("mode")
                 break
 
-        if not patches:
-            self.log(f"[!] [AutoUpdater] Không tìm thấy lịch sử patch cho {package_name}")
+        if not mode:
+            self.log(f"[i] Không có lịch sử cho {package}, bỏ qua")
             return
 
-        self.log(f"[*] [AutoUpdater] Đang áp dụng lại patch: {patches}")
-        if self.pipeline_callback:
-            mode = ','.join(patches) if isinstance(patches, list) else patches
-            self.pipeline_callback(apk_path, mode)
-
-    def _load_history(self):
-        if self.patch_history_file.exists():
-            try:
-                with open(self.patch_history_file, 'r', encoding='utf-8') as f:
-                    return json.load(f)
-            except:
-                return []
-        return []
-
-    def stop(self):
-        self.stop_event.set()
+        try:
+            self.pipeline_cb(apk_path, mode)
+        except Exception as e:
+            logger.warning("AutoUpdater pipeline failed: %s", e)

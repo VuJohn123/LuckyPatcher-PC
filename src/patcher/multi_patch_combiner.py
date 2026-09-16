@@ -1,53 +1,34 @@
-import os
-from patcher.ad_remover import AdRemover
-from patcher.license_patcher import LicensePatcher
-from patcher.license_extreme import LicenseExtremePatcher
-from patcher.iap_bypass import IAPBypass
-from patcher.ads_blocklist import AdsBlocklistPatcher
-from patcher.permission_changer import PermissionChanger
-from patcher.custom_patch import CustomPatchParser, CustomPatchApplier
-from patcher.aidl_proxy_patcher import AIDLProxyPatcher
-from patcher.signature_patcher import SignatureVerifyPatcher
+"""Kết hợp nhiều mode patch — orchestrate tuần tự."""
+from __future__ import annotations
 
-PATCHER_REGISTRY = {
-    'ads': (AdRemover, 'remove_activities'),
-    'license': (LicensePatcher, 'patch_license_check'),
-    'license_reverse': (LicenseExtremePatcher, 'patch_reverse_auto'),
-    'license_extreme': (LicenseExtremePatcher, 'patch_extreme'),
-    'license_amazon': (LicenseExtremePatcher, 'patch_amazon_market'),
-    'license_samsung': (LicenseExtremePatcher, 'patch_samsung_apps'),
-    'iap_dex': (IAPBypass, 'execute', {'mode': 'dex'}),
-    'iap_proxy': (IAPBypass, 'execute', {'mode': 'proxy'}),
-    'ads_break': (AdsBlocklistPatcher, 'make_ads_offline'),
-    'ads_offline': (AdsBlocklistPatcher, 'make_ads_offline'),
-    'ads_other': (AdsBlocklistPatcher, 'remove_ad_urls_from_smali'),
-    'ads_full_offline': (AdsBlocklistPatcher, 'make_ads_offline'),
-    'change_perms': (PermissionChanger, None),
-    'sig_disable': (SignatureVerifyPatcher, 'patch'),
-    'aidl_proxy': (AIDLProxyPatcher, 'patch'),
-}
+import logging
+
+from core.lazy_loader import get_patcher_class
+
+logger = logging.getLogger(__name__)
+
 
 class MultiPatchCombiner:
-    def __init__(self, decompiled_path):
+    def __init__(self, decompiled_path: str, log_callback=print, file_cache=None):
         self.decompiled_path = decompiled_path
+        self.log = log_callback
+        self.file_cache = file_cache
 
-    def apply_patches(self, modes, ad_activities=None):
-        total = 0
-        for m in modes:
-            if m not in PATCHER_REGISTRY:
-                print(f"[!] Unknown mode: {m}")
+    def apply_patches(self, modes: list[str]) -> dict:
+        result = {"success": [], "failed": []}
+        for mode in modes:
+            cls = get_patcher_class(mode)
+            if cls is None:
+                result["failed"].append(mode)
                 continue
-            cls, method, *extra = PATCHER_REGISTRY[m]
-            extra = extra[0] if extra else {}
             try:
-                instance = cls(self.decompiled_path)
-                if m == 'ads' and ad_activities:
-                    result = getattr(instance, method)(ad_activities)
-                elif isinstance(extra, dict) and 'mode' in extra:
-                    result = getattr(instance, method)()
-                else:
-                    result = getattr(instance, method)()
-                total += result if isinstance(result, int) else (1 if result else 0)
+                patcher = cls(self.decompiled_path,
+                              log_callback=self.log,
+                              file_cache=self.file_cache)
+                if hasattr(patcher, "patch"):
+                    patcher.patch()
+                result["success"].append(mode)
             except Exception as e:
-                print(f"[!] Error applying {m}: {e}")
-        return total
+                logger.warning("Mode %s failed: %s", mode, e)
+                result["failed"].append(mode)
+        return result

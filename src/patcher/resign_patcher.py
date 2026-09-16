@@ -1,61 +1,81 @@
+"""Resign APK — ký lại với testkey hoặc custom key."""
+from __future__ import annotations
+
+import logging
 import os
+import re
 import shutil
 import tempfile
-import zipfile
-from core.apk_utils import sign_apk, decompile_apk, recompile_apk
+
+from core.apk_utils import sign_apk
+from core.smali_utils import get_all_smali_files
+
+logger = logging.getLogger(__name__)
+
 
 class ResignPatcher:
-    def __init__(self, apk_path):
+    def __init__(self, apk_path: str, log_callback=print):
         self.apk_path = apk_path
-        self.temp_dir = tempfile.mkdtemp()
+        self.log = log_callback
 
-    def resign_with_testkey(self):
-        print("[*] [Resign] Signing with testkey...")
-        signed = sign_apk(self.apk_path)
-        return signed
+    def resign_with_testkey(self) -> str | None:
+        try:
+            return sign_apk(self.apk_path, key_type="testkey",
+                            log_callback=self.log)
+        except Exception as e:
+            self.log(f"[!] Resign failed: {e}")
+            return None
 
-    def resign_with_original_signature(self, original_apk):
-        """
-        CẢNH BÁO: Phương pháp này chỉ hoạt động nếu đã áp dụng bản vá hệ thống
-        'Signature Verification always True'. Không thể dùng để qua mặt Android OS.
-        """
-        print("[!] [Resign] WARNING: This method requires system-level signature verification bypass.")
-        print("[*] [Resign] Copying APK without resigning...")
-        dest = os.path.join(self.temp_dir, os.path.basename(self.apk_path))
-        shutil.copy2(self.apk_path, dest)
-        return dest
+    def change_package_name(self, new_package: str) -> str | None:
+        """Đổi package name + recompile + resign."""
+        from core.apk_utils import decompile_apk, recompile_apk
 
-    def change_package_name(self, new_package_name):
-        print(f"[*] [Resign] Changing package name to {new_package_name}...")
-        decompiled_dir = os.path.join(self.temp_dir, "decompiled")
-        decompile_apk(self.apk_path, decompiled_dir)
-        
-        manifest_path = os.path.join(decompiled_dir, "AndroidManifest.xml")
-        with open(manifest_path, 'r', encoding='utf-8') as f:
-            content = f.read()
-        
-        match = re.findall(r'package="([^"]+)"', content)
-        if not match:
-            raise ValueError("Cannot find package in manifest")
-        old_package = match[0]
-        content = content.replace(old_package, new_package_name)
-        
-        for root, dirs, files in os.walk(decompiled_dir):
-            for file in files:
-                if file.endswith('.smali'):
-                    path = os.path.join(root, file)
-                    with open(path, 'r', encoding='utf-8', errors='ignore') as f:
-                        smali = f.read()
-                    smali = smali.replace(old_package.replace('.', '/'), new_package_name.replace('.', '/'))
-                    with open(path, 'w', encoding='utf-8') as f:
-                        f.write(smali)
-        
-        with open(manifest_path, 'w', encoding='utf-8') as f:
-            f.write(content)
-        
-        output_apk = os.path.join(self.temp_dir, "renamed.apk")
-        recompile_apk(decompiled_dir, output_apk)
-        return output_apk
+        tmp = tempfile.mkdtemp(prefix="resign_")
+        decompiled = os.path.join(tmp, "decompiled")
+        try:
+            decompile_apk(self.apk_path, decompiled, force=True,
+                          log_callback=self.log)
 
-    def cleanup(self):
-        shutil.rmtree(self.temp_dir, ignore_errors=True)
+            manifest = os.path.join(decompiled, "AndroidManifest.xml")
+            with open(manifest, "r", encoding="utf-8") as f:
+                content = f.read()
+
+            match = re.search(r'package="([^"]+)"', content)
+            if not match:
+                return None
+            old = match.group(1)
+
+            content = content.replace(old, new_package)
+            with open(manifest, "w", encoding="utf-8") as f:
+                f.write(content)
+
+            old_path = old.replace(".", "/")
+            new_path = new_package.replace(".", "/")
+            for filepath in get_all_smali_files(decompiled):
+                try:
+                    with open(filepath, "r", encoding="utf-8",
+                              errors="ignore") as f:
+                        c = f.read()
+                    if old_path in c:
+                        c = c.replace(old_path, new_path)
+                        with open(filepath, "w", encoding="utf-8") as f:
+                            f.write(c)
+                except OSError:
+                    continue
+
+            out_apk = os.path.join(tmp, "renamed.apk")
+            recompile_apk(decompiled, out_apk, log_callback=self.log)
+            signed = sign_apk(out_apk, log_callback=self.log)
+
+            dest_dir = os.path.join(os.path.expanduser("~"), "Desktop")
+            dest = os.path.join(dest_dir, os.path.basename(signed))
+            shutil.copy2(signed, dest)
+            return dest
+        except Exception as e:
+            self.log(f"[!] Rename failed: {e}")
+            return None
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    def patch(self) -> int:
+        return 1 if self.resign_with_testkey() else 0

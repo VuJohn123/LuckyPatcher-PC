@@ -1,63 +1,87 @@
-import subprocess
+"""Quản lý emulator Android — start, install, launch."""
+from __future__ import annotations
+
+import logging
 import os
+import shutil
+import subprocess
 import time
 
+logger = logging.getLogger(__name__)
+
+
 class EmulatorManager:
-    """
-    Quản lý máy ảo Android (AVD) qua ADB.
-    Yêu cầu: Android SDK đã cài đặt và biến môi trường ANDROID_HOME được thiết lập.
-    """
-    def __init__(self, avd_name='LP_PC_Emulator', log_callback=print):
+    def __init__(self, avd_name: str = "LP_PC_Emulator", log_callback=print):
         self.avd_name = avd_name
         self.log = log_callback
-        self.adb = 'adb'
-        self.emulator_path = self._find_emulator()
+        self.adb = shutil.which("adb") or "adb"
+        self.emulator = self._find_emulator()
 
-    def _find_emulator(self):
-        """Tìm đường dẫn emulator.exe từ Android SDK."""
-        android_home = os.environ.get('ANDROID_HOME', os.path.expanduser('~/Android/Sdk'))
-        emulator = os.path.join(android_home, 'emulator', 'emulator.exe' if os.name == 'nt' else 'emulator')
-        if os.path.exists(emulator):
-            return emulator
-        # Thử tìm trong PATH
-        for path in os.environ.get('PATH', '').split(os.pathsep):
-            test = os.path.join(path, 'emulator.exe' if os.name == 'nt' else 'emulator')
-            if os.path.exists(test):
-                return test
+    def _find_emulator(self) -> str | None:
+        if shutil.which("emulator"):
+            return "emulator"
+        home = os.environ.get("ANDROID_HOME") or os.environ.get("ANDROID_SDK_ROOT")
+        if home:
+            exe = "emulator.exe" if os.name == "nt" else "emulator"
+            path = os.path.join(home, "emulator", exe)
+            if os.path.exists(path):
+                return path
         return None
 
-    def is_emulator_running(self):
-        """Kiểm tra xem máy ảo có đang chạy không."""
-        proc = subprocess.run([self.adb, 'devices'], capture_output=True, text=True)
-        return 'emulator' in proc.stdout
-
-    def start_emulator(self):
-        """Khởi động máy ảo (nếu chưa chạy)."""
-        if self.is_emulator_running():
-            self.log("[*] [Emulator] Already running.")
-            return True
-        if not self.emulator_path:
-            self.log("[!] [Emulator] Emulator not found. Please install Android SDK.")
+    def is_running(self) -> bool:
+        try:
+            proc = subprocess.run([self.adb, "devices"],
+                                  capture_output=True, text=True, timeout=5)
+            return "emulator" in proc.stdout
+        except subprocess.SubprocessError:
             return False
-        self.log(f"[*] [Emulator] Starting AVD: {self.avd_name}...")
-        cmd = [self.emulator_path, '-avd', self.avd_name, '-no-snapshot', '-no-boot-anim']
-        subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        time.sleep(15)
-        return self.is_emulator_running()
 
-    def install_apk(self, apk_path):
-        """Cài đặt APK vào máy ảo."""
-        if not self.is_emulator_running():
-            self.log("[!] [Emulator] Not running. Start it first.")
-            return False
-        proc = subprocess.run([self.adb, '-e', 'install', '-r', apk_path], capture_output=True, text=True)
-        if 'Success' in proc.stdout:
-            self.log("[+] [Emulator] APK installed.")
+    def start(self, timeout: int = 120) -> bool:
+        if self.is_running():
+            self.log("[i] Emulator đã chạy")
             return True
-        self.log(f"[!] [Emulator] Install failed: {proc.stderr}")
+        if not self.emulator:
+            self.log("[!] Không tìm thấy emulator binary")
+            return False
+
+        cmd = [self.emulator, "-avd", self.avd_name,
+               "-no-snapshot", "-no-boot-anim"]
+        try:
+            subprocess.Popen(cmd,
+                             stdout=subprocess.DEVNULL,
+                             stderr=subprocess.DEVNULL)
+        except OSError as e:
+            self.log(f"[!] Không khởi động được: {e}")
+            return False
+
+        start = time.monotonic()
+        while time.monotonic() - start < timeout:
+            if self.is_running():
+                return True
+            time.sleep(3)
         return False
 
-    def launch_app(self, package_name):
-        """Khởi chạy ứng dụng trên máy ảo."""
-        subprocess.run([self.adb, '-e', 'shell', 'monkey', '-p', package_name, '-c', 'android.intent.category.LAUNCHER', '1'],
-                       capture_output=True)
+    def install_apk(self, apk_path: str) -> bool:
+        if not self.is_running():
+            self.log("[!] Emulator chưa chạy")
+            return False
+        try:
+            proc = subprocess.run(
+                [self.adb, "-e", "install", "-r", apk_path],
+                capture_output=True, text=True, timeout=120,
+            )
+            return "Success" in (proc.stdout or "")
+        except subprocess.SubprocessError:
+            return False
+
+    def launch(self, package: str) -> bool:
+        try:
+            subprocess.run(
+                [self.adb, "-e", "shell", "monkey",
+                 "-p", package, "-c",
+                 "android.intent.category.LAUNCHER", "1"],
+                capture_output=True, timeout=15,
+            )
+            return True
+        except subprocess.SubprocessError:
+            return False

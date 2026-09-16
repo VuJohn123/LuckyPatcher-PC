@@ -1,56 +1,57 @@
-from PyQt6.QtWidgets import QDialog, QVBoxLayout, QRadioButton, QPushButton, QLabel, QButtonGroup, QHBoxLayout, QGroupBox
+"""Dialog chọn chế độ License patch."""
+from __future__ import annotations
+
+from PyQt6.QtWidgets import (
+    QDialog, QVBoxLayout, QRadioButton, QPushButton,
+    QButtonGroup, QHBoxLayout, QLabel,
+)
 from PyQt6.QtCore import pyqtSignal
+
 
 class LicensePatchDialog(QDialog):
     patch_requested = pyqtSignal(str)
 
-    def __init__(self, app_name, parent=None):
+    OPTIONS = [
+        ("auto", "Auto — Vá allow/dontAllow"),
+        ("dex", "Auto Dex — phiên bản tối giản"),
+        ("extreme", "Extreme — bytecode pattern"),
+        ("reverse", "Reverse Auto — ServerManagedPolicy"),
+        ("amazon", "Amazon Market"),
+        ("samsung", "Samsung Apps"),
+    ]
+
+    def __init__(self, app_name: str = "", parent=None):
         super().__init__(parent)
-        self.setWindowTitle(f"Remove License Verification - {app_name}")
-        self.setMinimumSize(500, 450)
-        self.selected_mode = "auto"
-        self.initUI()
+        self.setWindowTitle(f"Remove License - {app_name}")
+        self.setMinimumSize(450, 380)
+        self._selected = "auto"
+        self._init_ui()
 
-    def initUI(self):
-        layout = QVBoxLayout()
-        layout.addWidget(QLabel("<b style='color:#58a6ff;'>Chọn chế độ loại bỏ License:</b>"))
-        options_group = QGroupBox("Các chế độ xác minh giấy phép:")
-        options_layout = QVBoxLayout()
-        self.mode_group = QButtonGroup(self)
+    def _init_ui(self) -> None:
+        layout = QVBoxLayout(self)
+        layout.addWidget(QLabel("<b>Chọn chế độ License:</b>"))
 
-        options = [
-            ("auto_dex", "Chế độ tự động (dex)", "Số lượng bản vá tối thiểu"),
-            ("auto", "Chế độ tự động", "Phù hợp với hầu hết ứng dụng"),
-            ("reverse_auto", "Chế độ tự động (Đảo ngược)", "Khác biệt so với Auto mode"),
-            ("extreme", "Các bản vá khác (Chế độ đặc biệt)", "Có thể gây mất ổn định"),
-            ("amazon", "Chế độ tự động (Amazon Market)", "Dành cho Amazon Appstore"),
-            ("samsung", "Chế độ tự động (SamsungApps)", "Dành cho Samsung Galaxy Store"),
-            ("remove_deps", "Gỡ bỏ phần phụ thuộc Google Play", "Xóa mọi liên kết đến Google Play Services"),
-        ]
-        for mode, title, desc in options:
-            radio = QRadioButton(title)
-            radio.setChecked(mode == self.selected_mode)
-            radio.toggled.connect(lambda checked, m=mode: self._on_select(m) if checked else None)
-            self.mode_group.addButton(radio)
-            options_layout.addWidget(radio)
-            options_layout.addWidget(QLabel(f"    ↳ {desc}"))
-        options_group.setLayout(options_layout)
-        layout.addWidget(options_group)
+        self._group = QButtonGroup(self)
+        for key, label in self.OPTIONS:
+            rb = QRadioButton(label)
+            rb.setChecked(key == self._selected)
+            rb.toggled.connect(lambda on, k=key: self._select(k) if on else None)
+            self._group.addButton(rb)
+            layout.addWidget(rb)
 
-        btn_layout = QHBoxLayout()
-        btn_apply = QPushButton("Áp dụng")
-        btn_apply.clicked.connect(self._on_apply)
-        btn_apply.setStyleSheet("background-color: #238636; color: white; font-weight: bold;")
-        btn_cancel = QPushButton("Hủy")
-        btn_cancel.clicked.connect(self.reject)
-        btn_layout.addStretch()
-        btn_layout.addWidget(btn_cancel)
-        btn_layout.addWidget(btn_apply)
-        layout.addLayout(btn_layout)
-        self.setLayout(layout)
+        btns = QHBoxLayout()
+        ok = QPushButton("Áp dụng")
+        ok.clicked.connect(self._apply)
+        cancel = QPushButton("Hủy")
+        cancel.clicked.connect(self.reject)
+        btns.addStretch()
+        btns.addWidget(cancel)
+        btns.addWidget(ok)
+        layout.addLayout(btns)
 
-    def _on_select(self, mode): self.selected_mode = mode
+    def _select(self, key: str) -> None:
+        self._selected = key
 
-    def _on_apply(self):
-        self.patch_requested.emit(f"license:{self.selected_mode}")
+    def _apply(self) -> None:
+        self.patch_requested.emit(f"license:{self._selected}")
         self.accept()

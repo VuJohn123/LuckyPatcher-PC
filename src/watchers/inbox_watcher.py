@@ -1,48 +1,56 @@
-import os
+"""Watcher theo dõi thư mục inbox, emit event khi có APK mới."""
+from __future__ import annotations
+
+import logging
+import threading
 import time
 from pathlib import Path
-import threading
+
 from core.event_bus import event_bus
 
+logger = logging.getLogger(__name__)
+
+
 class InboxWatcher:
-    """
-    Quan sát một thư mục. Khi có APK mới, phát ra sự kiện 'apk.detected'.
-    Giống như PackageChangeReceiver của Lucky Patcher.
-    """
-    def __init__(self, inbox_path, check_interval=5):
-        self.inbox_path = Path(inbox_path)
-        self.check_interval = check_interval
-        self.known_files = set()
-        self._stop_event = threading.Event()
-        self._thread = None
+    def __init__(self, inbox_path: str | None = None,
+                 poll_interval: float = 5.0, log_callback=print):
+        self.inbox = Path(
+            inbox_path or (Path.home() / "LP_Inbox")
+        )
+        self.interval = poll_interval
+        self.log = log_callback
+        self._known: set[str] = set()
+        self._stop = threading.Event()
+        self._thread: threading.Thread | None = None
 
-    def start(self):
-        print(f"[InboxWatcher] Bắt đầu quan sát thư mục: {self.inbox_path}")
-        self.known_files = self._scan_directory()
-        self._thread = threading.Thread(target=self._monitor_loop, daemon=True)
+    def start(self) -> None:
+        self.inbox.mkdir(parents=True, exist_ok=True)
+        self._known = self._scan()
+        self._stop.clear()
+        self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
+        self.log(f"[*] [Inbox] Watching {self.inbox}")
 
-    def stop(self):
-        self._stop_event.set()
+    def stop(self) -> None:
+        self._stop.set()
         if self._thread:
-            self._thread.join()
+            self._thread.join(timeout=2)
 
-    def _scan_directory(self):
-        """Quét tất cả file APK trong thư mục."""
-        if not self.inbox_path.exists():
-            self.inbox_path.mkdir(parents=True, exist_ok=True)
-            return set()
-        return {f for f in self.inbox_path.iterdir() if f.suffix == '.apk'}
+    def _scan(self) -> set[str]:
+        out = set()
+        for ext in ("*.apk", "*.xapk"):
+            for p in self.inbox.glob(ext):
+                out.add(str(p))
+        return out
 
-    def _monitor_loop(self):
-        """Vòng lặp kiểm tra thư mục định kỳ."""
-        while not self._stop_event.is_set():
-            current_files = self._scan_directory()
-            new_files = current_files - self.known_files
-
-            for new_file in new_files:
-                print(f"[InboxWatcher] Phát hiện APK mới: {new_file.name}")
-                event_bus.emit('apk.detected', {'path': str(new_file)})
-
-            self.known_files = current_files
-            time.sleep(self.check_interval)
+    def _run(self) -> None:
+        while not self._stop.is_set():
+            current = self._scan()
+            for new_file in current - self._known:
+                self.log(f"[*] [Inbox] New: {Path(new_file).name}")
+                try:
+                    event_bus.emit("apk.detected", {"path": new_file})
+                except Exception as e:
+                    logger.warning("emit failed: %s", e)
+            self._known = current
+            self._stop.wait(self.interval)

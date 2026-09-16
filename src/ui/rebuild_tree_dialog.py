@@ -1,196 +1,169 @@
-import os
+"""
+Rebuild dialog dạng cây — tree cho từng patch, checkbox để chọn.
+"""
+from __future__ import annotations
+
 from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QRadioButton, QPushButton, QLabel,
-    QHBoxLayout, QGroupBox, QCheckBox, QScrollArea, QWidget,
-    QButtonGroup, QFileDialog, QMessageBox, QTreeWidget, QTreeWidgetItem,
-    QComboBox, QSpinBox
+    QDialog, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
+    QTreeWidget, QTreeWidgetItem, QCheckBox, QWidget,
+    QGroupBox, QComboBox, QSpinBox, QMessageBox,
 )
 from PyQt6.QtCore import Qt, pyqtSignal
 
-class RebuildTreeDialog(QDialog):
-    action_requested = pyqtSignal(str)
-    rebuild_params = pyqtSignal(str, str, int)  # mode, key_type, forced_package_id
+from .patch_config_dialog import PatchConfigDialog
+from .preview_dialog import PreviewDialog
 
-    def __init__(self, app_name, package, preselected_action=None, parent=None):
+
+class RebuildTreeDialog(QDialog):
+    rebuild_requested = pyqtSignal(str)
+
+    def __init__(self, app_name: str, package: str = "",
+                 preselected_action: str | None = None, parent=None):
         super().__init__(parent)
-        self.setWindowTitle(f"Tạo tệp tin APK đã sửa - {app_name}")
-        self.setMinimumSize(550, 750)
         self.app_name = app_name
         self.package = package
-        self.selected_mode = None
-        self.preselected_action = preselected_action
-        self.initUI()
+        self.preselected = preselected_action
 
-    def initUI(self):
-        layout = QVBoxLayout()
-        layout.setSpacing(8)
+        self.mode_map: dict[str, str | None] = {}
+        self.chk_map: dict[str, QCheckBox] = {}
 
-        title = QLabel(f"<b style='color:#58a6ff;'>Tạo tệp tin APK đã sửa cho {self.app_name}</b>")
-        layout.addWidget(title)
+        self.setWindowTitle(f"Rebuild (Tree) - {app_name}")
+        self.setMinimumSize(620, 760)
+        self._init_ui()
 
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll_widget = QWidget()
-        scroll_layout = QVBoxLayout(scroll_widget)
+    def _init_ui(self) -> None:
+        layout = QVBoxLayout(self)
 
-        # Tree options
+        layout.addWidget(QLabel(f"<b>{self.app_name}</b>"))
+        layout.addWidget(QLabel(f"Package: {self.package}"))
+
+        # Tree
         self.tree = QTreeWidget()
         self.tree.setHeaderHidden(True)
-        self.tree.setIndentation(20)
-        self.build_options_tree()
-        self.tree.itemClicked.connect(self.on_tree_item_clicked)
-        scroll_layout.addWidget(self.tree)
+        self.tree.setIndentation(18)
+        self.tree.setAnimated(True)
+        self._build_tree()
+        layout.addWidget(self.tree, 1)
 
-        # Multi-patch group
-        self.multi_group = QGroupBox("Chọn các bản vá (Multi-patch):")
-        multi_layout = QVBoxLayout()
-        self.chk_license = QCheckBox("Gỡ License (Auto)")
-        self.chk_license_extreme = QCheckBox("Gỡ License (Cực đoan)")
-        self.chk_ads = QCheckBox("Xóa Google Ads")
-        self.chk_ads_offline = QCheckBox("Quảng cáo ngoại tuyến")
-        self.chk_iap = QCheckBox("Mô phỏng InApp Purchase")
-        self.chk_aidl = QCheckBox("Nhúng AIDL Proxy (InApp)")
-        self.chk_perms = QCheckBox("Thay đổi quyền")
-        self.chk_resign = QCheckBox("Ký lại APK")
-        multi_layout.addWidget(self.chk_license)
-        multi_layout.addWidget(self.chk_license_extreme)
-        multi_layout.addWidget(self.chk_ads)
-        multi_layout.addWidget(self.chk_ads_offline)
-        multi_layout.addWidget(self.chk_iap)
-        multi_layout.addWidget(self.chk_aidl)
-        multi_layout.addWidget(self.chk_perms)
-        multi_layout.addWidget(self.chk_resign)
-        self.multi_group.setLayout(multi_layout)
-        self.multi_group.setVisible(False)
-        scroll_layout.addWidget(self.multi_group)
+        # Advanced
+        adv = QGroupBox("Tùy chọn nâng cao")
+        adv_layout = QVBoxLayout(adv)
 
-        # IAP mode
-        self.iap_mode_group = QGroupBox("Phương thức InApp")
-        iap_layout = QHBoxLayout()
-        self.radio_dex = QRadioButton("Tái cấu trúc Dex")
-        self.radio_proxy = QRadioButton("Máy chủ Proxy")
-        self.radio_dex.setChecked(True)
-        iap_layout.addWidget(self.radio_dex)
-        iap_layout.addWidget(self.radio_proxy)
-        self.iap_mode_group.setLayout(iap_layout)
-        self.iap_mode_group.setVisible(False)
-        scroll_layout.addWidget(self.iap_mode_group)
-
-        # Additional options
-        options_group = QGroupBox("Tùy chọn nâng cao")
-        options_layout = QVBoxLayout()
-        key_layout = QHBoxLayout()
-        key_layout.addWidget(QLabel("Loại chữ ký:"))
+        row1 = QHBoxLayout()
+        row1.addWidget(QLabel("Loại chữ ký:"))
         self.key_combo = QComboBox()
-        self.key_combo.addItems(['testkey', 'platform', 'media', 'shared'])
-        key_layout.addWidget(self.key_combo)
-        options_layout.addLayout(key_layout)
-        pkg_layout = QHBoxLayout()
-        pkg_layout.addWidget(QLabel("Forced Package ID (127 = auto):"))
-        self.package_id_spin = QSpinBox()
-        self.package_id_spin.setRange(1, 127)
-        self.package_id_spin.setValue(127)
-        pkg_layout.addWidget(self.package_id_spin)
-        options_layout.addLayout(pkg_layout)
-        options_group.setLayout(options_layout)
-        scroll_layout.addWidget(options_group)
+        self.key_combo.addItems(["testkey", "platform", "media", "shared"])
+        row1.addWidget(self.key_combo)
+        adv_layout.addLayout(row1)
 
-        scroll.setWidget(scroll_widget)
-        layout.addWidget(scroll)
+        row2 = QHBoxLayout()
+        row2.addWidget(QLabel("Forced Package ID:"))
+        self.pkg_spin = QSpinBox()
+        self.pkg_spin.setRange(1, 127)
+        self.pkg_spin.setValue(127)
+        row2.addWidget(self.pkg_spin)
+        adv_layout.addLayout(row2)
 
-        # Buttons
-        btn_layout = QHBoxLayout()
-        btn_rebuild = QPushButton("🛠 Xây dựng lại")
-        btn_rebuild.clicked.connect(self.start_rebuild)
-        btn_rebuild.setStyleSheet("background-color: #238636; color: white; font-weight: bold; padding: 10px;")
-        btn_cancel = QPushButton("Hủy")
-        btn_cancel.clicked.connect(self.reject)
-        btn_layout.addWidget(btn_rebuild)
-        btn_layout.addWidget(btn_cancel)
-        layout.addLayout(btn_layout)
+        layout.addWidget(adv)
 
-        self.setLayout(layout)
+        # Bottom buttons
+        btns = QHBoxLayout()
+        preview = QPushButton("🔍 Xem trước")
+        preview.clicked.connect(self._show_preview)
+        btns.addWidget(preview)
 
-        if self.preselected_action:
-            self.select_action(self.preselected_action)
+        btns.addStretch()
 
-    def build_options_tree(self):
-        root = QTreeWidgetItem(self.tree, ["📦 Chọn kiểu xây dựng lại"])
+        build = QPushButton("🛠 Xây dựng lại")
+        build.setStyleSheet("background-color:#238636; color:white; font-weight:bold; padding:8px 20px;")
+        build.clicked.connect(self._on_build)
+        btns.addWidget(build)
+
+        cancel = QPushButton("Hủy")
+        cancel.clicked.connect(self.reject)
+        btns.addWidget(cancel)
+        layout.addLayout(btns)
+
+    def _build_tree(self) -> None:
+        root = QTreeWidgetItem(self.tree, ["📦 Chọn patch"])
         root.setExpanded(True)
 
-        multi = QTreeWidgetItem(root, ["📦 Apk với Multi-patch"])
-        multi.setData(0, Qt.ItemDataRole.UserRole, "multi_patch")
+        # License
+        lic = QTreeWidgetItem(root, ["🔑 License"])
+        lic.setExpanded(True)
+        self._add_leaf(lic, "Chế độ tự động", "license", "auto")
+        self._add_leaf(lic, "Chế độ tự động (dex)", "license", "dex")
+        self._add_leaf(lic, "Đảo ngược", "license", "reverse")
+        self._add_leaf(lic, "Cực đoan", "license", "extreme")
+        self._add_leaf(lic, "Amazon Market", "license", "amazon")
+        self._add_leaf(lic, "Samsung Apps", "license", "samsung")
 
-        license_root = QTreeWidgetItem(root, ["🔑 APK không có Giấy phép Xác minh"])
-        QTreeWidgetItem(license_root, ["Chế độ tự động (dex)"]).setData(0, Qt.ItemDataRole.UserRole, "license_auto_dex")
-        QTreeWidgetItem(license_root, ["Chế độ tự động"]).setData(0, Qt.ItemDataRole.UserRole, "license_auto")
-        QTreeWidgetItem(license_root, ["Chế độ tự động (Đảo ngược)"]).setData(0, Qt.ItemDataRole.UserRole, "license_reverse_auto")
-        QTreeWidgetItem(license_root, ["Các bản vá khác (Cực đoan)"]).setData(0, Qt.ItemDataRole.UserRole, "license_extreme")
+        # Ads
+        ads = QTreeWidgetItem(root, ["🚫 Ads"])
+        ads.setExpanded(True)
+        self._add_leaf(ads, "Xóa Activity", "ads", "remove")
+        self._add_leaf(ads, "Offline mode", "ads", "offline")
+        self._add_leaf(ads, "Xóa URL", "ads", "links")
+        self._add_leaf(ads, "Full offline", "ads", "full_offline")
 
-        ads_root = QTreeWidgetItem(root, ["🚫 APK không có Google Ads"])
-        QTreeWidgetItem(ads_root, ["Xoá liên kết"]).setData(0, Qt.ItemDataRole.UserRole, "ads_remove_links")
-        QTreeWidgetItem(ads_root, ["Làm hỏng nhận quảng cáo"]).setData(0, Qt.ItemDataRole.UserRole, "ads_offline")
+        # IAP
+        iap = QTreeWidgetItem(root, ["💳 IAP"])
+        iap.setExpanded(True)
+        self._add_leaf(iap, "Reassembly Dex", "iap", "dex")
+        self._add_leaf(iap, "Proxy Server", "iap", "proxy")
+        self._add_leaf(iap, "AIDL Proxy", "aidl_proxy", None)
 
-        iap_root = QTreeWidgetItem(root, ["💳 Giả lập InApp và LVL"])
-        QTreeWidgetItem(iap_root, ["Tái cấu trúc Dex"]).setData(0, Qt.ItemDataRole.UserRole, "iap_dex")
-        QTreeWidgetItem(iap_root, ["Máy Chủ Proxy"]).setData(0, Qt.ItemDataRole.UserRole, "iap_proxy")
+        # Others
+        misc = QTreeWidgetItem(root, ["⚙️ Khác"])
+        misc.setExpanded(True)
+        self._add_leaf(misc, "Đổi quyền", "change_perms", None)
+        self._add_leaf(misc, "Ký lại APK", "resign", None)
+        self._add_leaf(misc, "Custom Patch", "custom", None)
 
-        QTreeWidgetItem(root, ["⚙️ APK với quyền đã thay đổi"]).setData(0, Qt.ItemDataRole.UserRole, "change_perms")
-        QTreeWidgetItem(root, ["✍️ Ký lại APK"]).setData(0, Qt.ItemDataRole.UserRole, "resign")
-        QTreeWidgetItem(root, ["🔌 Nhúng AIDL Proxy"]).setData(0, Qt.ItemDataRole.UserRole, "aidl_proxy")
+    def _add_leaf(self, parent: QTreeWidgetItem, text: str,
+                  name: str, mode: str | None) -> None:
+        item = QTreeWidgetItem(parent, [text])
+        chk = QCheckBox()
+        chk.setChecked(False)
+        self.tree.setItemWidget(item, 0, chk)
+        key = f"{name}:{mode}" if mode else name
+        self.chk_map[key] = chk
+        self.mode_map[key] = mode
 
-    def on_tree_item_clicked(self, item, column):
-        action = item.data(0, Qt.ItemDataRole.UserRole)
-        if action:
-            self.select_action(action)
+    def _collect_selection(self) -> list[str]:
+        out = []
+        for key, chk in self.chk_map.items():
+            if chk.isChecked():
+                out.append(key)
+        return out
 
-    def select_action(self, action):
-        self.multi_group.setVisible(False)
-        self.iap_mode_group.setVisible(False)
-        if action == 'multi_patch':
-            self.multi_group.setVisible(True)
-        elif action in ['iap_dex', 'iap_proxy']:
-            self.iap_mode_group.setVisible(True)
-            self.radio_dex.setChecked(action == 'iap_dex')
-            self.radio_proxy.setChecked(action == 'iap_proxy')
-        self.preselected_action = action
+    def _show_preview(self) -> None:
+        selected = self._collect_selection()
+        if not selected:
+            QMessageBox.warning(self, "Chưa chọn", "Vui lòng chọn ít nhất 1 patch")
+            return
+        items = []
+        for s in selected:
+            if ":" in s:
+                name, mode = s.split(":", 1)
+                items.append({"label": name, "mode": mode})
+            else:
+                items.append({"label": s})
+        dlg = PreviewDialog(items, self)
+        if dlg.exec():
+            self._on_build()
 
-    def get_selected_mode(self):
-        if self.preselected_action == 'multi_patch':
-            modes = []
-            if self.chk_license.isChecked(): modes.append('license')
-            if self.chk_license_extreme.isChecked(): modes.append('license_extreme')
-            if self.chk_ads.isChecked(): modes.append('ads')
-            if self.chk_ads_offline.isChecked(): modes.append('ads_offline')
-            if self.chk_iap.isChecked():
-                iap_method = 'iap_dex' if self.radio_dex.isChecked() else 'iap_proxy'
-                modes.append(iap_method)
-            if self.chk_aidl.isChecked(): modes.append('aidl_proxy')
-            if self.chk_perms.isChecked(): modes.append('change_perms')
-            if self.chk_resign.isChecked(): modes.append('resign')
-            if not modes:
-                QMessageBox.warning(self, "Lỗi", "Vui lòng chọn ít nhất một bản vá.")
-                return None
-            return 'multi:' + ','.join(modes)
-        else:
-            if self.preselected_action in ['iap_dex', 'iap_proxy']:
-                return 'iap_dex' if self.radio_dex.isChecked() else 'iap_proxy'
-            return self.preselected_action
+    def _on_build(self) -> None:
+        selected = self._collect_selection()
+        if not selected:
+            QMessageBox.warning(self, "Chưa chọn", "Vui lòng chọn ít nhất 1 patch")
+            return
+        self.rebuild_requested.emit(",".join(selected))
+        self.accept()
 
-    def get_key_type(self):
+    def get_key_type(self) -> str:
         return self.key_combo.currentText()
 
-    def get_forced_package_id(self):
-        val = self.package_id_spin.value()
-        # Trả về None nếu là 127 (auto) hoặc giá trị không hợp lệ
-        if val == 127 or val <= 0:
-            return None
-        return val
-
-    def start_rebuild(self):
-        mode = self.get_selected_mode()
-        if not mode:
-            return
-        self.selected_mode = mode
-        self.rebuild_params.emit(mode, self.get_key_type(), self.get_forced_package_id())
-        self.accept()
+    def get_forced_package_id(self) -> int | None:
+        v = self.pkg_spin.value()
+        return None if v == 127 else v

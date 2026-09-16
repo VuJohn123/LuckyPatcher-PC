@@ -1,64 +1,85 @@
-import subprocess
+"""
+Chuyển AAB → APK bằng bundletool.jar.
+Graceful: báo lỗi rõ nếu thiếu jar.
+"""
+from __future__ import annotations
+
+import logging
 import os
 import shutil
+import subprocess
 import tempfile
 import zipfile
 
-TOOLS_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'tools'))
+logger = logging.getLogger(__name__)
 
-def aab_to_apk(aab_path, output_dir=None, keystore=None, log_callback=print):
-    """
-    Chuyển đổi file .aab sang .apk sử dụng bundletool.
-    Yêu cầu: bundletool.jar trong thư mục tools/.
-    """
-    bundletool_jar = os.path.join(TOOLS_DIR, 'bundletool.jar')
-    if not os.path.exists(bundletool_jar):
-        raise FileNotFoundError("bundletool.jar not found. Please download it to tools/")
+
+def aab_to_apk(aab_path: str, output_dir: str | None = None,
+               log_callback=print) -> str | None:
+    tools_dir = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "tools",
+    )
+    bundletool = os.path.join(tools_dir, "bundletool.jar")
+
+    if not os.path.exists(bundletool):
+        log_callback("[!] bundletool.jar không có — không convert được AAB")
+        return None
 
     if output_dir is None:
         output_dir = os.path.dirname(aab_path)
+    os.makedirs(output_dir, exist_ok=True)
 
-    # Tạo file APK set từ AAB
-    apks_output = os.path.join(output_dir, 'app.apks')
-    cmd_build = [
-        'java', '-jar', bundletool_jar,
-        'build-apks',
-        f'--bundle={aab_path}',
-        f'--output={apks_output}',
-        '--mode=universal'
-    ]
-    if keystore:
-        cmd_build.append(f'--ks={keystore}')
-        cmd_build.append('--ks-pass=pass:android')
-        cmd_build.append('--ks-key-alias=androiddebugkey')
-    else:
-        cmd_build.append('--overwrite')
+    tmp = tempfile.mkdtemp(prefix="aab_")
+    apks = os.path.join(tmp, "app.apks")
+    apk_out = os.path.join(
+        output_dir,
+        os.path.splitext(os.path.basename(aab_path))[0] + ".apk",
+    )
 
-    log_callback(f"[*] [Bundletool] Building APK from AAB...")
-    proc = subprocess.run(cmd_build, capture_output=True, text=True)
-    if proc.returncode != 0:
-        raise RuntimeError(f"Bundletool build failed: {proc.stderr}")
+    try:
+        # Bước 1: build apks set
+        cmd = [
+            "java", "-jar", bundletool, "build-apks",
+            f"--bundle={aab_path}",
+            f"--output={apks}",
+            "--mode=universal",
+            "--overwrite",
+        ]
+        log_callback("[*] [Bundletool] Building APK set...")
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+        if proc.returncode != 0:
+            log_callback(f"[!] Bundletool failed: {proc.stderr[:300]}")
+            return None
 
-    # Giải nén APK từ file .apks (thực chất là zip)
-    apk_output = os.path.join(output_dir, os.path.basename(aab_path).replace('.aab', '.apk'))
-    with zipfile.ZipFile(apks_output, 'r') as z:
-        # Tìm file universal.apk hoặc standalones/universal.apk
-        universal_apk = None
-        for name in z.namelist():
-            if 'universal' in name and name.endswith('.apk'):
-                universal_apk = name
-                break
-        if not universal_apk:
-            for name in z.namelist():
-                if name.startswith('standalones/') and name.endswith('.apk'):
-                    universal_apk = name
-                    break
-        if universal_apk:
-            with z.open(universal_apk) as src, open(apk_output, 'wb') as dst:
-                dst.write(src.read())
-            log_callback(f"[*] [Bundletool] Universal APK extracted: {apk_output}")
-        else:
-            raise RuntimeError("No universal APK found in bundle")
+        # Bước 2: extract universal.apk
+        if not os.path.exists(apks):
+            return None
 
-    os.remove(apks_output)
-    return apk_output
+        with zipfile.ZipFile(apks, "r") as z:
+            candidates = [
+                n for n in z.namelist()
+                if n.endswith(".apk") and "universal" in n.lower()
+            ]
+            if not candidates:
+                candidates = [
+                    n for n in z.namelist()
+                    if n.startswith("standalones/") and n.endswith(".apk")
+                ]
+            if not candidates:
+                log_callback("[!] Không tìm thấy universal APK trong bundle")
+                return None
+
+            with z.open(candidates[0]) as src, open(apk_out, "wb") as dst:
+                shutil.copyfileobj(src, dst)
+
+        log_callback(f"[✔] [Bundletool] APK: {apk_out}")
+        return apk_out
+    except subprocess.TimeoutExpired:
+        log_callback("[!] Bundletool timeout")
+        return None
+    except (OSError, zipfile.BadZipFile) as e:
+        log_callback(f"[!] Bundletool error: {e}")
+        return None
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
