@@ -2,14 +2,31 @@
 from __future__ import annotations
 
 import hashlib
-import io
+import logging
 import os
 import shutil
 import subprocess
 import zipfile
 
-TOOLS_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "tools"))
+logger = logging.getLogger(__name__)
+
+# Project root: file này ở <root>/src/core/apk_utils.py → parents[2]
+_PROJECT_ROOT = os.path.dirname(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+)
+TOOLS_DIR = os.path.join(_PROJECT_ROOT, "tools")
 NAILGUN = shutil.which("ng")
+
+
+def get_tool_path(name: str) -> str:
+    """
+    Resolve tool path — hỗ trợ cả layout cũ (tools/*.jar) và mới (tools/bin/*).
+    Trả về path mới nếu tồn tại, else fallback legacy.
+    """
+    organized = os.path.join(TOOLS_DIR, "bin", name)
+    if os.path.exists(organized):
+        return organized
+    return os.path.join(TOOLS_DIR, name)
 
 
 def get_apk_hash(apk_path: str) -> str:
@@ -21,11 +38,12 @@ def get_apk_hash(apk_path: str) -> str:
 
 
 def get_cache_dir(apk_path: str, base_cache_dir: str | None = None) -> str:
+    """
+    Cache dir cho 1 APK.
+    Default base: <project_root>/workspace/cache (KHÔNG phải src/workspace).
+    """
     if base_cache_dir is None:
-        base_cache_dir = os.path.join(
-            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-            "workspace", "cache",
-        )
+        base_cache_dir = os.path.join(_PROJECT_ROOT, "workspace", "cache")
     cache_dir = os.path.join(base_cache_dir, get_apk_hash(apk_path))
     os.makedirs(cache_dir, exist_ok=True)
     return cache_dir
@@ -33,7 +51,7 @@ def get_cache_dir(apk_path: str, base_cache_dir: str | None = None) -> str:
 
 def _java_cmd(jar_name: str, memory: str = "4096m") -> list[str]:
     """Trả về prefix lệnh Java, ưu tiên Nailgun nếu có."""
-    jar = os.path.join(TOOLS_DIR, jar_name)
+    jar = get_tool_path(jar_name)
     if NAILGUN:
         return [NAILGUN, jar]
     return ["java", f"-Xmx{memory}", "-jar", jar]
@@ -66,7 +84,8 @@ def decompile_apk(
 
     for attempt in range(max_retries + 1):
         cmd = _java_cmd("apktool.jar", current_mem)
-        cmd += ["d", apk_path, "-o", output_dir, "-f", "--jobs", str(current_jobs)]
+        cmd += ["d", apk_path, "-o", output_dir, "-f",
+                "--jobs", str(current_jobs)]
         if use_no_res:
             cmd.append("--no-res")
 
@@ -83,9 +102,7 @@ def decompile_apk(
 
         if proc.returncode == 0:
             if use_cache:
-                cache_dir = get_cache_dir(apk_path)
-                shutil.rmtree(cache_dir, ignore_errors=True)
-                shutil.copytree(output_dir, cache_dir)
+                _safe_save_cache(output_dir, apk_path, log_callback)
             return output_dir
 
         if attempt == 0:
@@ -94,6 +111,33 @@ def decompile_apk(
             current_jobs, current_mem = 1, "8192m"
 
     raise RuntimeError(f"Decompile failed after {max_retries + 1} attempts")
+
+
+def _safe_save_cache(
+    output_dir: str, apk_path: str, log_callback
+) -> None:
+    """
+    Lưu decompiled vào cache. Không crash pipeline nếu gặp lỗi
+    (long path Windows, permission, ...).
+    """
+    try:
+        cache_dir = get_cache_dir(apk_path)
+        if os.path.exists(cache_dir):
+            shutil.rmtree(cache_dir, ignore_errors=True)
+        try:
+            shutil.copytree(output_dir, cache_dir)
+            log_callback("[*] [Cache] Decompiled saved")
+        except shutil.Error as e:
+            # copytree raise shutil.Error với list (src, dst, msg)
+            n = len(e.args[0]) if e.args else 0
+            log_callback(
+                f"[i] [Cache] Bỏ qua {n} file lỗi "
+                f"(thường do path > 260 ký tự trên Windows)"
+            )
+        except OSError as e:
+            log_callback(f"[i] [Cache] Save failed: {e}")
+    except Exception as e:
+        log_callback(f"[i] [Cache] Disabled: {e}")
 
 
 def recompile_apk(

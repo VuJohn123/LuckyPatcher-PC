@@ -8,7 +8,7 @@ import os
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
     QScrollArea, QWidget, QCheckBox, QFrame, QMessageBox,
-    QComboBox, QSpinBox, QGroupBox,
+    QComboBox, QSpinBox, QGroupBox, QSizePolicy,
 )
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QFont
@@ -95,40 +95,57 @@ class RebuildDialog(QDialog):
         self.extra_widgets: dict[str, QCheckBox] = {}
 
         self.setWindowTitle(f"Create Modified APK - {app_name}")
-        self.setMinimumSize(600, 720)
+        # Size hợp lý, không stretch vô hạn
+        self.resize(640, 700)
+        self.setMinimumSize(560, 500)
+        self.setMaximumHeight(900)
+
         self._init_ui()
 
     def _init_ui(self) -> None:
         layout = QVBoxLayout(self)
         layout.setSpacing(10)
+        layout.setContentsMargins(16, 16, 16, 16)
 
-        title = QLabel(f"<b style='font-size:13px;'>Chọn patch cho {self.app_name}</b>")
+        title = QLabel(
+            f"<b style='font-size:13px;'>"
+            f"Chọn patch cho {self.app_name}</b>"
+        )
         layout.addWidget(title)
 
-        # Scroll area
+        # Scroll area — chiếm phần lớn, nhưng không stretch dialog
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+        )
+
         content = QWidget()
         self.scroll_layout = QVBoxLayout(content)
         self.scroll_layout.setSpacing(6)
+        self.scroll_layout.setContentsMargins(4, 4, 4, 4)
 
         for patch in self.PATCHES:
             self.scroll_layout.addWidget(self._create_patch_row(patch))
 
+        self.scroll_layout.addSpacing(8)
         self.scroll_layout.addWidget(QLabel("<b>Tùy chọn bổ sung:</b>"))
         for key, label in self.EXTRA_OPTIONS:
             chk = QCheckBox(label)
             self.scroll_layout.addWidget(chk)
             self.extra_widgets[key] = chk
 
-        # Advanced options
+        # Advanced
         adv_group = QGroupBox("Tùy chọn nâng cao")
         adv_layout = QVBoxLayout(adv_group)
 
         key_row = QHBoxLayout()
         key_row.addWidget(QLabel("Loại chữ ký:"))
         self.key_combo = QComboBox()
-        self.key_combo.addItems(["testkey", "platform", "media", "shared"])
+        self.key_combo.addItems(
+            ["testkey", "platform", "media", "shared"]
+        )
         key_row.addWidget(self.key_combo)
         adv_layout.addLayout(key_row)
 
@@ -141,10 +158,12 @@ class RebuildDialog(QDialog):
         adv_layout.addLayout(pkg_row)
 
         self.scroll_layout.addWidget(adv_group)
-        scroll.setWidget(content)
-        layout.addWidget(scroll)
+        self.scroll_layout.addStretch()
 
-        # Bottom buttons
+        scroll.setWidget(content)
+        layout.addWidget(scroll, 1)
+
+        # Bottom buttons — luôn ở dưới, không bị kéo
         btns = QHBoxLayout()
         preview = QPushButton("🔍 Xem trước")
         preview.clicked.connect(self._show_preview)
@@ -153,7 +172,10 @@ class RebuildDialog(QDialog):
         btns.addStretch()
 
         build = QPushButton("🛠 Xây dựng lại")
-        build.setStyleSheet("background-color:#238636; color:white; font-weight:bold; padding:8px 20px;")
+        build.setStyleSheet(
+            "background-color:#238636; color:white; "
+            "font-weight:bold; padding:8px 20px; border-radius:6px;"
+        )
         build.clicked.connect(self._on_build)
         btns.addWidget(build)
 
@@ -165,8 +187,12 @@ class RebuildDialog(QDialog):
     def _create_patch_row(self, patch: dict) -> QFrame:
         row = QFrame()
         row.setFrameShape(QFrame.Shape.StyledPanel)
-        row.setStyleSheet("QFrame { padding:4px; }")
+        row.setStyleSheet(
+            "QFrame { padding:4px; background:#161b22; "
+            "border:1px solid #30363d; border-radius:6px; }"
+        )
         rl = QHBoxLayout(row)
+        rl.setContentsMargins(8, 6, 8, 6)
 
         chk = QCheckBox()
         rl.addWidget(chk)
@@ -177,14 +203,12 @@ class RebuildDialog(QDialog):
 
         if patch["configurable"]:
             btn = QPushButton("⚙️")
-            btn.setFixedSize(32, 32)
+            btn.setFixedSize(30, 30)
             btn.setToolTip("Cấu hình chế độ")
-            btn.clicked.connect(lambda _=None, p=patch: self._open_config(p))
+            btn.clicked.connect(
+                lambda _=None, p=patch: self._open_config(p)
+            )
             rl.addWidget(btn)
-        else:
-            spacer = QWidget()
-            spacer.setFixedSize(32, 32)
-            rl.addWidget(spacer)
 
         self.patch_widgets[patch["name"]] = {
             "checkbox": chk,
@@ -220,7 +244,9 @@ class RebuildDialog(QDialog):
     def _show_preview(self) -> None:
         selected = self._collect_selection()
         if not selected:
-            QMessageBox.warning(self, "Chưa chọn", "Vui lòng chọn ít nhất 1 patch")
+            QMessageBox.warning(
+                self, "Chưa chọn", "Vui lòng chọn ít nhất 1 patch"
+            )
             return
         items = []
         for s in selected:
@@ -236,7 +262,9 @@ class RebuildDialog(QDialog):
     def _on_build(self) -> None:
         selected = self._collect_selection()
         if not selected:
-            QMessageBox.warning(self, "Chưa chọn", "Vui lòng chọn ít nhất 1 patch")
+            QMessageBox.warning(
+                self, "Chưa chọn", "Vui lòng chọn ít nhất 1 patch"
+            )
             return
         mode_string = ",".join(selected)
         self.rebuild_requested.emit(mode_string)

@@ -4,6 +4,10 @@ MainWindow chỉ lo UI; controller lo xử lý APK, download, pipeline.
 
 Pattern: View (MainWindow) ↔ Controller (AppController)
 Controller emit Qt signals → View cập nhật UI.
+
+Thread-safety:
+  - Worker thread CHỈ emit signal, KHÔNG chạm Qt widget.
+  - Mọi dialog phải show trên main thread qua signal nội bộ.
 """
 from __future__ import annotations
 
@@ -28,18 +32,26 @@ from core.apk_downloader import APKDownloader
 class AppController(QObject):
     """Controller chính — delegate signals cho MainWindow."""
 
+    # Public signals (MainWindow lắng nghe)
     analysis_ready = pyqtSignal(dict)
     log_message = pyqtSignal(str)
     status_message = pyqtSignal(str)
     progress_update = pyqtSignal(int, int)
     progress_hide = pyqtSignal()
     show_detail_page = pyqtSignal()
+    step_update = pyqtSignal(str, int)          # (step_name, pct 0-100)
+
+    # Nội bộ: worker thread → main thread (không expose ra MainWindow)
+    _suggest_signal = pyqtSignal(list)
 
     def __init__(self, window):
         super().__init__(window)
         self.window = window
         self.apk_path: str | None = None
         self.iap_manager = IAPManager()
+
+        # Kết nối signal nội bộ: worker emit → main thread slot
+        self._suggest_signal.connect(self._handle_suggestions_on_main)
 
     # ============================================================
     # APK LOADING
@@ -146,7 +158,15 @@ class AppController(QObject):
         except Exception as e:
             self.log_message.emit(f"[!] Lỗi phân tích: {e}")
 
+    # ============================================================
+    # SMART SUGGESTIONS — thread-safe
+    # ============================================================
     def _show_smart_suggestions(self, findings: list[dict]) -> None:
+        """Gọi từ worker thread — chỉ emit signal, không tạo Qt widget."""
+        self._suggest_signal.emit(findings)
+
+    def _handle_suggestions_on_main(self, findings: list[dict]) -> None:
+        """Chạy trên MAIN THREAD — an toàn để tạo QMessageBox."""
         has_iap = any(f.get("type") == "iap" for f in findings)
         has_license = any(f.get("type") == "license" for f in findings)
         has_ads = any(f.get("type") == "ads" for f in findings)
@@ -182,6 +202,7 @@ class AppController(QObject):
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
         )
         msg.setDefaultButton(QMessageBox.StandardButton.Yes)
+        msg.setWindowModality(Qt.WindowModality.ApplicationModal)
 
         if msg.exec() == QMessageBox.StandardButton.Yes:
             modes = []
@@ -221,6 +242,7 @@ class AppController(QObject):
         signals.progress.connect(
             lambda c, t: self.progress_update.emit(c, t)
         )
+        signals.step.connect(self.step_update.emit)
         signals.status.connect(self.log_message.emit)
         signals.finished.connect(self._on_pipeline_finished)
 
@@ -477,7 +499,9 @@ class AppController(QObject):
 
         dlg.exec()
 
-    def _search_google_play(self, dialog: QDialog, pkg_input: QLineEdit) -> None:
+    def _search_google_play(
+        self, dialog: QDialog, pkg_input: QLineEdit
+    ) -> None:
         package = pkg_input.text().strip()
         if not package:
             return

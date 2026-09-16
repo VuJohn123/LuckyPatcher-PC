@@ -3,7 +3,7 @@ MainWindow — UI shell cho LP-PC Suite.
 Logic business chuyển sang AppController (src/ui/app_controller.py).
 
 Layout:
-  Sidebar | Toolbar / Switches / Stacked Pages / Log (collapsible)
+  Sidebar | Toolbar / Progress / Switches / Stacked Pages / Log (collapsible)
 """
 from __future__ import annotations
 
@@ -32,7 +32,7 @@ class MainWindow(QMainWindow):
         # --- Controller TRƯỚC (không phụ thuộc UI trong __init__) ---
         self.controller = AppController(self)
 
-        # --- UI shell (giờ có thể access self.controller) ---
+        # --- UI shell ---
         self._build_ui()
 
         # --- Wire controller signals → UI slots ---
@@ -61,15 +61,9 @@ class MainWindow(QMainWindow):
         right_layout.setSpacing(0)
 
         right_layout.addWidget(self._build_toolbar())
+        right_layout.addWidget(self._build_progress_panel())
 
-        # Progress bar (hidden)
-        self.progress_bar = QProgressBar()
-        self.progress_bar.setVisible(False)
-        self.progress_bar.setFixedHeight(6)
-        self.progress_bar.setTextVisible(False)
-        right_layout.addWidget(self.progress_bar)
-
-        # Switches panel — dùng iap_manager từ controller
+        # Switches panel
         self.switches_panel = SwitchesPanel(self.controller.iap_manager)
         right_layout.addWidget(self.switches_panel)
 
@@ -128,7 +122,7 @@ class MainWindow(QMainWindow):
         version.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(version)
 
-        # Wire navigation (lazy — self.stacked sẽ tồn tại khi click)
+        # Wire navigation (lambda resolve self.stacked lúc click)
         self.btn_apps.clicked.connect(lambda: self.stacked.setCurrentIndex(0))
         self.btn_detail.clicked.connect(lambda: self.stacked.setCurrentIndex(1))
         self.btn_tools.clicked.connect(lambda: self.stacked.setCurrentIndex(2))
@@ -167,6 +161,32 @@ class MainWindow(QMainWindow):
         tb.addWidget(btn_workspace)
 
         return tb
+
+    # ------------------------------------------------------------
+    def _build_progress_panel(self) -> QWidget:
+        """Progress panel LP-style: step label + progress bar."""
+        container = QWidget()
+        container.setObjectName("progressContainer")
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(12, 6, 12, 6)
+        layout.setSpacing(4)
+
+        self.step_label = QLabel("")
+        self.step_label.setStyleSheet(
+            "color: #58a6ff; font-size: 11px; font-weight: bold;"
+        )
+        layout.addWidget(self.step_label)
+
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setFixedHeight(8)
+        self.progress_bar.setTextVisible(False)
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setValue(0)
+        layout.addWidget(self.progress_bar)
+
+        container.setVisible(False)
+        self.progress_container = container
+        return container
 
     # ------------------------------------------------------------
     def _build_apps_page(self) -> QWidget:
@@ -284,6 +304,7 @@ class MainWindow(QMainWindow):
         self.controller.progress_update.connect(self._on_progress)
         self.controller.progress_hide.connect(self._hide_progress)
         self.controller.show_detail_page.connect(self._show_detail_page)
+        self.controller.step_update.connect(self._on_step_update)
 
     # ============================================================
     # EVENT HANDLERS → delegate controller
@@ -330,12 +351,23 @@ class MainWindow(QMainWindow):
         self.apk_detail.populate(result)
 
     def _on_progress(self, current: int, total: int) -> None:
-        self.progress_bar.setVisible(True)
-        self.progress_bar.setMaximum(max(total, 1))
-        self.progress_bar.setValue(current)
+        # Progress kiểu cũ (patch counter) — không hiện container,
+        # chỉ update nếu container đã visible
+        if total > 0:
+            pct = int(current * 100 / total)
+            if self.progress_container.isVisible():
+                self.progress_bar.setValue(pct)
+
+    def _on_step_update(self, step_name: str, pct: int) -> None:
+        """LP-style step: hiển thị label + cập nhật %."""
+        self.progress_container.setVisible(True)
+        self.step_label.setText(f"⏳ {step_name}")
+        self.progress_bar.setValue(max(0, min(100, pct)))
 
     def _hide_progress(self) -> None:
-        self.progress_bar.setVisible(False)
+        self.progress_container.setVisible(False)
+        self.step_label.setText("")
+        self.progress_bar.setValue(0)
 
     def _show_detail_page(self) -> None:
         self.btn_detail.setChecked(True)

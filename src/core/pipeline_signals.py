@@ -5,13 +5,14 @@ try:
     from PyQt6.QtCore import QObject, pyqtSignal
 
     class PipelineSignals(QObject):
-        progress = pyqtSignal(int, int)
+        progress = pyqtSignal(int, int)          # (current, total)
+        step = pyqtSignal(str, int)              # (step_name, overall_pct 0-100)
         status = pyqtSignal(str)
         patch_complete = pyqtSignal(str, str)
         finished = pyqtSignal(bool, str)
 
 except ImportError:
-    # Fallback khi không có PyQt6 (CLI mode)
+    # Fallback CLI mode
     class PipelineSignals:
         class _Signal:
             def __init__(self): self._cbs = []
@@ -23,6 +24,7 @@ except ImportError:
 
         def __init__(self):
             self.progress = self._Signal()
+            self.step = self._Signal()
             self.status = self._Signal()
             self.patch_complete = self._Signal()
             self.finished = self._Signal()
