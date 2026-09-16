@@ -1,24 +1,36 @@
+"""Event bus — pub/sub đơn giản, thread-safe."""
+from __future__ import annotations
+
+import logging
+import threading
+from collections import defaultdict
+from typing import Any, Callable
+
+logger = logging.getLogger(__name__)
+
+
 class EventBus:
-    """
-    Mô phỏng cơ chế Intent/Event của Android.
-    Cho phép các thành phần giao tiếp một cách lỏng lẻo.
-    """
     def __init__(self):
-        self._listeners = {}
+        self._listeners: dict[str, list[Callable]] = defaultdict(list)
+        self._lock = threading.RLock()
 
-    def subscribe(self, event_type, callback):
-        """Đăng ký lắng nghe một loại sự kiện."""
-        if event_type not in self._listeners:
-            self._listeners[event_type] = []
-        self._listeners[event_type].append(callback)
-        print(f"[EventBus] {callback.__name__} subscribed to '{event_type}'")
+    def subscribe(self, event_type: str, callback: Callable) -> None:
+        with self._lock:
+            self._listeners[event_type].append(callback)
 
-    def emit(self, event_type, data=None):
-        """Phát ra một sự kiện."""
-        if event_type in self._listeners:
-            for callback in self._listeners[event_type]:
-                callback(data)
-            print(f"[EventBus] Emitted '{event_type}' with data: {str(data)[:100]}...")
+    def unsubscribe(self, event_type: str, callback: Callable) -> None:
+        with self._lock:
+            if callback in self._listeners[event_type]:
+                self._listeners[event_type].remove(callback)
 
-# Singleton bus toàn cục
+    def emit(self, event_type: str, data: Any = None) -> None:
+        with self._lock:
+            callbacks = list(self._listeners.get(event_type, []))
+        for cb in callbacks:
+            try:
+                cb(data)
+            except Exception as e:
+                logger.exception("Event %s handler failed: %s", event_type, e)
+
+
 event_bus = EventBus()

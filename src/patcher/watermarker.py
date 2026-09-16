@@ -1,58 +1,66 @@
-import json
-import os
-import time
+"""Thêm watermark vào APK — đánh dấu đã vá."""
+from __future__ import annotations
+
 import hashlib
-import zipfile
+import json
+import logging
+import os
 import subprocess
+import time
+import zipfile
+
+logger = logging.getLogger(__name__)
+
 
 class Watermarker:
-    """Thêm watermark vào APK để đánh dấu đã được vá."""
-    MARKER_FILE = 'assets/lp_pc_suite_marker.json'
+    MARKER_FILE = "assets/lp_pc_suite_marker.json"
 
     @staticmethod
-    def add_watermark(decompiled_path, patches_applied, apk_path):
-        """Thêm file đánh dấu vào thư mục assets trước khi recompile."""
+    def add_watermark(decompiled_path: str, patches_applied: list[str],
+                      apk_path: str) -> None:
         marker_path = os.path.join(decompiled_path, Watermarker.MARKER_FILE)
         os.makedirs(os.path.dirname(marker_path), exist_ok=True)
 
-        # Lấy hash của APK gốc
-        with open(apk_path, 'rb') as f:
-            apk_hash = hashlib.md5(f.read()).hexdigest()
+        original_hash = ""
+        try:
+            hasher = hashlib.md5()
+            with open(apk_path, "rb") as f:
+                for chunk in iter(lambda: f.read(8192), b""):
+                    hasher.update(chunk)
+            original_hash = hasher.hexdigest()
+        except OSError as e:
+            logger.warning("Không hash được APK: %s", e)
 
         marker = {
-            'tool': 'LP-PC Suite v4',
-            'timestamp': time.time(),
-            'original_hash': apk_hash,
-            'patches': patches_applied
+            "tool": "LP-PC Suite",
+            "timestamp": time.time(),
+            "original_hash": original_hash,
+            "patches": patches_applied,
         }
-
-        with open(marker_path, 'w', encoding='utf-8') as f:
+        with open(marker_path, "w", encoding="utf-8") as f:
             json.dump(marker, f, indent=2)
 
-        print(f"[Watermarker] Added watermark: {patches_applied}")
-
     @staticmethod
-    def check_watermark(apk_path):
-        """Kiểm tra APK đã được vá bởi LP-PC Suite chưa."""
+    def check_watermark(apk_path: str) -> dict | None:
         try:
-            with zipfile.ZipFile(apk_path, 'r') as z:
+            with zipfile.ZipFile(apk_path, "r") as z:
                 if Watermarker.MARKER_FILE in z.namelist():
                     data = z.read(Watermarker.MARKER_FILE)
-                    return json.loads(data.decode('utf-8'))
-        except:
+                    return json.loads(data.decode("utf-8"))
+        except (zipfile.BadZipFile, OSError, ValueError):
             pass
         return None
 
     @staticmethod
-    def check_watermark_installed(package_name):
-        """Kiểm tra app đã cài đặt có watermark không (qua ADB)."""
+    def check_watermark_installed(package_name: str) -> dict | None:
         try:
             result = subprocess.run(
-                ['adb', 'shell', 'run-as', package_name, 'cat', Watermarker.MARKER_FILE],
-                capture_output=True, text=True, timeout=5
+                ["adb", "shell", "run-as", package_name, "cat",
+                 Watermarker.MARKER_FILE],
+                capture_output=True, text=True, timeout=5,
             )
             if result.returncode == 0 and result.stdout.strip():
                 return json.loads(result.stdout)
-        except:
+        except (subprocess.SubprocessError, ValueError):
             pass
         return None

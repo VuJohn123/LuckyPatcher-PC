@@ -1,0 +1,35 @@
+# LP-PC Suite configuration
+# Tất cả giá trị có thể override qua --config <path>
+
+pipeline:
+  apktool_jobs: null        # null = auto (cpu_count - 1)
+  apktool_memory: "4096m"   # Java heap cho apktool
+  keep_workspace: true      # giữ thư mục decompiled sau khi chạy
+  fast_mode: true           # chỉ decode main classes
+  use_gda: false            # bật GDA pre-analysis
+
+conversion:
+  auto_convert_xapk: true   # BẮT BUỘC: .xapk → .apk tự động
+  allow_split_apk: true     # cho phép folder chứa split APK
+
+signing:
+  key_type: testkey         # testkey | platform | media | shared
+  forced_package_id: null   # 1-127, null = auto
+
+logging:
+  level: INFO               # DEBUG | INFO | WARNING | ERROR
+  file: logs/pipeline.log
+  max_bytes: 10485760       # 10 MB
+  backup_count: 5
+
+cache:
+  enabled: true
+  dir: workspace/cache
+  apk_analysis_ttl_days: 30
+  decompiled_ttl_days: 7
+
+network:
+  connect_timeout: 10       # giây
+  read_timeout: 60
+  max_retries: 3
+  backoff_factor: 1.5

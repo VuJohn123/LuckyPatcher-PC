@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Virtual env
+.venv/
+venv/
+ENV/
+
+# Test / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Runtime artifacts
+workspace/
+logs/
+*.log
+
+# Generated tools
+tools/bundletool.jar
+tools/_bundletool_merged.zip
+
+# Secrets
+.env
+*.keystore
+
+# OS
+Thumbs.db
+.DS_Store

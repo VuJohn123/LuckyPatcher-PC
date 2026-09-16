@@ -1,8 +1,28 @@
-from PyQt6.QtCore import QObject, pyqtSignal
+"""Qt signals cho pipeline — safe cross-thread update."""
+from __future__ import annotations
 
-class PipelineSignals(QObject):
-    """Tín hiệu để cập nhật GUI từ pipeline"""
-    progress = pyqtSignal(int, int)        # current, total
-    status = pyqtSignal(str)               # thông báo trạng thái
-    patch_complete = pyqtSignal(str, str)  # mode, kết quả
-    finished = pyqtSignal(bool, str)       # success, output_path
+try:
+    from PyQt6.QtCore import QObject, pyqtSignal
+
+    class PipelineSignals(QObject):
+        progress = pyqtSignal(int, int)
+        status = pyqtSignal(str)
+        patch_complete = pyqtSignal(str, str)
+        finished = pyqtSignal(bool, str)
+
+except ImportError:
+    # Fallback khi không có PyQt6 (CLI mode)
+    class PipelineSignals:
+        class _Signal:
+            def __init__(self): self._cbs = []
+            def connect(self, cb): self._cbs.append(cb)
+            def emit(self, *args):
+                for cb in self._cbs:
+                    try: cb(*args)
+                    except Exception: pass
+
+        def __init__(self):
+            self.progress = self._Signal()
+            self.status = self._Signal()
+            self.patch_complete = self._Signal()
+            self.finished = self._Signal()
