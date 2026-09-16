@@ -1,10 +1,10 @@
 """
 LP-PC Suite — Entry point chính.
 Tuân thủ production-ready:
-  - Stability: try/except mọi layer, fallback
+  - Stability: try/except mọi layer, fallback, metrics
   - Performance: lazy import, cache, GC control
   - Network: retry/timeout qua helper
-  - Logging: RotatingFileHandler + GUI callback
+  - Logging: RotatingFileHandler + GUI callback + structured steps
   - Security: validate input qua normalize_input
   - Scalability: config-driven, modular
 """
@@ -23,8 +23,15 @@ from core.pipeline_helpers import normalize_input, setup_logging
 from core.config import load_config
 
 
+# =============================================================
+# HELPERS
+# =============================================================
 def _emit_step(signals, name: str, pct: int, log_callback) -> None:
-    """Helper: emit step signal + log."""
+    """
+    Phát step signal + log. An toàn cả khi signals=None (CLI mode).
+    - signals.step(name, pct) — GUI progress bar
+    - log_callback(f"[*] [{pct:3d}%] {name}") — dual-channel
+    """
     if signals:
         try:
             signals.step.emit(name, pct)
@@ -33,6 +40,32 @@ def _emit_step(signals, name: str, pct: int, log_callback) -> None:
     log_callback(f"[*] [{pct:3d}%] {name}")
 
 
+def _record_metric(
+    apk_path: str,
+    mode: str,
+    success: bool,
+    duration: float,
+    patches: int = 0,
+    error: str = "",
+) -> None:
+    """Ghi metrics — không crash pipeline nếu lỗi."""
+    try:
+        from core.metrics import PatchMetrics, get_metrics
+        get_metrics().record(PatchMetrics(
+            apk_name=os.path.basename(apk_path),
+            mode=mode,
+            success=success,
+            duration_sec=duration,
+            patches_applied=patches,
+            error=error[:500],
+        ))
+    except Exception:
+        pass  # metrics không phải critical path
+
+
+# =============================================================
+# MAIN PIPELINE
+# =============================================================
 def run_pipeline(
     apk_path: str,
     mode: str = "all",
@@ -51,7 +84,28 @@ def run_pipeline(
     config: dict | None = None,
     **kwargs,
 ) -> tuple[bool, str | None, dict]:
-    """Chạy pipeline vá APK."""
+    """
+    Chạy pipeline vá APK.
+
+    Args:
+        apk_path: đường dẫn .apk / .xapk / .apks / folder split
+        mode: chuỗi mode (vd "license:auto,ads:full_offline")
+        log_callback: hàm nhận str để log ra GUI
+        key_type: testkey | platform | media | shared
+        forced_package_id: 1-127 hoặc None
+        fast_mode: chỉ decompile main classes
+        use_gda: chạy GDA pre-analysis
+        apktool_jobs: số thread; None = auto (cpu_count - 1)
+        apktool_memory: Java heap (vd "4096m")
+        keep_workspace: giữ thư mục decompiled sau khi chạy
+        clone_package: tên package mới cho chế độ clone
+        signals: PipelineSignals để cập nhật GUI
+        force_reanalyze: bỏ qua cache phân tích
+        config: dict config đã load; None = load mặc định
+
+    Returns:
+        (success, output_apk_path, patch_reports)
+    """
     if config is None:
         config = load_config()
 
@@ -63,30 +117,46 @@ def run_pipeline(
     _log("[*] ========== LP-PC Suite — Pipeline Start ==========")
     _log(f"[*] Input: {os.path.basename(apk_path)}")
 
-    # ---- BƯỚC 0: chuẩn hóa input ----
+    # ============================================================
+    # BƯỚC 0: Chuẩn hóa input
+    # ============================================================
     _emit_step(signals, "Chuẩn hóa input...", 2, _log)
     try:
         apk_path = normalize_input(apk_path, config, _log)
     except ValueError as e:
         _log(f"[!] Input không hợp lệ: {e}")
         logger.error("Input normalization failed: %s", e)
+        _record_metric(
+            apk_path, mode, False,
+            time.monotonic() - t0, error=str(e),
+        )
         if signals:
-            try: signals.finished.emit(False, "")
-            except Exception: pass
+            try:
+                signals.finished.emit(False, "")
+            except Exception:
+                pass
         return False, None, {}
 
     _log(f"[*] Processing: {os.path.basename(apk_path)}")
 
-    # ---- Parse modes ----
+    # ============================================================
+    # Parse modes
+    # ============================================================
     modes = (
         mode[6:].split(",") if mode.startswith("multi:")
         else [m.strip() for m in mode.split(",") if m.strip()]
     )
     if not modes:
         _log("[!] Không có mode nào được chọn")
+        _record_metric(
+            apk_path, mode, False,
+            time.monotonic() - t0, error="No modes",
+        )
         if signals:
-            try: signals.finished.emit(False, "")
-            except Exception: pass
+            try:
+                signals.finished.emit(False, "")
+            except Exception:
+                pass
         return False, None, {}
 
     from core.mode_registry import MODE_MAP
@@ -97,14 +167,21 @@ def run_pipeline(
     mapped_modes = [all_modes.get(m, m) for m in modes]
     _log(f"[*] Mapped modes: {mapped_modes}")
 
-    # ---- Validate forced_package_id ----
+    # ============================================================
+    # Validate forced_package_id
+    # ============================================================
     if forced_package_id is not None and not (
         isinstance(forced_package_id, int) and 1 <= forced_package_id <= 127
     ):
-        _log(f"[!] forced_package_id={forced_package_id} không hợp lệ, bỏ qua")
+        _log(
+            f"[!] forced_package_id={forced_package_id} "
+            f"không hợp lệ, bỏ qua"
+        )
         forced_package_id = None
 
-    # ---- Workspace ----
+    # ============================================================
+    # Workspace setup
+    # ============================================================
     base_dir = Path(__file__).resolve().parent.parent / "workspace"
     decompiled_dir = str(base_dir / "decompiled")
     output_dir = str(base_dir / "output")
@@ -118,18 +195,25 @@ def run_pipeline(
             or max(1, (os.cpu_count() or 4) - 1)
         )
 
+    # ============================================================
+    # GC control (performance)
+    # ============================================================
     gc_was_enabled = gc.isenabled()
     gc.disable()
 
     try:
         from core.pipeline_executor import execute_modes, set_file_cache
         from core.smali_utils import FileContentCache
-        from core.apk_utils import decompile_apk, recompile_apk, sign_apk
+        from core.apk_utils import (
+            decompile_apk,
+            recompile_apk,
+            sign_apk,
+        )
         from core.device_bridge import install_apk
         from core.patch_history import PatchHistory
         from patcher.watermarker import Watermarker
 
-        # ---- BƯỚC 1: GDA ----
+        # ---- BƯỚC 1: GDA pre-analysis (optional) ----
         if use_gda:
             _emit_step(signals, "Phân tích GDA...", 5, _log)
             try:
@@ -137,9 +221,9 @@ def run_pipeline(
                 GDAAnalyzer().analyze(apk_path)
             except Exception as e:
                 _log(f"[i] [GDA] Bỏ qua: {e}")
-                logger.warning("GDA failed: %s", e)
+                logger.warning("GDA pre-analysis failed: %s", e)
 
-        # ---- BƯỚC 2: Phân tích APK ----
+        # ---- BƯỚC 2: Phân tích APK (có cache) ----
         _emit_step(signals, "Phân tích APK...", 10, _log)
         try:
             from scanner.analyzer import AppDeepAnalyzer
@@ -185,6 +269,7 @@ def run_pipeline(
             mapped_modes, decompiled_dir, ad_activities,
             apk_path, _log, signals,
         )
+
         _emit_step(signals, "Ghi thay đổi...", 65, _log)
         file_cache.flush(_log)
 
@@ -213,14 +298,18 @@ def run_pipeline(
         signed_apk = sign_apk(
             patched_apk, key_type=key_type, log_callback=_log
         )
-        final_apk = os.path.join(output_dir, os.path.basename(signed_apk))
+        final_apk = os.path.join(
+            output_dir, os.path.basename(signed_apk)
+        )
         if os.path.abspath(signed_apk) != os.path.abspath(final_apk):
             if os.path.exists(final_apk):
                 os.remove(final_apk)
             os.replace(signed_apk, final_apk)
 
-        # ---- BƯỚC 8: ADB install ----
-        _emit_step(signals, "Cài đặt qua ADB (optional)...", 96, _log)
+        # ---- BƯỚC 8: ADB install (optional) ----
+        _emit_step(
+            signals, "Cài đặt qua ADB (optional)...", 96, _log
+        )
         try:
             install_apk(final_apk)
             _log("[✔] [ADB] Installed on device")
@@ -228,7 +317,7 @@ def run_pipeline(
             _log(f"[i] [ADB] Install skipped: {e}")
             logger.info("ADB install skipped: %s", e)
 
-        # ---- BƯỚC 9: History ----
+        # ---- BƯỚC 9: Lưu lịch sử ----
         _emit_step(signals, "Lưu lịch sử...", 98, _log)
         try:
             PatchHistory().add_record(
@@ -237,35 +326,55 @@ def run_pipeline(
         except Exception as e:
             logger.warning("History save failed: %s", e)
 
+        # ---- Tổng kết ----
         elapsed = time.monotonic() - t0
         summary = (
             ", ".join(patches_applied) if patches_applied
             else "không có patch"
         )
-        _emit_step(signals, f"Hoàn thành trong {elapsed:.1f}s", 100, _log)
+        _emit_step(
+            signals, f"Hoàn thành trong {elapsed:.1f}s", 100, _log
+        )
         _log(f"[✔] Output: {final_apk}")
         _log(f"[✔] Done in {elapsed:.1f}s — {summary}")
 
+        # ---- Metrics (success) ----
+        _record_metric(
+            apk_path, mode, True, elapsed,
+            patches=len(patches_applied),
+        )
+
         if signals:
-            try: signals.finished.emit(True, final_apk)
-            except Exception: pass
+            try:
+                signals.finished.emit(True, final_apk)
+            except Exception:
+                pass
 
         return True, final_apk, patch_reports
 
     except Exception as e:
+        elapsed = time.monotonic() - t0
         _log(f"[!] Pipeline failed: {e}")
-        logger.exception("Pipeline crashed")  # ✅ DÙNG logger KHÔNG PHẢI log
+        logger.exception("Pipeline crashed")  # ✅ DÙNG logger, không phải log
         traceback.print_exc()
 
+        # ---- History (failure) ----
         try:
             from core.patch_history import PatchHistory
             PatchHistory().add_record(apk_path, mode, False, "", [])
         except Exception:
             pass
 
+        # ---- Metrics (failure) ----
+        _record_metric(
+            apk_path, mode, False, elapsed, error=str(e),
+        )
+
         if signals:
-            try: signals.finished.emit(False, "")
-            except Exception: pass
+            try:
+                signals.finished.emit(False, "")
+            except Exception:
+                pass
 
         return False, None, {}
 
@@ -288,21 +397,42 @@ def main() -> int:
         prog="lp-pc-suite",
         description="LP-PC Suite — APK patcher (production-ready)",
     )
-    parser.add_argument("apk", nargs="?", help=".apk / .xapk / folder")
-    parser.add_argument("--mode", default="all")
-    parser.add_argument("--config")
-    parser.add_argument("--custom-patch")
+    parser.add_argument(
+        "apk", nargs="?",
+        help=".apk / .xapk / .apks / folder chứa split APK",
+    )
+    parser.add_argument(
+        "--mode", default="all",
+        help="Mode (comma-separated), vd 'license,ads,iap_dex'",
+    )
+    parser.add_argument(
+        "--config",
+        help="Đường dẫn YAML config (mặc định: config/default.yaml)",
+    )
+    parser.add_argument(
+        "--custom-patch",
+        help="Path tới file custom patch (.txt/.lpzip)",
+    )
     parser.add_argument(
         "--key-type",
         choices=["testkey", "platform", "media", "shared"],
         default="testkey",
     )
     parser.add_argument("--forced-package-id", type=int)
-    parser.add_argument("--fast", action="store_true")
-    parser.add_argument("--gda", action="store_true")
+    parser.add_argument(
+        "--fast", action="store_true",
+        help="Fast mode (chỉ main classes)",
+    )
+    parser.add_argument(
+        "--gda", action="store_true",
+        help="GDA pre-analysis",
+    )
     parser.add_argument("--apktool-jobs", type=int)
     parser.add_argument("--apktool-memory", default="4096m")
-    parser.add_argument("--clean", action="store_true")
+    parser.add_argument(
+        "--clean", action="store_true",
+        help="Xóa workspace sau khi chạy",
+    )
     parser.add_argument("--clone-package")
     parser.add_argument("--force-reanalyze", action="store_true")
     parser.add_argument("--verbose", "-v", action="store_true")

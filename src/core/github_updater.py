@@ -56,15 +56,29 @@ class UpdateInfo:
         return "<br>".join(l for l in lines if l is not None)
 
 
-def _parse_version(v: str) -> tuple[int, ...]:
-    """'4.1.2' → (4, 1, 2). An toàn với suffix."""
-    parts = []
+def _parse_version(v: str) -> tuple[int, int, int, int]:
+    """
+    Parse '4.1.2' → (4, 1, 2, 0).
+    Luôn pad đủ 4 phần để tuple so sánh chính xác:
+      - '4.1'         → (4, 1, 0, 0)
+      - '4.1.2'       → (4, 1, 2, 0)
+      - '4.1.2-beta'  → (4, 1, 2, 0)
+      - '4.1.2.3.4'   → (4, 1, 2, 3)  (cap 4)
+    Suffix không phải digit bị strip: '2-beta' → '2'.
+    """
+    parts: list[int] = []
     for p in v.split("."):
-        try:
-            parts.append(int("".join(c for c in p if c.isdigit()) or "0"))
-        except ValueError:
-            parts.append(0)
-    return tuple(parts)
+        digits = "".join(c for c in p if c.isdigit())
+        parts.append(int(digits) if digits else 0)
+
+    # Cap 4 phần
+    parts = parts[:4]
+
+    # Pad về đủ 4 phần
+    while len(parts) < 4:
+        parts.append(0)
+
+    return (parts[0], parts[1], parts[2], parts[3])
 
 
 def _is_newer(remote: str, current: str) -> bool:

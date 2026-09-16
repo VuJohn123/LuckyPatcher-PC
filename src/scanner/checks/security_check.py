@@ -11,7 +11,15 @@ _ROOT_KEYWORDS = (
     "root", "magisk", "supersu", "busybox",
     "isdevicerooted", "checkroot",
 )
-_LP_KEYWORDS = ("luckypatcher", "lucky_patcher", "com.chelpu")
+
+# FIX: Thêm cả slash variant vì class name trong DEX dùng '/' (Lcom/chelpu/...)
+# Keyword matching sẽ normalize cả 'com.chelpu' và 'com/chelpu'
+_LP_KEYWORDS = (
+    "luckypatcher",
+    "lucky_patcher",
+    "com.chelpu",   # dot form (package name)
+    "com/chelpu",   # slash form (DEX internal)
+)
 
 
 def check_root_detection(get_all_dex_bytes, findings) -> None:

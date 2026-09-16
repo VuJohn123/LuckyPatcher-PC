@@ -84,6 +84,9 @@ def main() -> int:
     app.setStyle("Fusion")
     app.setStyleSheet(MATERIAL_DARK_STYLE)
 
+    from ui.exception_hook import install_gui_exception_hook
+    install_gui_exception_hook()
+
     window = MainWindow()
     window.show()
 
