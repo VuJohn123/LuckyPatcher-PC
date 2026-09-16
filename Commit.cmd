@@ -1,7 +1,6 @@
+@echo off
 git add .
 
-# 5. Commit the files with a message
-git commit -m "Add my local files"
+git commit -m "Commit"
 
-# 6. Push the files to GitHub
 git push origin main
