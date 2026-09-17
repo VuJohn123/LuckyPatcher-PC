@@ -1,33 +1,218 @@
-pipeline:
-  apktool_jobs: null
-  apktool_memory: "4096m"
-  keep_workspace: true
-  fast_mode: true
-  use_gda: false
+# ============================================================
+# LP-PC Suite — Adaptive Configuration
+# ============================================================
+# Giá trị "auto" được điều chỉnh bởi 4 tầng:
+#   - env_probe: static hardware spec
+#   - workload_profiler: classify APK being processed
+#   - adaptive_tuner: runtime state (RAM, CPU, thermal)
+#   - telemetry: learn from history
+# ============================================================
 
+# ==================== AUTO-TUNE ENGINE ====================
+auto_tune:
+  # Enable adaptive tuning (disable = dùng default values)
+  enabled: true
+
+  # Mode: auto | daily | gaming | stress | background | power_saver
+  #   auto         = detect từ workload
+  #   daily        = single APK, prioritize responsiveness
+  #   gaming       = batch nhiều APK liên tục, prioritize throughput
+  #   stress       = max throughput, all cores, no mercy
+  #   background   = chạy nền, giảm priority, không chiếm resource
+  #   power_saver  = giảm CPU/RAM để tiết kiệm pin (laptop)
+  mode: auto
+
+  # Safety margins (không bao giờ vượt qua để tránh treo máy)
+  safety:
+    # Luôn giữ lại cho OS (không dùng hết)
+    reserve_cpu_cores: 1
+    reserve_ram_pct: 25         # 25% RAM khả dụng
+    reserve_ram_min_mb: 1024    # tối thiểu 1GB
+    reserve_disk_pct: 10        # 10% disk free
+    reserve_disk_min_mb: 2048   # tối thiểu 2GB
+
+    # Ngưỡng để giảm tải (adaptive throttling)
+    throttle_ram_pct: 80        # RAM used > 80% → giảm workers
+    throttle_cpu_pct: 90        # CPU > 90% trong 30s → giảm
+    throttle_disk_pct: 90       # disk full > 90% → disable cache
+    throttle_temp_celsius: 85   # nhiệt độ CPU (nếu detect được)
+
+    # Backoff khi throttle
+    backoff_factor: 0.5         # giảm 50% workers mỗi lần throttle
+    backoff_min_workers: 1
+
+  # Workload classification (dùng để chọn strategy)
+  workload_classes:
+    tiny:    {max_size_mb: 10,   strategy: fast}
+    small:   {max_size_mb: 50,   strategy: fast}
+    medium:  {max_size_mb: 200,  strategy: balanced}
+    large:   {max_size_mb: 500,  strategy: careful}
+    huge:    {max_size_mb: 2048, strategy: careful}
+    massive: {max_size_mb: 99999, strategy: paranoid}
+
+  # Learning from history
+  telemetry:
+    enabled: true
+    history_size: 100           # lưu 100 lần chạy gần nhất
+    # Nếu APK hash này đã chạy → dùng config đã học
+    reuse_learned_config: true
+    # Ngưỡng để trust learned config (số lần chạy thành công)
+    min_samples_for_trust: 3
+
+  # Concurrent instances guard
+  concurrency:
+    # Cho phép chạy nhiều instance?
+    allow_multi_instance: false
+    # Nếu true, chia resource giữa các instance
+    share_resources: true
+    # Lock file location
+    lock_file: auto
+
+
+# ==================== PIPELINE ====================
+pipeline:
+  apktool_jobs: auto
+  apktool_memory: auto
+  keep_workspace: true
+  fast_mode: auto
+  use_gda: auto
+  gc_control: true
+  max_decompile_retries: auto
+  max_recompile_retries: 1
+
+
+# ==================== CONVERSION ====================
 conversion:
   auto_convert_xapk: true
   auto_convert_apks: true
   allow_split_apk: true
+  cleanup_temp: true
 
+
+# ==================== SIGNING ====================
 signing:
   key_type: testkey
   forced_package_id: null
+  skip_adb_if_missing: true
 
+
+# ==================== LOGGING ====================
 logging:
-  level: INFO
-  file: logs/pipeline.log
+  level: auto                    # auto: INFO mặc định, WARNING khi stress
+  file: auto
   max_bytes: 10485760
   backup_count: 5
+  json_format: false
+  rotation: size
+  suppress_noisy_libs: true
 
+
+# ==================== CACHE ====================
 cache:
-  enabled: true
-  dir: workspace/cache
+  enabled: auto                 # auto: tắt khi disk < 10% free
+  dir: auto
   apk_analysis_ttl_days: 30
-  decompiled_ttl_days: 7
+  decompiled_ttl_days: auto     # auto: 7 ngày thường, 1 ngày khi stress
+  max_size_mb: auto
+  compress_decompiled: auto
 
+
+# ==================== NETWORK ====================
 network:
-  connect_timeout: 10
+  connect_timeout: auto         # auto: 5s khi idle, 30s khi heavy load
   read_timeout: 60
   max_retries: 3
   backoff_factor: 1.5
+  retry_status_codes: [429, 500, 502, 503, 504]
+  max_download_size_mb: 500
+  pool_connections: auto        # auto: 5 idle, 20 heavy
+  pool_maxsize: auto
+  user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+  block_private_ips: true
+  block_localhost: true
+  block_metadata_endpoints: true
+  allowed_schemes: [http, https]
+
+
+# ==================== PERFORMANCE ====================
+performance:
+  worker_processes: auto
+  regex_engine: auto
+  json_engine: auto
+  file_cache_buffer_kb: auto    # auto: 64 tiny, 256 huge
+  mmap_threshold_bytes: 1048576
+  prefilter_enabled: true
+
+  # Adaptive batch sizes
+  batch:
+    # Ghi file cache thành batch (giảm syscall)
+    flush_batch_size: auto      # auto: 50 tiny, 500 huge
+    flush_on_memory_mb: auto    # auto: flush khi cache > N MB
+    # Parallel processing
+    parallel_chunk_size: auto   # auto: chia files thành N chunks
+
+
+# ==================== SECURITY ====================
+security:
+  zip_slip_guard: true
+  validate_input_paths: true
+  max_path_length: auto         # auto: 250 Windows, 4096 Linux
+  sanitize_download_filenames: true
+  forbid_eval_in_patches: true
+
+
+# ==================== UI ====================
+ui:
+  theme: dark
+  font_family: null
+  font_size: 13
+  window_width: 1280
+  window_height: 820
+  log_visible: auto             # auto: ẩn khi stress
+  log_max_height: auto
+  log_expanded_height: 400
+  log_auto_scroll: auto         # auto: false khi stress (giảm render)
+  log_max_blocks: auto          # auto: 1000 stress, 10000 idle
+  animations_enabled: auto      # auto: false khi power_saver
+
+
+# ==================== UPDATER ====================
+updater:
+  check_on_startup: auto        # auto: true idle, false stress
+  update_url: "https://raw.githubusercontent.com/Freezdy413485/LP-PC-Suite/main/version.json"
+  timeout: 8.0
+  cache_check_hours: 24
+
+
+# ==================== PRESETS ====================
+presets:
+  daily:
+    auto_tune: {mode: daily}
+    pipeline: {fast_mode: false, use_gda: false}
+    ui: {log_visible: true, animations_enabled: true}
+
+  gaming:
+    auto_tune: {mode: gaming}
+    pipeline: {fast_mode: true, use_gda: false}
+    performance: {worker_processes: auto}
+    ui: {log_visible: true, animations_enabled: false}
+
+  stress:
+    auto_tune:
+      mode: stress
+      safety: {reserve_ram_pct: 15}
+    pipeline: {fast_mode: true, use_gda: false, gc_control: true}
+    cache: {compress_decompiled: false}
+    ui: {log_visible: false, log_auto_scroll: false}
+    logging: {level: WARNING}
+
+  background:
+    auto_tune: {mode: background}
+    pipeline: {apktool_jobs: 1, apktool_memory: 2048m}
+    ui: {animations_enabled: false}
+
+  power_saver:
+    auto_tune: {mode: power_saver}
+    pipeline: {apktool_jobs: 2, apktool_memory: 2048m}
+    performance: {worker_processes: 1}
+    ui: {animations_enabled: false}
