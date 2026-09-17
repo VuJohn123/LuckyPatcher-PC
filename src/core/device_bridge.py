@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import logging
+import re
 import shutil
 import subprocess
+import zipfile
 
 logger = logging.getLogger(__name__)
 
@@ -12,20 +14,81 @@ def _adb_available() -> bool:
     return shutil.which("adb") is not None
 
 
-def install_apk(apk_path: str, timeout: int = 120) -> bool:
-    """Cài APK qua ADB. Raise RuntimeError nếu thất bại."""
+def _extract_package_from_apk(apk_path: str) -> str | None:
+    """Extract package name từ AndroidManifest.xml (binary) qua androguard."""
+    try:
+        from androguard.core.apk import APK
+        return APK(apk_path).get_package()
+    except Exception:
+        # Fallback: dùng aapt nếu có
+        try:
+            proc = subprocess.run(
+                ["aapt", "dump", "badging", apk_path],
+                capture_output=True, text=True, timeout=10,
+            )
+            m = re.search(r"package: name='([^']+)'", proc.stdout)
+            return m.group(1) if m else None
+        except Exception:
+            return None
+
+
+def install_apk(
+    apk_path: str,
+    timeout: int = 120,
+    auto_uninstall_on_mismatch: bool = True,
+) -> bool:
+    """
+    Cài APK qua ADB. Raise RuntimeError nếu thất bại.
+
+    Nếu `INSTALL_FAILED_UPDATE_INCOMPATIBLE` → auto-uninstall app cũ
+    (do signature mismatch) và thử lại 1 lần.
+    """
     if not _adb_available():
         raise RuntimeError("adb không có trong PATH")
 
+    try:
+        _do_install(apk_path, timeout)
+        return True
+    except RuntimeError as e:
+        msg = str(e)
+        if (
+            auto_uninstall_on_mismatch
+            and "INSTALL_FAILED_UPDATE_INCOMPATIBLE" in msg
+        ):
+            logger.warning(
+                "Signature mismatch — auto-uninstall app cũ và retry"
+            )
+            pkg = _extract_package_from_apk(apk_path)
+            if pkg:
+                subprocess.run(
+                    ["adb", "uninstall", pkg],
+                    capture_output=True, text=True, timeout=60,
+                )
+                logger.info("Uninstalled %s, retry install", pkg)
+                _do_install(apk_path, timeout)
+                return True
+            else:
+                raise RuntimeError(
+                    f"{msg}\n"
+                    f"Không extract được package name để uninstall"
+                ) from e
+        else:
+            raise
+
+
+def _do_install(apk_path: str, timeout: int) -> None:
     cmd = ["adb", "install", "-r", apk_path]
     try:
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        proc = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=timeout
+        )
     except subprocess.TimeoutExpired as e:
         raise RuntimeError(f"ADB install timeout sau {timeout}s") from e
 
     if proc.returncode != 0 or "Success" not in proc.stdout:
-        raise RuntimeError(f"ADB install failed: {proc.stderr or proc.stdout}")
-    return True
+        raise RuntimeError(
+            f"ADB install failed: {proc.stderr or proc.stdout}"
+        )
 
 
 def uninstall_app(package_name: str, timeout: int = 60) -> bool:
@@ -43,7 +106,6 @@ def uninstall_app(package_name: str, timeout: int = 60) -> bool:
 
 
 def setup_reverse_port(remote_port: int, local_port: int) -> bool:
-    """Setup adb reverse tcp:remote → tcp:local."""
     if not _adb_available():
         return False
     try:
@@ -57,7 +119,6 @@ def setup_reverse_port(remote_port: int, local_port: int) -> bool:
 
 
 def check_root(timeout: int = 5) -> bool:
-    """Kiểm tra thiết bị có root không."""
     if not _adb_available():
         return False
     try:
@@ -71,7 +132,6 @@ def check_root(timeout: int = 5) -> bool:
 
 
 def list_devices() -> list[str]:
-    """Liệt kê ADB devices đang kết nối."""
     if not _adb_available():
         return []
     try:

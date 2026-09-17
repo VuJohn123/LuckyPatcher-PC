@@ -10,7 +10,7 @@ from __future__ import annotations
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
     QLabel, QToolBar, QStatusBar, QComboBox, QLineEdit,
-    QStackedWidget, QFrame, QProgressBar,
+    QStackedWidget, QFrame, QProgressBar, QMessageBox,
 )
 from PyQt6.QtCore import Qt, QSize
 from PyQt6.QtGui import QFont
@@ -63,7 +63,7 @@ class MainWindow(QMainWindow):
         right_layout.addWidget(self._build_toolbar())
         right_layout.addWidget(self._build_progress_panel())
 
-        # Switches panel
+        # Switches panel — dùng iap_manager từ controller
         self.switches_panel = SwitchesPanel(self.controller.iap_manager)
         right_layout.addWidget(self.switches_panel)
 
@@ -122,7 +122,7 @@ class MainWindow(QMainWindow):
         version.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(version)
 
-        # Wire navigation (lambda resolve self.stacked lúc click)
+        # Wire navigation (lambda resolve self.stacked khi click)
         self.btn_apps.clicked.connect(lambda: self.stacked.setCurrentIndex(0))
         self.btn_detail.clicked.connect(lambda: self.stacked.setCurrentIndex(1))
         self.btn_tools.clicked.connect(lambda: self.stacked.setCurrentIndex(2))
@@ -305,6 +305,10 @@ class MainWindow(QMainWindow):
         self.controller.progress_hide.connect(self._hide_progress)
         self.controller.show_detail_page.connect(self._show_detail_page)
         self.controller.step_update.connect(self._on_step_update)
+        # Safety prompt: controller emits → main thread dialog
+        self.controller.safety_prompt_requested.connect(
+            self._on_safety_prompt
+        )
 
     # ============================================================
     # EVENT HANDLERS → delegate controller
@@ -351,8 +355,6 @@ class MainWindow(QMainWindow):
         self.apk_detail.populate(result)
 
     def _on_progress(self, current: int, total: int) -> None:
-        # Progress kiểu cũ (patch counter) — không hiện container,
-        # chỉ update nếu container đã visible
         if total > 0:
             pct = int(current * 100 / total)
             if self.progress_container.isVisible():
@@ -372,6 +374,64 @@ class MainWindow(QMainWindow):
     def _show_detail_page(self) -> None:
         self.btn_detail.setChecked(True)
         self.stacked.setCurrentIndex(1)
+
+    # ============================================================
+    # SAFETY PROMPT — Y/N dialog khi vượt ngưỡng N lần
+    # ============================================================
+    def _on_safety_prompt(
+        self, reason: str, details: dict, count: int, callback
+    ) -> None:
+        """
+        Chạy trên main thread (Qt signal queue từ worker thread).
+        Block worker thread tối đa 60s (config: prompt_timeout_sec).
+
+        FIX: setTextFormat(RichText) để render HTML đúng.
+        """
+        msg = QMessageBox(self)
+        msg.setIcon(QMessageBox.Icon.Warning)
+        msg.setWindowTitle("⚠️ Cảnh báo an toàn")
+
+        # === FIX: bật RichText cho CẢ text() và informativeText() ===
+        msg.setTextFormat(Qt.TextFormat.RichText)
+
+        msg.setText(
+            f"<b>Phát hiện <span style='color:#f85149;'>"
+            f"{reason.upper()}</span> vượt ngưỡng {count} lần liên tiếp!</b>"
+        )
+
+        detail_lines = [
+            f"&nbsp;&nbsp;• <b>{k}</b>: {v}"
+            for k, v in details.items()
+        ]
+        msg.setInformativeText(
+            "<b>Chi tiết:</b><br>"
+            + "<br>".join(detail_lines)
+            + "<br><br>"
+            "<b>Continue</b>: nâng ngưỡng +5% và tiếp tục "
+            "(chấp nhận rủi ro)<br>"
+            "<b>Stop</b>: dừng pipeline an toàn"
+        )
+
+        msg.setStandardButtons(
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        msg.button(QMessageBox.StandardButton.Yes).setText("Continue")
+        msg.button(QMessageBox.StandardButton.No).setText("Stop")
+        msg.setDefaultButton(QMessageBox.StandardButton.No)
+        msg.setWindowModality(Qt.WindowModality.ApplicationModal)
+
+        user_continue = msg.exec() == QMessageBox.StandardButton.Yes
+
+        self.log.append_log(
+            f"[{'✔' if user_continue else '✘'}] [Safety] User chọn "
+            f"{'CONTINUE' if user_continue else 'STOP'}"
+        )
+
+        # Trả kết quả về worker thread đang chờ
+        try:
+            callback(user_continue)
+        except Exception:
+            pass
 
     # ============================================================
     # LOG PANEL HELPERS

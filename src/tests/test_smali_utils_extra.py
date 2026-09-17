@@ -47,7 +47,6 @@ def test_get_smali_dirs_multiple(tmp_path):
 
 
 def test_get_smali_dirs_fallback(tmp_path):
-    """Không có smali dir → fallback về <tmp>/smali."""
     dirs = get_smali_dirs(str(tmp_path))
     assert len(dirs) == 1
     assert dirs[0].endswith("smali")
@@ -102,16 +101,13 @@ def test_file_cache_flush(tmp_path):
     cache.flush(logs.append)
 
     assert f.read_text() == "modified"
-    assert cache.cache == {}
+    # Sau flush: _modified rỗng, _read_cache cũng cleared
+    assert cache._modified == {}
+    assert len(cache._read_cache) == 0
 
 
 def test_file_cache_flush_error_isolated(tmp_path):
-    """
-    Flush lỗi 1 file (null char trong path) → không crash pipeline,
-    log warning, tiếp tục xử lý các file khác.
-
-    Windows: null char → ValueError (không phải OSError).
-    """
+    """Flush lỗi 1 file → không crash, log warning, tiếp tục file khác."""
     cache = FileContentCache(str(tmp_path))
     # File với null char — os.makedirs raise ValueError
     cache.write("/invalid\x00path/file.smali", "bad")
@@ -123,18 +119,17 @@ def test_file_cache_flush_error_isolated(tmp_path):
     logs = []
     cache.flush(logs.append)  # Không raise
 
-    # Verify file tốt đã flush
     assert good.read_text() == "modified-good"
-    # Verify có log warning cho file lỗi
     assert any("FileCache" in l for l in logs)
     # Cache đã clear
-    assert cache.cache == {}
+    assert cache._modified == {}
 
 
 def test_file_cache_flush_type_error_isolated(tmp_path):
     """Cache chứa key không phải str → không crash (TypeError)."""
     cache = FileContentCache(str(tmp_path))
-    cache.cache[12345] = "content"  # key là int, không phải str
+    # key là int, không phải str → os.makedirs sẽ raise TypeError
+    cache._modified[12345] = "content"  # type: ignore
     logs = []
     cache.flush(logs.append)  # Không raise
 

@@ -6,10 +6,12 @@ try:
 
     class PipelineSignals(QObject):
         progress = pyqtSignal(int, int)          # (current, total)
-        step = pyqtSignal(str, int)              # (step_name, overall_pct 0-100)
+        step = pyqtSignal(str, int)              # (step_name, pct 0-100)
         status = pyqtSignal(str)
         patch_complete = pyqtSignal(str, str)
         finished = pyqtSignal(bool, str)
+        # (reason, details, count, callback) — callback(bool)
+        safety_prompt = pyqtSignal(str, dict, int, object)
 
 except ImportError:
     # Fallback CLI mode
@@ -28,3 +30,4 @@ except ImportError:
             self.status = self._Signal()
             self.patch_complete = self._Signal()
             self.finished = self._Signal()
+            self.safety_prompt = self._Signal()

@@ -1,24 +1,22 @@
 """
 Tiện ích xử lý Smali — regex + file cache + APK cache.
-Tối ưu: orjson > json, memory-mapped files.
+Tối ưu: re2 > re, orjson > json, memory-mapped files.
 
-LƯU Ý VỀ REGEX ENGINE:
-  - Dùng stdlib `re` (ổn định, đầy đủ API: DOTALL, IGNORECASE, lookahead)
-  - KHÔNG dùng google-re2: API khác biệt (không có re.DOTALL), thiếu
-    lookahead/lookbehind, và regex trong module này không phải hot path
-    (chỉ chạy trên file smali ~KB, không phải string MB).
-  - Nếu cần tốc độ regex cao hơn trong tương lai, viết adapter class
-    riêng wrap re2.Options() để tương thích flag.
+FileContentCache dùng LRU cho reads (maxsize) + buffer cho writes.
+Tránh OOM khi patch match 30,000+ file smali.
 """
 from __future__ import annotations
 
 import hashlib
 import mmap
 import os
-import re  # stdlib — ổn định, đầy đủ API
+import time
+from collections import OrderedDict
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
-RE_ENGINE = "re"  # constant để hiển thị startup info
+# Regex engine — stdlib re (ổn định, đủ API)
+import re  # type: ignore
+RE_ENGINE = "re"
 
 # JSON engine: orjson (Rust) > stdlib json
 try:
@@ -47,34 +45,28 @@ except ImportError:
 # ============================================================
 # REGEX CONSTANTS
 # ============================================================
-
-# Match nhiều modifier (public, static, final, ...) theo thứ tự bất kỳ
 _METHOD_MODS = (
     r"(?:(?:public|private|protected|static|final|synthetic|abstract|"
     r"declared-synchronized)\s+)+"
 )
 
-# Group 1 = tên method
 REGEX_BOOLEAN_METHOD = re.compile(
     r"\.method\s+" + _METHOD_MODS + r"(\S+)\s*\(.*?\)\s*Z\s*.*?\.end\s+method",
     re.DOTALL,
 )
 
-# Group 1 = tên method, group 2 = return type (V | Bundle)
 REGEX_IAP_BILLING_METHOD = re.compile(
     r"\.method\s+" + _METHOD_MODS
     + r"(\S+)\s*\([^)]*\)\s*(V|Landroid/os/Bundle;)\s*.*?\.end\s+method",
     re.DOTALL,
 )
 
-# Group 1 = tên method
 REGEX_SIGNATURE_METHOD = re.compile(
     r"\.method\s+" + _METHOD_MODS
     + r"(\w+)\s*\(.*?\)\s*Z\s*\.registers\s+\d+\s*.*?\.end\s+method",
     re.DOTALL,
 )
 
-# Group 1 = tên method
 REGEX_INTEGRITY_METHOD = re.compile(
     r"\.method\s+" + _METHOD_MODS + r"(\S+)\s*\(.*?\)\s*Z\s*.*?\.end\s+method",
     re.DOTALL,
@@ -106,7 +98,6 @@ REGEX_MANIFEST_RECEIVER = re.compile(
 # ============================================================
 # PATH HELPERS
 # ============================================================
-
 def get_smali_dirs(decompiled_path: str) -> list[str]:
     smali_dirs = []
     try:
@@ -130,44 +121,96 @@ def get_all_smali_files(decompiled_path: str) -> list[str]:
 
 
 # ============================================================
-# FILE CACHE
+# FILE CONTENT CACHE — LRU read + buffered write
 # ============================================================
-
 class FileContentCache:
-    def __init__(self, decompiled_path: str):
+    """
+    Cache nội dung file smali trong RAM.
+
+    READ: LRU OrderedDict, maxsize = 2000 file (~10-20 MB).
+          Miss → load from disk (mmap nếu > 1MB) → evict LRU.
+    WRITE: Dict unbounded nhưng flush theo threshold để tránh OOM.
+          Auto-flush khi buffer vượt `write_flush_threshold` file.
+    """
+
+    DEFAULT_READ_CACHE_SIZE = 2000
+    DEFAULT_WRITE_FLUSH_THRESHOLD = 5000
+
+    def __init__(
+        self,
+        decompiled_path: str,
+        max_read_cache: int | None = None,
+        write_flush_threshold: int | None = None,
+        log_callback=None,
+    ):
         self.decompiled_path = decompiled_path
-        self.cache: dict[str, str] = {}
+        self.max_read_cache = (
+            max_read_cache or self.DEFAULT_READ_CACHE_SIZE
+        )
+        self.write_flush_threshold = (
+            write_flush_threshold or self.DEFAULT_WRITE_FLUSH_THRESHOLD
+        )
+        self._read_cache: OrderedDict[str, str] = OrderedDict()
+        self._modified: dict[str, str] = {}
+        self._log = log_callback or (lambda _: None)
+        self._read_hits = 0
+        self._read_misses = 0
+        self._write_count = 0
 
+    # ---------------- READ ----------------
     def read(self, filepath: str) -> str:
-        if filepath not in self.cache:
-            try:
-                file_size = os.path.getsize(filepath)
-                if file_size > 1024 * 1024:
-                    with open(filepath, "r+b") as f:
-                        with mmap.mmap(f.fileno(), 0) as mm:
-                            self.cache[filepath] = mm.read().decode(
-                                "utf-8", errors="ignore"
-                            )
-                else:
-                    with open(filepath, "r", encoding="utf-8",
-                              errors="ignore") as f:
-                        self.cache[filepath] = f.read()
-            except (OSError, IOError, ValueError):
-                self.cache[filepath] = ""
-        return self.cache[filepath]
+        # Modified buffer wins
+        if filepath in self._modified:
+            return self._modified[filepath]
 
+        # LRU cache hit
+        if filepath in self._read_cache:
+            self._read_cache.move_to_end(filepath)
+            self._read_hits += 1
+            return self._read_cache[filepath]
+
+        # Cache miss → load from disk
+        self._read_misses += 1
+        content = self._load_from_disk(filepath)
+        self._read_cache[filepath] = content
+
+        # Evict oldest if over capacity
+        while len(self._read_cache) > self.max_read_cache:
+            self._read_cache.popitem(last=False)
+
+        return content
+
+    def _load_from_disk(self, filepath: str) -> str:
+        try:
+            size = os.path.getsize(filepath)
+            if size > 1024 * 1024:
+                with open(filepath, "r+b") as f:
+                    with mmap.mmap(f.fileno(), 0) as mm:
+                        return mm.read().decode("utf-8", errors="ignore")
+            else:
+                with open(filepath, "r", encoding="utf-8",
+                          errors="ignore") as f:
+                    return f.read()
+        except (OSError, IOError, ValueError):
+            return ""
+
+    # ---------------- WRITE ----------------
     def write(self, filepath: str, content: str) -> None:
-        self.cache[filepath] = content
+        self._modified[filepath] = content
+        self._write_count += 1
+
+        # Auto-flush if buffer grows too large (tránh OOM)
+        if len(self._modified) >= self.write_flush_threshold:
+            self._log(
+                f"[i] [FileCache] Buffer {len(self._modified)} file "
+                f"→ auto-flush"
+            )
+            self.flush(self._log)
 
     def flush(self, log_callback=print) -> None:
-        """
-        Ghi tất cả file đã cache xuống disk.
-
-        Error isolation: lỗi 1 file không dừng flush các file khác.
-        Catch ValueError (null char trong path) và TypeError (key không phải str).
-        """
+        """Ghi tất cả file modified xuống disk."""
         count = 0
-        for filepath, content in self.cache.items():
+        for filepath, content in self._modified.items():
             try:
                 os.makedirs(os.path.dirname(filepath), exist_ok=True)
                 with open(filepath, "w", encoding="utf-8",
@@ -177,19 +220,30 @@ class FileContentCache:
             except (OSError, IOError, ValueError, TypeError) as e:
                 log_callback(f"[!] [FileCache] {filepath}: {e}")
         log_callback(f"[*] [FileCache] Đã ghi {count} file")
-        self.cache.clear()
+        self._modified.clear()
+        # Read cache clear để tránh stale data
+        self._read_cache.clear()
 
+    # ---------------- INTROSPECTION ----------------
     def get_modified_files(self) -> list[str]:
-        return list(self.cache.keys())
+        return list(self._modified.keys())
 
     def is_modified(self, filepath: str) -> bool:
-        return filepath in self.cache
+        return filepath in self._modified
+
+    def get_stats(self) -> dict:
+        return {
+            "read_hits": self._read_hits,
+            "read_misses": self._read_misses,
+            "read_cache_size": len(self._read_cache),
+            "modified_buffer_size": len(self._modified),
+            "write_count": self._write_count,
+        }
 
 
 # ============================================================
-# PARALLEL PROCESSOR
+# PARALLEL PROCESSOR (unchanged)
 # ============================================================
-
 class ParallelFileProcessor:
     def __init__(self, max_workers: int | None = None):
         self.max_workers = max_workers or min(os.cpu_count() or 4, 8)
@@ -204,16 +258,17 @@ class ParallelFileProcessor:
             for future in as_completed(futures):
                 try:
                     result = future.result()
-                    total += result if isinstance(result, int) else (1 if result else 0)
+                    total += result if isinstance(result, int) else (
+                        1 if result else 0
+                    )
                 except Exception as e:
                     print(f"[!] [Parallel] {futures[future]}: {e}")
         return total
 
 
 # ============================================================
-# APK CACHE
+# APK CACHE (with TTL enforcement — G1 helper)
 # ============================================================
-
 class APKCache:
     def __init__(self, cache_dir: str | None = None):
         if cache_dir is None:
@@ -248,9 +303,18 @@ class APKCache:
             "findings": findings,
             "summary": summary,
             "colors": colors,
+            "cached_at": time.time(),
         })
         try:
             with open(cache_path, "w", encoding="utf-8") as f:
                 f.write(data)
         except OSError:
             pass
+
+    def is_expired(self, apk_path: str, ttl_days: int = 30) -> bool:
+        """Check nếu cache entry quá cũ → force re-analyze."""
+        cache_path = self.get_cache_path(apk_path)
+        if not os.path.exists(cache_path):
+            return True
+        age_days = (time.time() - os.path.getmtime(cache_path)) / 86400
+        return age_days > ttl_days

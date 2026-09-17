@@ -17,6 +17,19 @@ from core.apk_utils import (
 
 
 # ============================================================
+# Helper: mock Popen cho _run_java_with_heartbeat
+# ============================================================
+def _mock_popen(returncode: int = 0, stdout_lines: list[str] | None = None):
+    """Tạo mock Popen object."""
+    mock_proc = MagicMock()
+    mock_proc.returncode = returncode
+    mock_proc.stdout = iter(stdout_lines or [])
+    mock_proc.wait.return_value = returncode
+    mock_proc.kill.return_value = None
+    return mock_proc
+
+
+# ============================================================
 # get_apk_hash
 # ============================================================
 def test_apk_hash_deterministic(tmp_path):
@@ -59,16 +72,13 @@ def test_get_cache_dir_same_hash_same_dir(tmp_path):
 # get_tool_path
 # ============================================================
 def test_get_tool_path_legacy(tmp_path, monkeypatch):
-    """Fallback về tools/<name> nếu tools/bin/<name> không có."""
     monkeypatch.setattr("core.apk_utils.TOOLS_DIR", str(tmp_path))
-    # bin/ không tồn tại → trả về legacy path
     path = get_tool_path("apktool.jar")
     assert "apktool.jar" in path
     assert "bin" not in path
 
 
 def test_get_tool_path_new_layout(tmp_path, monkeypatch):
-    """tools/bin/<name> tồn tại → ưu tiên."""
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     (bin_dir / "apktool.jar").write_bytes(b"fake")
@@ -100,7 +110,6 @@ def test_merge_split_apks_simple(tmp_path):
         names = z.namelist()
         assert "AndroidManifest.xml" in names
         assert "config.txt" in names
-        # Base wins
         assert z.read("common.txt") == b"common"
 
 
@@ -132,43 +141,44 @@ def test_merge_split_apks_skips_bad_split(tmp_path):
 
 
 # ============================================================
-# recompile_apk
+# recompile_apk — mock Popen + verify
 # ============================================================
 def test_recompile_apk_success_first_attempt(tmp_path):
-    mock_proc = MagicMock(returncode=0, stdout="ok", stderr="")
-    with patch(
-        "core.apk_utils.subprocess.run", return_value=mock_proc
-    ):
+    mock_proc = _mock_popen(
+        returncode=0, stdout_lines=["I: Building resources..."]
+    )
+    # Mock verifier: test này test logic retry, không test verify
+    with patch("subprocess.Popen", return_value=mock_proc) as mock_popen, \
+         patch("core.apk_utils._verify_recompiled_apk"):
         result = recompile_apk(
             str(tmp_path), str(tmp_path / "out.apk"),
             log_callback=lambda *_: None,
         )
         assert result.endswith("out.apk")
+        assert mock_popen.called
 
 
 def test_recompile_apk_retry_with_aapt2(tmp_path):
     """First attempt fail → retry với --use-aapt2."""
-    fail = MagicMock(returncode=1, stdout="", stderr="fail")
-    success = MagicMock(returncode=0, stdout="ok", stderr="")
+    fail_proc = _mock_popen(returncode=1, stdout_lines=["error"])
+    success_proc = _mock_popen(returncode=0, stdout_lines=["ok"])
 
     with patch(
-        "core.apk_utils.subprocess.run",
-        side_effect=[fail, success],
-    ) as mock_run:
+        "subprocess.Popen",
+        side_effect=[fail_proc, success_proc],
+    ) as mock_popen, \
+         patch("core.apk_utils._verify_recompiled_apk"):
         recompile_apk(
             str(tmp_path), str(tmp_path / "out.apk"),
             log_callback=lambda *_: None,
         )
-        # Verify call 2 có --use-aapt2
-        second_call_args = mock_run.call_args_list[1][0][0]
+        second_call_args = mock_popen.call_args_list[1][0][0]
         assert "--use-aapt2" in second_call_args
 
 
 def test_recompile_apk_all_fail(tmp_path):
-    fail = MagicMock(returncode=1, stdout="", stderr="fail")
-    with patch(
-        "core.apk_utils.subprocess.run", return_value=fail
-    ):
+    fail_proc = _mock_popen(returncode=1, stdout_lines=["error"])
+    with patch("subprocess.Popen", return_value=fail_proc):
         with pytest.raises(RuntimeError, match="Recompile failed"):
             recompile_apk(
                 str(tmp_path), str(tmp_path / "out.apk"),
@@ -178,28 +188,30 @@ def test_recompile_apk_all_fail(tmp_path):
 
 
 def test_recompile_apk_forced_package_id(tmp_path):
-    mock_proc = MagicMock(returncode=0, stdout="", stderr="")
+    mock_proc = _mock_popen(returncode=0)
     with patch(
-        "core.apk_utils.subprocess.run", return_value=mock_proc
-    ) as mock_run:
+        "subprocess.Popen", return_value=mock_proc
+    ) as mock_popen, \
+         patch("core.apk_utils._verify_recompiled_apk"):
         recompile_apk(
             str(tmp_path), str(tmp_path / "out.apk"),
             forced_package_id=42,
             log_callback=lambda *_: None,
         )
-        cmd = mock_run.call_args[0][0]
+        cmd = mock_popen.call_args[0][0]
         assert "--forced-package-id" in cmd
         assert "42" in cmd
 
 
 # ============================================================
-# sign_apk
+# sign_apk — mock Popen + verify
 # ============================================================
 def test_sign_apk_testkey_success(tmp_path):
-    mock_proc = MagicMock(returncode=0, stdout="ok", stderr="")
-    with patch(
-        "core.apk_utils.subprocess.run", return_value=mock_proc
-    ):
+    mock_proc = _mock_popen(
+        returncode=0, stdout_lines=["Signing..."],
+    )
+    with patch("subprocess.Popen", return_value=mock_proc), \
+         patch("core.apk_utils._verify_signed_apk"):
         result = sign_apk(
             str(tmp_path / "app.apk"),
             key_type="testkey",
@@ -209,10 +221,10 @@ def test_sign_apk_testkey_success(tmp_path):
 
 
 def test_sign_apk_testkey_failure(tmp_path):
-    mock_proc = MagicMock(returncode=1, stdout="", stderr="sign failed")
-    with patch(
-        "core.apk_utils.subprocess.run", return_value=mock_proc
-    ):
+    mock_proc = _mock_popen(
+        returncode=1, stdout_lines=["sign failed"],
+    )
+    with patch("subprocess.Popen", return_value=mock_proc):
         with pytest.raises(RuntimeError, match="Signing failed"):
             sign_apk(
                 str(tmp_path / "app.apk"),
@@ -225,7 +237,7 @@ def test_sign_apk_platform_delegates(tmp_path):
     with patch(
         "core.sign_with_key.APKSigner.sign_apk",
         return_value="/output/signed.apk",
-    ):
+    ), patch("core.apk_utils._verify_signed_apk"):
         result = sign_apk(
             str(tmp_path / "app.apk"),
             key_type="platform",

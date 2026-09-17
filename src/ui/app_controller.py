@@ -32,16 +32,19 @@ from core.apk_downloader import APKDownloader
 class AppController(QObject):
     """Controller chính — delegate signals cho MainWindow."""
 
-    # Public signals (MainWindow lắng nghe)
+    # ---- Public signals (MainWindow lắng nghe) ----
     analysis_ready = pyqtSignal(dict)
     log_message = pyqtSignal(str)
     status_message = pyqtSignal(str)
     progress_update = pyqtSignal(int, int)
     progress_hide = pyqtSignal()
     show_detail_page = pyqtSignal()
-    step_update = pyqtSignal(str, int)          # (step_name, pct 0-100)
+    step_update = pyqtSignal(str, int)
 
-    # Nội bộ: worker thread → main thread (không expose ra MainWindow)
+    # ---- Safety prompt: (reason, details, count, callback(bool)) ----
+    safety_prompt_requested = pyqtSignal(str, dict, int, object)
+
+    # ---- Nội bộ: worker thread → main thread ----
     _suggest_signal = pyqtSignal(list)
 
     def __init__(self, window):
@@ -50,7 +53,6 @@ class AppController(QObject):
         self.apk_path: str | None = None
         self.iap_manager = IAPManager()
 
-        # Kết nối signal nội bộ: worker emit → main thread slot
         self._suggest_signal.connect(self._handle_suggestions_on_main)
 
     # ============================================================
@@ -72,7 +74,6 @@ class AppController(QObject):
         """Chuẩn hóa bundle (.apks/.xapk) rồi bắt đầu phân tích."""
         file_lower = file.lower()
 
-        # --- Convert bundle nếu cần ---
         if file_lower.endswith((".apks", ".xapk")):
             self.log_message.emit(f"[*] Phát hiện bundle: {Path(file).name}")
             self.log_message.emit("[*] Đang convert sang .apk...")
@@ -91,7 +92,6 @@ class AppController(QObject):
         self.status_message.emit(f"Đã tải: {Path(file).name}")
         self.log_message.emit(f"[*] Đã chọn: {file}")
 
-        # --- Populate basic info ngay ---
         try:
             size = Path(file).stat().st_size
         except Exception:
@@ -111,7 +111,6 @@ class AppController(QObject):
         self.analysis_ready.emit(basic_info)
         self.show_detail_page.emit()
 
-        # --- Phân tích async ---
         threading.Thread(
             target=self._analyze_worker, args=(file,), daemon=True
         ).start()
@@ -151,7 +150,8 @@ class AppController(QObject):
             self.log_message.emit(f"[✔] Phân tích xong. Đặc điểm: {names}")
             for f in findings:
                 self.log_message.emit(
-                    f"    • {f.get('title', '?')}: {f.get('description', '')}"
+                    f"    • {f.get('title', '?')}: "
+                    f"{f.get('description', '')}"
                 )
 
             self._show_smart_suggestions(findings)
@@ -162,11 +162,9 @@ class AppController(QObject):
     # SMART SUGGESTIONS — thread-safe
     # ============================================================
     def _show_smart_suggestions(self, findings: list[dict]) -> None:
-        """Gọi từ worker thread — chỉ emit signal, không tạo Qt widget."""
         self._suggest_signal.emit(findings)
 
     def _handle_suggestions_on_main(self, findings: list[dict]) -> None:
-        """Chạy trên MAIN THREAD — an toàn để tạo QMessageBox."""
         has_iap = any(f.get("type") == "iap" for f in findings)
         has_license = any(f.get("type") == "license" for f in findings)
         has_ads = any(f.get("type") == "ads" for f in findings)
@@ -245,6 +243,8 @@ class AppController(QObject):
         signals.step.connect(self.step_update.emit)
         signals.status.connect(self.log_message.emit)
         signals.finished.connect(self._on_pipeline_finished)
+        # Safety prompt: worker thread → main thread dialog
+        signals.safety_prompt.connect(self.safety_prompt_requested.emit)
 
         self.log_message.emit(f"[*] Bắt đầu pipeline: mode={mode}")
         self.show_detail_page.emit()

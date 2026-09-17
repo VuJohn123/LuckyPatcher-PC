@@ -1,10 +1,13 @@
+"""Pipeline executor — ThreadPool (I/O bound, không cần spawn)."""
 import os
 import time
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
 from core.mode_registry import get_mode_group
 from core.lazy_loader import get_patcher_class
 
 file_cache = None
+
 
 def set_file_cache(cache):
     global file_cache
@@ -17,7 +20,7 @@ def process_mode(mode_name, decompiled_dir, ad_activities, apk_path, log_callbac
     try:
         PatcherClass = get_patcher_class(mode_name)
         if PatcherClass is None:
-            # Fallback: các mode không cần patcher (save_purchase, auto_repeat, clone, backup)
+            # Fallback: các mode không cần patcher
             if mode_name == 'save_purchase':
                 from patcher.iap_manager import IAPManager
                 IAPManager().save_for_restore_enabled = True
@@ -36,7 +39,10 @@ def process_mode(mode_name, decompiled_dir, ad_activities, apk_path, log_callbac
                 result['label'] = f"Cloned to {new_pkg}"
             elif mode_name == 'backup':
                 import shutil
-                backup_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'workspace', 'backups')
+                backup_dir = os.path.join(
+                    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                    'workspace', 'backups',
+                )
                 os.makedirs(backup_dir, exist_ok=True)
                 shutil.copy2(apk_path, os.path.join(backup_dir, os.path.basename(apk_path)))
                 result['patched'] = True
@@ -62,13 +68,17 @@ def process_mode(mode_name, decompiled_dir, ad_activities, apk_path, log_callbac
 
         if cnt > 0:
             result['patched'] = True
-            result['label'] = f"{mode_name} ({cnt} files)" if isinstance(cnt, int) else mode_name
+            result['label'] = (
+                f"{mode_name} ({cnt} files)"
+                if isinstance(cnt, int) else mode_name
+            )
     except Exception as e:
         log_callback(f"[!] [{mode_name}] Error: {e}")
     return result
 
 
-def execute_modes(mapped_modes, decompiled_dir, ad_activities, apk_path, log_callback, signals=None):
+def execute_modes(mapped_modes, decompiled_dir, ad_activities, apk_path,
+                  log_callback, signals=None):
     patches_applied = []
     patch_reports = {}
     total_modes = len(mapped_modes)
@@ -76,18 +86,31 @@ def execute_modes(mapped_modes, decompiled_dir, ad_activities, apk_path, log_cal
 
     parallel_modes, sequential_modes = _classify_modes(mapped_modes)
 
-    # Xử lý song song với ProcessPool (chỉ cho mode không chia sẻ state)
+    # ---- G5: ThreadPoolExecutor thay ProcessPoolExecutor ----
+    # Patcher là I/O bound (đọc/ghi smali), GIL release khi I/O.
+    # ThreadPool tránh Windows spawn overhead (~3-5s/worker) và
+    # không nhân bản file_cache state.
     if parallel_modes:
-        with ProcessPoolExecutor(max_workers=min(os.cpu_count() or 4, len(parallel_modes))) as executor:
-            futures = {executor.submit(process_mode, m, decompiled_dir, ad_activities, apk_path, log_callback): m
-                       for m in parallel_modes}
+        max_workers = min(os.cpu_count() or 4, len(parallel_modes))
+        log_callback(
+            f"[*] [Executor] Parallel modes: {parallel_modes} "
+            f"(workers={max_workers})"
+        )
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {
+                executor.submit(
+                    process_mode, m, decompiled_dir, ad_activities,
+                    apk_path, log_callback,
+                ): m
+                for m in parallel_modes
+            }
             for future in as_completed(futures):
                 mode_name = futures[future]
                 try:
                     result = future.result()
                     if result['patched']:
                         patches_applied.append(result['label'])
-                    if 'report' in result and result['report']:
+                    if result.get('report'):
                         patch_reports[mode_name] = result['report']
                     completed += 1
                     if signals:
@@ -97,12 +120,15 @@ def execute_modes(mapped_modes, decompiled_dir, ad_activities, apk_path, log_cal
                     log_callback(f"[!] [{mode_name}] Failed: {e}")
                     completed += 1
 
+    # ---- Sequential modes ----
     for m in sequential_modes:
         try:
-            result = process_mode(m, decompiled_dir, ad_activities, apk_path, log_callback)
+            result = process_mode(
+                m, decompiled_dir, ad_activities, apk_path, log_callback
+            )
             if result['patched']:
                 patches_applied.append(result['label'])
-            if 'report' in result and result['report']:
+            if result.get('report'):
                 patch_reports[m] = result['report']
             completed += 1
             if signals:

@@ -10,62 +10,76 @@
 
 # ==================== AUTO-TUNE ENGINE ====================
 auto_tune:
-  # Enable adaptive tuning (disable = dùng default values)
   enabled: true
 
   # Mode: auto | daily | gaming | stress | background | power_saver
-  #   auto         = detect từ workload
-  #   daily        = single APK, prioritize responsiveness
-  #   gaming       = batch nhiều APK liên tục, prioritize throughput
-  #   stress       = max throughput, all cores, no mercy
-  #   background   = chạy nền, giảm priority, không chiếm resource
-  #   power_saver  = giảm CPU/RAM để tiết kiệm pin (laptop)
   mode: auto
 
-  # Safety margins (không bao giờ vượt qua để tránh treo máy)
+  # ---- Safety margins ----
   safety:
-    # Luôn giữ lại cho OS (không dùng hết)
     reserve_cpu_cores: 1
-    reserve_ram_pct: 25         # 25% RAM khả dụng
-    reserve_ram_min_mb: 1024    # tối thiểu 1GB
-    reserve_disk_pct: 10        # 10% disk free
-    reserve_disk_min_mb: 2048   # tối thiểu 2GB
+    reserve_ram_pct: 25
+    reserve_ram_min_mb: 1024
+    reserve_disk_pct: 10
+    reserve_disk_min_mb: 2048
 
-    # Ngưỡng để giảm tải (adaptive throttling)
-    throttle_ram_pct: 80        # RAM used > 80% → giảm workers
-    throttle_cpu_pct: 90        # CPU > 90% trong 30s → giảm
-    throttle_disk_pct: 90       # disk full > 90% → disable cache
-    throttle_temp_celsius: 85   # nhiệt độ CPU (nếu detect được)
+    # ---- Throttle thresholds ----
+    # CPU 98% (trước 95): Windows Defender/antivirus scan APK workspace
+    # (50,000+ file smali) có thể chiếm 94-99% CPU ngoại lai trong
+    # 10-15 phút. 90-95% quá strict → false positive hàng loạt.
+    # 98% vẫn đủ safety margin (chỉ throttle khi thực sự hết CPU).
+    #
+    # Cách tốt nhất: exclude workspace/ khỏi Defender (xem README).
+    throttle_ram_pct: 85
+    throttle_cpu_pct: 98
+    throttle_disk_pct: 90
+    throttle_temp_celsius: 85
 
-    # Backoff khi throttle
-    backoff_factor: 0.5         # giảm 50% workers mỗi lần throttle
+    # ---- Backoff ----
+    backoff_factor: 0.5
     backoff_min_workers: 1
 
-  # Workload classification (dùng để chọn strategy)
+    # === Smart CPU measurement + User prompt ===
+    # Đo CPU ngoại lai (trừ process tree của pipeline).
+    # "external" = system_cpu - own_tree_cpu  → tránh false positive
+    # "system"   = raw psutil.cpu_percent()   → legacy behavior
+    cpu_measurement: external
+
+    # Prompt sau N vi phạm LIÊN TIẾP (5 = 25s ở interval 5s).
+    # Sau khi user chọn Continue → MUTE + reset throttle.
+    prompt_after_n_violations: 5
+
+    # Timeout chờ user response (giây). Hết timeout → auto-continue
+    prompt_timeout_sec: 60
+
+    # Nâng ngưỡng bao nhiêu % mỗi lần user chọn "Continue"
+    # (không áp dụng cho disk — hard limit)
+    threshold_raise_pct: 5
+
+    # Interval check (5s thay vì 3s — smooth hơn, ít false positive
+    # vì antivirus scan có burst ngắn 2-3s)
+    check_interval_sec: 5
+
+  # ---- Workload classification ----
   workload_classes:
-    tiny:    {max_size_mb: 10,   strategy: fast}
-    small:   {max_size_mb: 50,   strategy: fast}
-    medium:  {max_size_mb: 200,  strategy: balanced}
-    large:   {max_size_mb: 500,  strategy: careful}
-    huge:    {max_size_mb: 2048, strategy: careful}
+    tiny:    {max_size_mb: 10,    strategy: fast}
+    small:   {max_size_mb: 50,    strategy: fast}
+    medium:  {max_size_mb: 200,   strategy: balanced}
+    large:   {max_size_mb: 500,   strategy: careful}
+    huge:    {max_size_mb: 2048,  strategy: careful}
     massive: {max_size_mb: 99999, strategy: paranoid}
 
-  # Learning from history
+  # ---- Learning from history ----
   telemetry:
     enabled: true
-    history_size: 100           # lưu 100 lần chạy gần nhất
-    # Nếu APK hash này đã chạy → dùng config đã học
+    history_size: 100
     reuse_learned_config: true
-    # Ngưỡng để trust learned config (số lần chạy thành công)
     min_samples_for_trust: 3
 
-  # Concurrent instances guard
+  # ---- Concurrent instances ----
   concurrency:
-    # Cho phép chạy nhiều instance?
     allow_multi_instance: false
-    # Nếu true, chia resource giữa các instance
     share_resources: true
-    # Lock file location
     lock_file: auto
 
 
@@ -98,7 +112,7 @@ signing:
 
 # ==================== LOGGING ====================
 logging:
-  level: auto                    # auto: INFO mặc định, WARNING khi stress
+  level: auto
   file: auto
   max_bytes: 10485760
   backup_count: 5
@@ -109,23 +123,23 @@ logging:
 
 # ==================== CACHE ====================
 cache:
-  enabled: auto                 # auto: tắt khi disk < 10% free
+  enabled: auto
   dir: auto
   apk_analysis_ttl_days: 30
-  decompiled_ttl_days: auto     # auto: 7 ngày thường, 1 ngày khi stress
+  decompiled_ttl_days: auto
   max_size_mb: auto
   compress_decompiled: auto
 
 
 # ==================== NETWORK ====================
 network:
-  connect_timeout: auto         # auto: 5s khi idle, 30s khi heavy load
+  connect_timeout: auto
   read_timeout: 60
   max_retries: 3
   backoff_factor: 1.5
   retry_status_codes: [429, 500, 502, 503, 504]
   max_download_size_mb: 500
-  pool_connections: auto        # auto: 5 idle, 20 heavy
+  pool_connections: auto
   pool_maxsize: auto
   user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
   block_private_ips: true
@@ -139,24 +153,21 @@ performance:
   worker_processes: auto
   regex_engine: auto
   json_engine: auto
-  file_cache_buffer_kb: auto    # auto: 64 tiny, 256 huge
+  file_cache_buffer_kb: auto
   mmap_threshold_bytes: 1048576
   prefilter_enabled: true
 
-  # Adaptive batch sizes
   batch:
-    # Ghi file cache thành batch (giảm syscall)
-    flush_batch_size: auto      # auto: 50 tiny, 500 huge
-    flush_on_memory_mb: auto    # auto: flush khi cache > N MB
-    # Parallel processing
-    parallel_chunk_size: auto   # auto: chia files thành N chunks
+    flush_batch_size: auto
+    flush_on_memory_mb: auto
+    parallel_chunk_size: auto
 
 
 # ==================== SECURITY ====================
 security:
   zip_slip_guard: true
   validate_input_paths: true
-  max_path_length: auto         # auto: 250 Windows, 4096 Linux
+  max_path_length: auto
   sanitize_download_filenames: true
   forbid_eval_in_patches: true
 
@@ -168,17 +179,17 @@ ui:
   font_size: 13
   window_width: 1280
   window_height: 820
-  log_visible: auto             # auto: ẩn khi stress
+  log_visible: auto
   log_max_height: auto
   log_expanded_height: 400
-  log_auto_scroll: auto         # auto: false khi stress (giảm render)
-  log_max_blocks: auto          # auto: 1000 stress, 10000 idle
-  animations_enabled: auto      # auto: false khi power_saver
+  log_auto_scroll: auto
+  log_max_blocks: auto
+  animations_enabled: auto
 
 
 # ==================== UPDATER ====================
 updater:
-  check_on_startup: auto        # auto: true idle, false stress
+  check_on_startup: auto
   update_url: "https://raw.githubusercontent.com/Freezdy413485/LP-PC-Suite/main/version.json"
   timeout: 8.0
   cache_check_hours: 24

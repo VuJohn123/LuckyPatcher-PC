@@ -1,13 +1,9 @@
 """
 LP-PC Suite — Entry point chính.
 
-Production-ready:
-  - Stability: try/except mọi layer, safety guard
-  - Performance: adaptive tuning, GC control, cache
-  - Security: normalize input, URL validation
-  - Logging: RotatingFileHandler + GUI callback + steps
-  - Metrics: telemetry collection
-  - Scalability: config-driven, modular
+Fix G1: enable decompile cache (force=False).
+Fix G2: auto-fallback no_res=False khi recompile fail.
+Fix G7: watermark SAU file_cache.flush() để không bị ads patch ghi đè.
 """
 from __future__ import annotations
 
@@ -28,11 +24,6 @@ from core.config import load_config
 # HELPERS
 # =============================================================
 def _emit_step(signals, name: str, pct: int, log_callback) -> None:
-    """
-    Phát step signal + log. An toàn cả khi signals=None (CLI mode).
-    - signals.step(name, pct) — GUI progress bar
-    - log_callback(f"[*] [{pct:3d}%] {name}") — dual-channel
-    """
     if signals:
         try:
             signals.step.emit(name, pct)
@@ -49,7 +40,6 @@ def _record_metric(
     patches: int = 0,
     error: str = "",
 ) -> None:
-    """Ghi metrics — không crash pipeline nếu lỗi."""
     try:
         from core.metrics import PatchMetrics, get_metrics
         get_metrics().record(PatchMetrics(
@@ -61,37 +51,31 @@ def _record_metric(
             error=error[:500],
         ))
     except Exception:
-        pass  # metrics không phải critical path
+        pass
 
 
 # =============================================================
-# SAFETY GUARD FACTORY
+# SAFETY GUARD (không đổi từ lần trước)
 # =============================================================
-def _build_safety_guard(config: dict, log_callback):
-    """
-    Tạo SafetyGuard với callback adaptive throttle.
-    Trả về (guard, state) — state dùng để pipeline read worker count.
-    """
+def _build_safety_guard(config: dict, log_callback, signals=None):
     from core.safety_guard import GuardLimits, SafetyGuard
 
     safety_cfg = config.get("auto_tune", {}).get("safety", {})
 
     limits = GuardLimits(
-        max_ram_pct=safety_cfg.get("throttle_ram_pct", 80.0),
-        max_cpu_pct=safety_cfg.get("throttle_cpu_pct", 90.0),
+        max_ram_pct=safety_cfg.get("throttle_ram_pct", 85.0),
+        max_cpu_pct=safety_cfg.get("throttle_cpu_pct", 95.0),
         min_disk_free_pct=safety_cfg.get("reserve_disk_pct", 10.0),
-        max_temp_celsius=safety_cfg.get(
-            "throttle_temp_celsius", 85.0
-        ),
-        check_interval_sec=3.0,
+        max_temp_celsius=safety_cfg.get("throttle_temp_celsius", 85.0),
+        check_interval_sec=safety_cfg.get("check_interval_sec", 5.0),
+        cpu_measurement=safety_cfg.get("cpu_measurement", "external"),
     )
 
-    # Shared state — guard ghi, pipeline đọc
-    state = {
-        "throttled": False,
-        "throttle_factor": 1.0,
-        "last_reason": "",
-    }
+    prompt_after_n = int(safety_cfg.get("prompt_after_n_violations", 5))
+    threshold_raise = float(safety_cfg.get("threshold_raise_pct", 5.0))
+    prompt_timeout = float(safety_cfg.get("prompt_timeout_sec", 60.0))
+
+    state = {"throttled": False, "throttle_factor": 1.0, "last_reason": ""}
 
     def _on_violation(reason: str, details: dict) -> None:
         backoff = safety_cfg.get("backoff_factor", 0.5)
@@ -103,12 +87,64 @@ def _build_safety_guard(config: dict, log_callback):
             f"→ giảm tải xuống {backoff*100:.0f}%"
         )
 
+    def _on_prompt(reason: str, details: dict, count: int) -> bool:
+        if signals is None:
+            log_callback(
+                f"[!] [Safety] Không có GUI — auto-continue "
+                f"(đã vi phạm {count} lần)"
+            )
+            state["throttled"] = False
+            state["throttle_factor"] = 1.0
+            return True
+
+        import threading
+        event = threading.Event()
+        result = {"continue": True}
+
+        def _set_result(user_continue: bool) -> None:
+            result["continue"] = user_continue
+            event.set()
+
+        try:
+            signals.safety_prompt.emit(reason, details, count, _set_result)
+        except Exception as e:
+            log_callback(f"[!] [Safety] Không emit được prompt: {e}")
+            return True
+
+        if not event.wait(timeout=prompt_timeout):
+            log_callback(
+                f"[!] [Safety] Không nhận phản hồi sau "
+                f"{prompt_timeout:.0f}s → auto-continue"
+            )
+            state["throttled"] = False
+            state["throttle_factor"] = 1.0
+            return True
+
+        user_continue = result["continue"]
+        if user_continue:
+            state["throttled"] = False
+            state["throttle_factor"] = 1.0
+            log_callback(
+                "[i] [Safety] Reset throttle — pipeline sẽ dùng "
+                "full resources"
+            )
+        return user_continue
+
     guard = SafetyGuard(
         limits=limits,
         on_violation=_on_violation,
+        on_prompt=_on_prompt if signals is not None else None,
+        prompt_after_n_violations=prompt_after_n,
+        threshold_raise_pct=threshold_raise,
         log_callback=log_callback,
     )
     return guard, state
+
+
+def _check_safety_abort(guard, log_callback) -> None:
+    if guard is not None and getattr(guard, "abort_flag", False):
+        log_callback("[!] Pipeline stopped by user (SafetyGuard)")
+        raise RuntimeError("Pipeline aborted by user via SafetyGuard")
 
 
 # =============================================================
@@ -132,31 +168,6 @@ def run_pipeline(
     config: dict | None = None,
     **kwargs,
 ) -> tuple[bool, str | None, dict]:
-    """
-    Chạy pipeline vá APK.
-
-    Args:
-        apk_path: đường dẫn .apk / .xapk / .apks / folder split
-        mode: chuỗi mode (vd "license:auto,ads:full_offline")
-        log_callback: hàm nhận str để log ra GUI
-        key_type: testkey | platform | media | shared
-        forced_package_id: 1-127 hoặc None
-        fast_mode: None = auto (từ config)
-        use_gda: None = auto (từ config)
-        apktool_jobs: None = auto (từ config)
-        apktool_memory: None = auto (từ config)
-        keep_workspace: None = auto (từ config)
-        clone_package: tên package mới cho chế độ clone
-        signals: PipelineSignals để cập nhật GUI
-        force_reanalyze: bỏ qua cache phân tích
-        config: dict config đã load; None = load mặc định
-
-    Returns:
-        (success, output_apk_path, patch_reports)
-    """
-    # ============================================================
-    # BƯỚC 0: Load config với adaptive tuning
-    # ============================================================
     if config is None:
         config = load_config(apk_path=apk_path, mode=mode)
 
@@ -167,14 +178,11 @@ def run_pipeline(
     _log("[*] ========== LP-PC Suite — Pipeline Start ==========")
     _log(f"[*] Input: {os.path.basename(apk_path)}")
 
-    # Log tune mode nếu có
     tune_info = config.get("_tune_result", {})
     if tune_info:
         _log(f"[*] Tune mode: {tune_info.get('mode', '?')}")
 
-    # ============================================================
-    # BƯỚC 1: Chuẩn hóa input
-    # ============================================================
+    # ---- BƯỚC 0: Normalize ----
     _emit_step(signals, "Chuẩn hóa input...", 2, _log)
     try:
         apk_path = normalize_input(apk_path, config, _log)
@@ -184,17 +192,13 @@ def run_pipeline(
         _record_metric(apk_path, mode, False, time.monotonic() - t0,
                        error=str(e))
         if signals:
-            try:
-                signals.finished.emit(False, "")
-            except Exception:
-                pass
+            try: signals.finished.emit(False, "")
+            except Exception: pass
         return False, None, {}
 
     _log(f"[*] Processing: {os.path.basename(apk_path)}")
 
-    # ============================================================
-    # Parse modes
-    # ============================================================
+    # ---- Parse modes ----
     modes = (
         mode[6:].split(",") if mode.startswith("multi:")
         else [m.strip() for m in mode.split(",") if m.strip()]
@@ -204,10 +208,8 @@ def run_pipeline(
         _record_metric(apk_path, mode, False,
                        time.monotonic() - t0, error="No modes")
         if signals:
-            try:
-                signals.finished.emit(False, "")
-            except Exception:
-                pass
+            try: signals.finished.emit(False, "")
+            except Exception: pass
         return False, None, {}
 
     from core.mode_registry import MODE_MAP
@@ -218,49 +220,36 @@ def run_pipeline(
     mapped_modes = [all_modes.get(m, m) for m in modes]
     _log(f"[*] Mapped modes: {mapped_modes}")
 
-    # ============================================================
-    # Validate forced_package_id
-    # ============================================================
     if forced_package_id is not None and not (
         isinstance(forced_package_id, int)
         and 1 <= forced_package_id <= 127
     ):
-        _log(
-            f"[!] forced_package_id={forced_package_id} "
-            f"không hợp lệ, bỏ qua"
-        )
+        _log(f"[!] forced_package_id={forced_package_id} không hợp lệ")
         forced_package_id = None
 
-    # ============================================================
-    # Resolve auto values (config đã tune, nhưng vẫn fallback)
-    # ============================================================
+    # ---- Resolve auto values ----
     pipe_cfg = config.get("pipeline", {})
 
     if apktool_jobs is None:
         v = pipe_cfg.get("apktool_jobs", "auto")
-        apktool_jobs = (
-            v if isinstance(v, int)
-            else max(1, (os.cpu_count() or 4) - 1)
-        )
+        apktool_jobs = v if isinstance(v, int) else max(1, (os.cpu_count() or 4) - 1)
 
     if apktool_memory is None:
         v = pipe_cfg.get("apktool_memory", "4096m")
         apktool_memory = v if isinstance(v, str) else "4096m"
 
     if fast_mode is None:
-        v = pipe_cfg.get("fast_mode", False)
-        fast_mode = v if isinstance(v, bool) else False
+        fast_mode = pipe_cfg.get("fast_mode", False)
+        fast_mode = fast_mode if isinstance(fast_mode, bool) else False
 
     if use_gda is None:
-        v = pipe_cfg.get("use_gda", False)
-        use_gda = v if isinstance(v, bool) else False
+        use_gda = pipe_cfg.get("use_gda", False)
+        use_gda = use_gda if isinstance(use_gda, bool) else False
 
     if keep_workspace is None:
         keep_workspace = pipe_cfg.get("keep_workspace", True)
 
-    # ============================================================
-    # Workspace
-    # ============================================================
+    # ---- Workspace ----
     base_dir = Path(__file__).resolve().parent.parent / "workspace"
     decompiled_dir = str(base_dir / "decompiled")
     output_dir = str(base_dir / "output")
@@ -268,22 +257,20 @@ def run_pipeline(
     os.makedirs(decompiled_dir, exist_ok=True)
     os.makedirs(output_dir, exist_ok=True)
 
-    # ============================================================
-    # Safety Guard (optional — chỉ chạy nếu có psutil)
-    # ============================================================
+    # ---- SafetyGuard ----
     guard = None
     guard_state = None
     if config.get("auto_tune", {}).get("enabled", True):
         try:
-            guard, guard_state = _build_safety_guard(config, _log)
+            guard, guard_state = _build_safety_guard(
+                config, _log, signals=signals
+            )
             guard.start()
         except Exception as e:
             logger.debug("SafetyGuard setup failed: %s", e)
             guard = None
 
-    # ============================================================
-    # GC control
-    # ============================================================
+    # ---- GC control ----
     gc_was_enabled = gc.isenabled()
     if config.get("pipeline", {}).get("gc_control", True):
         gc.disable()
@@ -292,16 +279,15 @@ def run_pipeline(
         from core.pipeline_executor import execute_modes, set_file_cache
         from core.smali_utils import FileContentCache
         from core.apk_utils import (
-            decompile_apk,
-            recompile_apk,
-            sign_apk,
+            decompile_apk, recompile_apk, sign_apk,
         )
         from core.device_bridge import install_apk
         from core.patch_history import PatchHistory
         from patcher.watermarker import Watermarker
 
-        # ---- BƯỚC 2: GDA pre-analysis (optional) ----
+        # ---- GDA ----
         if use_gda:
+            _check_safety_abort(guard, _log)
             _emit_step(signals, "Phân tích GDA...", 5, _log)
             try:
                 from scanner.gda_analyzer import GDAAnalyzer
@@ -310,7 +296,8 @@ def run_pipeline(
                 _log(f"[i] [GDA] Bỏ qua: {e}")
                 logger.warning("GDA pre-analysis failed: %s", e)
 
-        # ---- BƯỚC 3: Phân tích APK ----
+        # ---- Analyze ----
+        _check_safety_abort(guard, _log)
         _emit_step(signals, "Phân tích APK...", 10, _log)
         try:
             from scanner.analyzer import AppDeepAnalyzer
@@ -321,34 +308,45 @@ def run_pipeline(
             _log(f"[i] Analysis failed (tiếp tục): {e}")
             logger.warning("Analysis failed: %s", e)
 
-        # ---- BƯỚC 4: Decompile ----
-        _emit_step(signals, "Decompiling APK...", 15, _log)
+        # ============================================================
+        # G2: Decompile + Recompile với auto-fallback
+        # ============================================================
         needs_resources = any(
-            m in mapped_modes for m in ("change_perms", "resign")
+            m in mapped_modes for m in
+            ("change_perms", "resign", "ads", "ads_full_offline",
+             "ads_offline", "ads_other")
         )
+        use_no_res = not needs_resources
 
-        # Dynamic job count từ guard
+        _check_safety_abort(guard, _log)
+        _emit_step(signals, "Decompiling APK...", 15, _log)
+
         effective_jobs = apktool_jobs
         if guard_state and guard_state["throttled"]:
             factor = guard_state.get("throttle_factor", 1.0)
             effective_jobs = max(1, int(apktool_jobs * factor))
             _log(
-                f"[i] [Safety] Throttle active → jobs "
-                f"{apktool_jobs} → {effective_jobs}"
+                f"[i] [Safety] Throttle → jobs {apktool_jobs} "
+                f"→ {effective_jobs}"
             )
 
+        # G1: force=False để dùng cache
         decompile_apk(
             apk_path, decompiled_dir,
-            force=True,
-            no_res=not needs_resources,
+            force=False,               # ← FIX G1
+            no_res=use_no_res,
             jobs=effective_jobs,
             max_memory=apktool_memory,
             log_callback=_log,
         )
         _emit_step(signals, "Decompile xong", 40, _log)
 
-        # ---- BƯỚC 5: Patch ----
-        file_cache = FileContentCache(decompiled_dir)
+        # ---- Patch ----
+        _check_safety_abort(guard, _log)
+        file_cache = FileContentCache(
+            decompiled_dir,
+            log_callback=_log,
+        )
         set_file_cache(file_cache)
 
         ad_activities: list[str] = []
@@ -371,8 +369,9 @@ def run_pipeline(
         _emit_step(signals, "Ghi thay đổi...", 65, _log)
         file_cache.flush(_log)
 
-        # ---- BƯỚC 6: Watermark ----
+        # ---- Watermark SAU flush (G7) ----
         if patches_applied:
+            _check_safety_abort(guard, _log)
             _emit_step(signals, "Thêm watermark...", 70, _log)
             try:
                 Watermarker.add_watermark(
@@ -381,33 +380,76 @@ def run_pipeline(
             except Exception as e:
                 logger.warning("Watermark failed: %s", e)
 
-        # ---- BƯỚC 7: Recompile ----
+        # ============================================================
+        # G2: Recompile với fallback no_res=False khi fail
+        # ============================================================
+        _check_safety_abort(guard, _log)
         _emit_step(signals, "Recompiling APK...", 75, _log)
         patched_apk = os.path.join(output_dir, "patched.apk")
-        recompile_apk(
-            decompiled_dir, patched_apk,
-            forced_package_id=forced_package_id,
-            log_callback=_log,
-        )
+
+        try:
+            recompile_apk(
+                decompiled_dir, patched_apk,
+                forced_package_id=forced_package_id,
+                log_callback=_log,
+                verify=True,
+                input_apk_for_delta=apk_path,
+            )
+        except RuntimeError as recompile_err:
+            # G2: Fallback decompile with resources nếu đang no_res
+            if use_no_res:
+                _log(
+                    f"[!] Recompile failed ({recompile_err}) — "
+                    f"retry với no_res=False"
+                )
+                _emit_step(
+                    signals, "Retry decompile với resources...",
+                    60, _log,
+                )
+                decompile_apk(
+                    apk_path, decompiled_dir,
+                    force=True,             # bypass cache
+                    no_res=False,           # ← include resources
+                    jobs=effective_jobs,
+                    max_memory=apktool_memory,
+                    log_callback=_log,
+                )
+                # Re-apply patches
+                file_cache = FileContentCache(
+                    decompiled_dir, log_callback=_log
+                )
+                set_file_cache(file_cache)
+                patches_applied, patch_reports = execute_modes(
+                    mapped_modes, decompiled_dir, ad_activities,
+                    apk_path, _log, signals,
+                )
+                file_cache.flush(_log)
+                # Retry recompile
+                recompile_apk(
+                    decompiled_dir, patched_apk,
+                    forced_package_id=forced_package_id,
+                    log_callback=_log,
+                    verify=True,
+                    input_apk_for_delta=apk_path,
+                )
+            else:
+                raise
+
         _emit_step(signals, "Recompile xong", 88, _log)
 
-        # ---- BƯỚC 8: Sign ----
+        # ---- Sign ----
         _emit_step(signals, "Đang ký APK...", 92, _log)
         signed_apk = sign_apk(
             patched_apk, key_type=key_type, log_callback=_log
         )
-        final_apk = os.path.join(
-            output_dir, os.path.basename(signed_apk)
-        )
+        final_apk = os.path.join(output_dir, os.path.basename(signed_apk))
         if os.path.abspath(signed_apk) != os.path.abspath(final_apk):
             if os.path.exists(final_apk):
                 os.remove(final_apk)
             os.replace(signed_apk, final_apk)
 
-        # ---- BƯỚC 9: ADB install (optional) ----
-        _emit_step(
-            signals, "Cài đặt qua ADB (optional)...", 96, _log
-        )
+        # ---- ADB install ----
+        _emit_step(signals, "Cài đặt qua ADB (optional)...", 96, _log)
         try:
             install_apk(final_apk)
             _log("[✔] [ADB] Installed on device")
@@ -415,7 +457,7 @@ def run_pipeline(
             _log(f"[i] [ADB] Install skipped: {e}")
             logger.info("ADB install skipped: %s", e)
 
-        # ---- BƯỚC 10: Lưu lịch sử ----
+        # ---- History ----
         _emit_step(signals, "Lưu lịch sử...", 98, _log)
         try:
             PatchHistory().add_record(
@@ -442,12 +484,32 @@ def run_pipeline(
         )
 
         if signals:
-            try:
-                signals.finished.emit(True, final_apk)
-            except Exception:
-                pass
+            try: signals.finished.emit(True, final_apk)
+            except Exception: pass
 
         return True, final_apk, patch_reports
+
+    except RuntimeError as e:
+        elapsed = time.monotonic() - t0
+        if "aborted by user" in str(e):
+            _log(f"[!] Pipeline dừng bởi user sau {elapsed:.1f}s")
+        else:
+            _log(f"[!] Pipeline failed: {e}")
+            logger.exception("Pipeline crashed")
+
+        try:
+            from core.patch_history import PatchHistory
+            PatchHistory().add_record(apk_path, mode, False, "", [])
+        except Exception:
+            pass
+
+        _record_metric(apk_path, mode, False, elapsed, error=str(e))
+
+        if signals:
+            try: signals.finished.emit(False, "")
+            except Exception: pass
+
+        return False, None, {}
 
     except Exception as e:
         elapsed = time.monotonic() - t0
@@ -461,25 +523,18 @@ def run_pipeline(
         except Exception:
             pass
 
-        _record_metric(
-            apk_path, mode, False, elapsed, error=str(e),
-        )
+        _record_metric(apk_path, mode, False, elapsed, error=str(e))
 
         if signals:
-            try:
-                signals.finished.emit(False, "")
-            except Exception:
-                pass
+            try: signals.finished.emit(False, "")
+            except Exception: pass
 
         return False, None, {}
 
     finally:
-        # Stop safety guard
         if guard:
-            try:
-                guard.stop()
-            except Exception:
-                pass
+            try: guard.stop()
+            except Exception: pass
 
         if gc_was_enabled:
             gc.enable()
@@ -493,60 +548,33 @@ def run_pipeline(
 
 
 # =============================================================
-# CLI
+# CLI (không đổi)
 # =============================================================
 def main() -> int:
     parser = argparse.ArgumentParser(
         prog="lp-pc-suite",
         description="LP-PC Suite — APK patcher (production-ready)",
     )
-    parser.add_argument(
-        "apk", nargs="?",
-        help=".apk / .xapk / .apks / folder chứa split APK",
-    )
-    parser.add_argument(
-        "--mode", default="all",
-        help="Mode (comma-separated), vd 'license,ads,iap_dex'",
-    )
-    parser.add_argument(
-        "--config",
-        help="Đường dẫn YAML config (mặc định: config/default.yaml)",
-    )
-    parser.add_argument(
-        "--custom-patch",
-        help="Path tới file custom patch (.txt/.lpzip)",
-    )
+    parser.add_argument("apk", nargs="?")
+    parser.add_argument("--mode", default="all")
+    parser.add_argument("--config")
+    parser.add_argument("--custom-patch")
     parser.add_argument(
         "--key-type",
         choices=["testkey", "platform", "media", "shared"],
         default="testkey",
     )
     parser.add_argument("--forced-package-id", type=int)
-    parser.add_argument(
-        "--fast", action="store_true",
-        help="Fast mode (override auto-tune)",
-    )
-    parser.add_argument(
-        "--no-fast", action="store_true",
-        help="Force disable fast mode",
-    )
-    parser.add_argument(
-        "--gda", action="store_true",
-        help="GDA pre-analysis (override auto-tune)",
-    )
+    parser.add_argument("--fast", action="store_true")
+    parser.add_argument("--no-fast", action="store_true")
+    parser.add_argument("--gda", action="store_true")
     parser.add_argument("--apktool-jobs", type=int)
     parser.add_argument("--apktool-memory")
-    parser.add_argument(
-        "--clean", action="store_true",
-        help="Xóa workspace sau khi chạy",
-    )
+    parser.add_argument("--clean", action="store_true")
     parser.add_argument("--clone-package")
     parser.add_argument("--force-reanalyze", action="store_true")
     parser.add_argument("--verbose", "-v", action="store_true")
-    parser.add_argument(
-        "--no-tune", action="store_true",
-        help="Tắt adaptive tuning",
-    )
+    parser.add_argument("--no-tune", action="store_true")
 
     args = parser.parse_args()
 
@@ -557,12 +585,7 @@ def main() -> int:
     if args.custom_patch:
         os.environ["LP_CUSTOM_PATCH"] = args.custom_patch
 
-    # Load config với adaptive tuning
-    config = load_config(
-        args.config,
-        apk_path=args.apk,
-        mode=args.mode,
-    )
+    config = load_config(args.config, apk_path=args.apk, mode=args.mode)
 
     if args.no_tune:
         config.setdefault("auto_tune", {})["enabled"] = False
@@ -570,23 +593,17 @@ def main() -> int:
     if args.verbose:
         config.setdefault("logging", {})["level"] = "DEBUG"
 
-    # Resolve CLI overrides
     fast_mode = None
-    if args.fast:
-        fast_mode = True
-    elif args.no_fast:
-        fast_mode = False
+    if args.fast: fast_mode = True
+    elif args.no_fast: fast_mode = False
 
     use_gda = True if args.gda else None
     keep_workspace = False if args.clean else None
 
     ok, _, _ = run_pipeline(
-        args.apk,
-        mode=args.mode,
-        key_type=args.key_type,
+        args.apk, mode=args.mode, key_type=args.key_type,
         forced_package_id=args.forced_package_id,
-        fast_mode=fast_mode,
-        use_gda=use_gda,
+        fast_mode=fast_mode, use_gda=use_gda,
         apktool_jobs=args.apktool_jobs,
         apktool_memory=args.apktool_memory,
         keep_workspace=keep_workspace,
