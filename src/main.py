@@ -4,6 +4,12 @@ LP-PC Suite — Entry point chính.
 Fix G1: enable decompile cache (force=False).
 Fix G2: auto-fallback no_res=False khi recompile fail.
 Fix G7: watermark SAU file_cache.flush() để không bị ads patch ghi đè.
+
+v2 fixes:
+  - SafetyGuard: dùng on_mute callback, hỗ trợ safety.enabled flag
+  - --no-safety CLI flag
+  - Windows console UTF-8 reconfigure (fix cp1252 UnicodeEncodeError)
+  - Silence androguard (loguru) — giảm noise log
 """
 from __future__ import annotations
 
@@ -18,6 +24,92 @@ from pathlib import Path
 
 from core.pipeline_helpers import normalize_input, setup_logging
 from core.config import load_config
+
+
+# =============================================================
+# UTILITIES: UTF-8 + LOG SILENCE
+# =============================================================
+def _ensure_utf8_console() -> None:
+    """
+    Windows cmd.exe mặc định cp1252 → crash khi log tiếng Việt.
+    Reconfigure stdout/stderr sang UTF-8 (Python 3.7+).
+    """
+    if sys.platform != "win32":
+        return
+    for stream_name in ("stdout", "stderr"):
+        stream = getattr(sys, stream_name, None)
+        if stream is None:
+            continue
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is None:
+            continue
+        try:
+            reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+
+
+def _silence_androguard() -> None:
+    """
+    Silence androguard logs.
+
+    Androguard dùng **loguru** (không phải stdlib logging), nên
+    `logging.getLogger("androguard")` không ăn. Phải dùng loguru API.
+
+    Override: set LP_ANDROGUARD_LOG=1 để giữ log (debug).
+    """
+    import logging
+
+    if os.environ.get("LP_ANDROGUARD_LOG", "").strip().lower() in (
+        "1", "true", "yes", "on"
+    ):
+        return
+
+    # ---- 1. Loguru (androguard 4.x) ----
+    try:
+        from loguru import logger as _loguru
+        _loguru.disable("androguard")
+    except ImportError:
+        pass
+    except Exception:
+        pass
+
+    # ---- 2. Stdlib fallback (androguard version cũ, InterceptHandler) ----
+    for name in list(logging.root.manager.loggerDict.keys()):
+        if name == "androguard" or name.startswith("androguard."):
+            lg = logging.getLogger(name)
+            lg.setLevel(logging.CRITICAL)
+            lg.propagate = False
+            lg.disabled = True
+
+    # Đảm bảo logger chưa tồn tại cũng bị chặn
+    _ag = logging.getLogger("androguard")
+    _ag.setLevel(logging.CRITICAL)
+    _ag.propagate = False
+
+
+def _silence_noisy_libs() -> None:
+    """Silence các lib ồn ào (stdlib logging)."""
+    import logging
+    for noisy, level in (
+        ("urllib3", logging.WARNING),
+        ("requests", logging.WARNING),
+        ("asyncio", logging.WARNING),
+        ("PIL", logging.WARNING),
+        ("matplotlib", logging.WARNING),
+    ):
+        logging.getLogger(noisy).setLevel(level)
+
+
+def _setup_environment() -> None:
+    """Gọi 1 lần ở entry point — trước mọi print/import nặng."""
+    _ensure_utf8_console()
+    _silence_androguard()
+    _silence_noisy_libs()
+
+
+# Gọi ở module level — belt-and-suspenders cho trường hợp bị import
+_setup_environment()
 
 
 # =============================================================
@@ -55,20 +147,41 @@ def _record_metric(
 
 
 # =============================================================
-# SAFETY GUARD (không đổi từ lần trước)
+# SAFETY GUARD
 # =============================================================
 def _build_safety_guard(config: dict, log_callback, signals=None):
+    """Build SafetyGuard từ config."""
     from core.safety_guard import GuardLimits, SafetyGuard
 
     safety_cfg = config.get("auto_tune", {}).get("safety", {})
 
     limits = GuardLimits(
         max_ram_pct=safety_cfg.get("throttle_ram_pct", 85.0),
-        max_cpu_pct=safety_cfg.get("throttle_cpu_pct", 95.0),
+        max_cpu_pct=safety_cfg.get("throttle_cpu_pct", 98.0),
         min_disk_free_pct=safety_cfg.get("reserve_disk_pct", 10.0),
         max_temp_celsius=safety_cfg.get("throttle_temp_celsius", 85.0),
         check_interval_sec=safety_cfg.get("check_interval_sec", 5.0),
         cpu_measurement=safety_cfg.get("cpu_measurement", "external"),
+        enabled=safety_cfg.get("enabled", True),
+        reset_after_ok_checks=int(
+            safety_cfg.get("reset_after_ok_checks", 3)
+        ),
+        cli_mode_action=safety_cfg.get("cli_mode_action", "mute"),
+    )
+
+    if limits.max_cpu_pct < 95:
+        log_callback(
+            f"[!] [Safety] throttle_cpu_pct={limits.max_cpu_pct} <95 — "
+            f"dễ false positive trên Windows (Defender scan APK). "
+            f"Khuyến nghị ≥98 + Defender exclusion."
+        )
+
+    log_callback(
+        f"[i] [Safety] Limits: CPU>{limits.max_cpu_pct}%, "
+        f"RAM>{limits.max_ram_pct}%, Disk<{limits.min_disk_free_pct}%, "
+        f"interval={limits.check_interval_sec}s, "
+        f"reset_ok={limits.reset_after_ok_checks}, "
+        f"cli={limits.cli_mode_action}, enabled={limits.enabled}"
     )
 
     prompt_after_n = int(safety_cfg.get("prompt_after_n_violations", 5))
@@ -87,14 +200,21 @@ def _build_safety_guard(config: dict, log_callback, signals=None):
             f"→ giảm tải xuống {backoff*100:.0f}%"
         )
 
+    def _on_mute(reason: str) -> None:
+        state["throttled"] = False
+        state["throttle_factor"] = 1.0
+        state["last_reason"] = ""
+        log_callback(
+            f"[i] [Safety] Reset throttle — dùng full resources "
+            f"({reason} muted)"
+        )
+
     def _on_prompt(reason: str, details: dict, count: int) -> bool:
         if signals is None:
             log_callback(
                 f"[!] [Safety] Không có GUI — auto-continue "
-                f"(đã vi phạm {count} lần)"
+                f"(vi phạm #{count})"
             )
-            state["throttled"] = False
-            state["throttle_factor"] = 1.0
             return True
 
         import threading
@@ -116,24 +236,14 @@ def _build_safety_guard(config: dict, log_callback, signals=None):
                 f"[!] [Safety] Không nhận phản hồi sau "
                 f"{prompt_timeout:.0f}s → auto-continue"
             )
-            state["throttled"] = False
-            state["throttle_factor"] = 1.0
             return True
-
-        user_continue = result["continue"]
-        if user_continue:
-            state["throttled"] = False
-            state["throttle_factor"] = 1.0
-            log_callback(
-                "[i] [Safety] Reset throttle — pipeline sẽ dùng "
-                "full resources"
-            )
-        return user_continue
+        return result["continue"]
 
     guard = SafetyGuard(
         limits=limits,
         on_violation=_on_violation,
         on_prompt=_on_prompt if signals is not None else None,
+        on_mute=_on_mute,
         prompt_after_n_violations=prompt_after_n,
         threshold_raise_pct=threshold_raise,
         log_callback=log_callback,
@@ -168,6 +278,9 @@ def run_pipeline(
     config: dict | None = None,
     **kwargs,
 ) -> tuple[bool, str | None, dict]:
+    # Belt-and-suspenders: pipeline có thể gọi từ GUI/notebook
+    _setup_environment()
+
     if config is None:
         config = load_config(apk_path=apk_path, mode=mode)
 
@@ -192,8 +305,10 @@ def run_pipeline(
         _record_metric(apk_path, mode, False, time.monotonic() - t0,
                        error=str(e))
         if signals:
-            try: signals.finished.emit(False, "")
-            except Exception: pass
+            try:
+                signals.finished.emit(False, "")
+            except Exception:
+                pass
         return False, None, {}
 
     _log(f"[*] Processing: {os.path.basename(apk_path)}")
@@ -208,8 +323,10 @@ def run_pipeline(
         _record_metric(apk_path, mode, False,
                        time.monotonic() - t0, error="No modes")
         if signals:
-            try: signals.finished.emit(False, "")
-            except Exception: pass
+            try:
+                signals.finished.emit(False, "")
+            except Exception:
+                pass
         return False, None, {}
 
     from core.mode_registry import MODE_MAP
@@ -232,7 +349,10 @@ def run_pipeline(
 
     if apktool_jobs is None:
         v = pipe_cfg.get("apktool_jobs", "auto")
-        apktool_jobs = v if isinstance(v, int) else max(1, (os.cpu_count() or 4) - 1)
+        apktool_jobs = (
+            v if isinstance(v, int)
+            else max(1, (os.cpu_count() or 4) - 1)
+        )
 
     if apktool_memory is None:
         v = pipe_cfg.get("apktool_memory", "4096m")
@@ -260,7 +380,14 @@ def run_pipeline(
     # ---- SafetyGuard ----
     guard = None
     guard_state = None
-    if config.get("auto_tune", {}).get("enabled", True):
+    auto_tune_on = config.get("auto_tune", {}).get("enabled", True)
+    safety_on = (
+        config.get("auto_tune", {})
+        .get("safety", {})
+        .get("enabled", True)
+    )
+
+    if auto_tune_on and safety_on:
         try:
             guard, guard_state = _build_safety_guard(
                 config, _log, signals=signals
@@ -269,6 +396,11 @@ def run_pipeline(
         except Exception as e:
             logger.debug("SafetyGuard setup failed: %s", e)
             guard = None
+    else:
+        _log(
+            f"[i] [Safety] Disabled "
+            f"(auto_tune={auto_tune_on}, safety={safety_on})"
+        )
 
     # ---- GC control ----
     gc_was_enabled = gc.isenabled()
@@ -333,7 +465,7 @@ def run_pipeline(
         # G1: force=False để dùng cache
         decompile_apk(
             apk_path, decompiled_dir,
-            force=False,               # ← FIX G1
+            force=False,
             no_res=use_no_res,
             jobs=effective_jobs,
             max_memory=apktool_memory,
@@ -396,7 +528,6 @@ def run_pipeline(
                 input_apk_for_delta=apk_path,
             )
         except RuntimeError as recompile_err:
-            # G2: Fallback decompile with resources nếu đang no_res
             if use_no_res:
                 _log(
                     f"[!] Recompile failed ({recompile_err}) — "
@@ -408,13 +539,12 @@ def run_pipeline(
                 )
                 decompile_apk(
                     apk_path, decompiled_dir,
-                    force=True,             # bypass cache
-                    no_res=False,           # ← include resources
+                    force=True,
+                    no_res=False,
                     jobs=effective_jobs,
                     max_memory=apktool_memory,
                     log_callback=_log,
                 )
-                # Re-apply patches
                 file_cache = FileContentCache(
                     decompiled_dir, log_callback=_log
                 )
@@ -424,7 +554,6 @@ def run_pipeline(
                     apk_path, _log, signals,
                 )
                 file_cache.flush(_log)
-                # Retry recompile
                 recompile_apk(
                     decompiled_dir, patched_apk,
                     forced_package_id=forced_package_id,
@@ -484,8 +613,10 @@ def run_pipeline(
         )
 
         if signals:
-            try: signals.finished.emit(True, final_apk)
-            except Exception: pass
+            try:
+                signals.finished.emit(True, final_apk)
+            except Exception:
+                pass
 
         return True, final_apk, patch_reports
 
@@ -506,8 +637,10 @@ def run_pipeline(
         _record_metric(apk_path, mode, False, elapsed, error=str(e))
 
         if signals:
-            try: signals.finished.emit(False, "")
-            except Exception: pass
+            try:
+                signals.finished.emit(False, "")
+            except Exception:
+                pass
 
         return False, None, {}
 
@@ -526,15 +659,19 @@ def run_pipeline(
         _record_metric(apk_path, mode, False, elapsed, error=str(e))
 
         if signals:
-            try: signals.finished.emit(False, "")
-            except Exception: pass
+            try:
+                signals.finished.emit(False, "")
+            except Exception:
+                pass
 
         return False, None, {}
 
     finally:
         if guard:
-            try: guard.stop()
-            except Exception: pass
+            try:
+                guard.stop()
+            except Exception:
+                pass
 
         if gc_was_enabled:
             gc.enable()
@@ -548,9 +685,11 @@ def run_pipeline(
 
 
 # =============================================================
-# CLI (không đổi)
+# CLI
 # =============================================================
 def main() -> int:
+    _setup_environment()
+
     parser = argparse.ArgumentParser(
         prog="lp-pc-suite",
         description="LP-PC Suite — APK patcher (production-ready)",
@@ -574,7 +713,14 @@ def main() -> int:
     parser.add_argument("--clone-package")
     parser.add_argument("--force-reanalyze", action="store_true")
     parser.add_argument("--verbose", "-v", action="store_true")
-    parser.add_argument("--no-tune", action="store_true")
+    parser.add_argument(
+        "--no-tune", action="store_true",
+        help="Tắt toàn bộ auto_tune (bao gồm safety guard)",
+    )
+    parser.add_argument(
+        "--no-safety", action="store_true",
+        help="Tắt SafetyGuard (vẫn giữ auto_tune cho jobs/memory)",
+    )
 
     args = parser.parse_args()
 
@@ -590,12 +736,19 @@ def main() -> int:
     if args.no_tune:
         config.setdefault("auto_tune", {})["enabled"] = False
 
+    if args.no_safety:
+        config.setdefault("auto_tune", {}) \
+              .setdefault("safety", {})["enabled"] = False
+        print("[i] SafetyGuard disabled via --no-safety")
+
     if args.verbose:
         config.setdefault("logging", {})["level"] = "DEBUG"
 
     fast_mode = None
-    if args.fast: fast_mode = True
-    elif args.no_fast: fast_mode = False
+    if args.fast:
+        fast_mode = True
+    elif args.no_fast:
+        fast_mode = False
 
     use_gda = True if args.gda else None
     keep_workspace = False if args.clean else None

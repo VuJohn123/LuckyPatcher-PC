@@ -12,6 +12,14 @@ Precedence (cao → thấp):
   4. User config file
   5. default.yaml
   6. Runtime auto-tune (cho field "auto")
+
+Fix v2:
+  - _DEFAULTS sync với config/default.yaml (throttle_cpu_pct: 90 → 98).
+    Trước đây nếu YAML load fail thì fallback threshold=90 → false
+    positive trên Windows Defender.
+  - Thêm các key mới cho SafetyGuard: enabled, reset_after_ok_checks,
+    reserve_disk_pct_cache_read, cli_mode_action, prompt_timeout_sec,
+    cpu_measurement, check_interval_sec.
 """
 from __future__ import annotations
 
@@ -32,7 +40,7 @@ logger = logging.getLogger(__name__)
 
 # ============================================================
 # DEFAULTS — fallback khi YAML không đọc được
-# (khớp với config/default.yaml để tránh drift)
+# (SYNC với config/default.yaml để tránh drift)
 # ============================================================
 _DEFAULTS: dict[str, Any] = {
     # ---------- AUTO-TUNE ENGINE ----------
@@ -40,18 +48,59 @@ _DEFAULTS: dict[str, Any] = {
         "enabled": True,
         "mode": "auto",
         "safety": {
+            # ---- MASTER SWITCH ----
+            # false = tắt hoàn toàn SafetyGuard
+            "enabled": True,
+
+            # ---- Safety margins ----
             "reserve_cpu_cores": 1,
             "reserve_ram_pct": 25,
             "reserve_ram_min_mb": 1024,
             "reserve_disk_pct": 10,
             "reserve_disk_min_mb": 2048,
-            "throttle_ram_pct": 80,
-            "throttle_cpu_pct": 90,
+            # Ngưỡng riêng cho cache READ (link/copy từ cache).
+            "reserve_disk_pct_cache_read": 3,
+
+            # ---- Throttle thresholds ----
+            # CPU 98% (không phải 90/95): Windows Defender/antivirus scan
+            # APK workspace 50k+ file có thể chiếm 94-99% CPU ngoại lai
+            # trong 10-15 phút. 90-95% quá strict → false positive.
+            "throttle_ram_pct": 85,
+            "throttle_cpu_pct": 98,
             "throttle_disk_pct": 90,
             "throttle_temp_celsius": 85,
+
+            # ---- Backoff ----
             "backoff_factor": 0.5,
             "backoff_min_workers": 1,
+
+            # ---- CPU measurement ----
+            # "external" = system_cpu - own_tree_cpu (bao gồm
+            #              descendants + external tool processes)
+            # "system"   = raw psutil.cpu_percent()
+            "cpu_measurement": "external",
+
+            # ---- Prompt / reset semantics ----
+            # Số vi phạm LIÊN TIẾP để trigger prompt / CLI fallback.
+            "prompt_after_n_violations": 5,
+            # Reset counter sau N lần check OK LIÊN TIẾP (chống
+            # dao động ngắn trên Windows).
+            "reset_after_ok_checks": 3,
+            # Timeout chờ user prompt (GUI).
+            "prompt_timeout_sec": 60,
+            # Nâng ngưỡng bao nhiêu % mỗi lần Continue.
+            "threshold_raise_pct": 5,
+            # Interval check.
+            "check_interval_sec": 5,
+
+            # ---- CLI mode (không có GUI) ----
+            # "mute"     : auto-mute reason, dùng full resources
+            # "continue" : nâng ngưỡng + reset counter
+            # "abort"    : dừng pipeline
+            "cli_mode_action": "mute",
         },
+
+        # ---- Workload classification ----
         "workload_classes": {
             "tiny":    {"max_size_mb": 10,    "strategy": "fast"},
             "small":   {"max_size_mb": 50,    "strategy": "fast"},
@@ -60,12 +109,16 @@ _DEFAULTS: dict[str, Any] = {
             "huge":    {"max_size_mb": 2048,  "strategy": "careful"},
             "massive": {"max_size_mb": 99999, "strategy": "paranoid"},
         },
+
+        # ---- Learning from history ----
         "telemetry": {
             "enabled": True,
             "history_size": 100,
             "reuse_learned_config": True,
             "min_samples_for_trust": 3,
         },
+
+        # ---- Concurrent instances ----
         "concurrency": {
             "allow_multi_instance": False,
             "share_resources": True,
@@ -226,8 +279,13 @@ def load_config(
             try:
                 with open(path, "r", encoding="utf-8") as f:
                     user_config = yaml.safe_load(f) or {}
+                logger.debug("Loaded YAML: %s", path)
             except Exception as e:
                 logger.warning("Load YAML fail (%s): %s", path, e)
+    else:
+        logger.warning(
+            "Config YAML không tồn tại (%s) — dùng _DEFAULTS", path
+        )
 
     # --- 3. Deep merge defaults <- user ---
     config = _deep_merge(_DEFAULTS, user_config)
@@ -350,6 +408,11 @@ def _apply_env_overrides(config: dict) -> dict:
       LP_LOGGING_LEVEL=DEBUG
       LP_NETWORK_CONNECT_TIMEOUT=30
       LP_AUTO_TUNE_MODE=stress
+      LP_AUTO_TUNE_SAFETY_ENABLED=false
+      LP_AUTO_TUNE_SAFETY_THROTTLE_CPU_PCT=99
+
+    Lưu ý: chỉ set nếu key đã tồn tại trong config (tránh typo tạo
+    key mới).
     """
     result = copy.deepcopy(config)
 
@@ -383,7 +446,7 @@ def _apply_env_overrides(config: dict) -> dict:
 def _set_nested(d: dict, key_path: str, raw_value: str) -> None:
     """
     Set nested value với type coercion.
-    Chỉ set nếu key đã tồn tại (tránh typo).
+    Chỉ set nếu key đã tồn tại (tránh typo tạo key mới).
     """
     # Thử khớp trực tiếp (snake_case / kebab-case)
     candidates = [key_path, key_path.replace("-", "_")]
@@ -393,7 +456,9 @@ def _set_nested(d: dict, key_path: str, raw_value: str) -> None:
             d[candidate] = _coerce_value(raw_value, d[candidate])
             return
 
-    # Thử split để vào nested dict: apktool_jobs → apktool.jobs
+    # Thử split để vào nested dict:
+    #   safety_throttle_cpu_pct → safety.throttle_cpu_pct
+    #   safety_enabled          → safety.enabled
     parts = key_path.split("_")
     for i in range(len(parts) - 1, 0, -1):
         prefix = "_".join(parts[:i])
@@ -403,6 +468,10 @@ def _set_nested(d: dict, key_path: str, raw_value: str) -> None:
             return
 
     # Không khớp → bỏ qua (không tạo key mới)
+    logger.debug(
+        "Env override skip: key_path='%s' không khớp trong config",
+        key_path,
+    )
 
 
 def _coerce_value(raw: str, template: Any) -> Any:
@@ -423,9 +492,12 @@ def _coerce_value(raw: str, template: Any) -> Any:
         return [s.strip() for s in raw.split(",") if s.strip()]
     return raw
 
-
 # ============================================================
 # HELPERS
 # ============================================================
 def _project_root() -> Path:
-    return Path(__file__).resolve().parent.parent
+    """
+    Project root = parent của src/.
+    File này ở src/core/config.py → parent.parent.parent = project root.
+    """
+    return Path(__file__).resolve().parent.parent.parent

@@ -1,5 +1,15 @@
 [
   {
+    "apk": "ZT.apk",
+    "mode": "iap:dex,license:auto",
+    "success": true,
+    "output": "C:\\Users\\dell\\Desktop\\LuckyPatcher-PC\\workspace\\output\\patched-aligned-debugSigned.apk",
+    "patches": [
+      "iap_dex (1 files)"
+    ],
+    "timestamp": 1789708207.6120143
+  },
+  {
     "apk": "C:/Users/dell/Downloads/com.locket.Locket-545-merged.apk",
     "mode": "license:auto,iap:dex,save_purchase,auto_repeat,sig_disable,sig_zip_disable",
     "success": false,

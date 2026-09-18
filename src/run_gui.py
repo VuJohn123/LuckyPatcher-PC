@@ -10,6 +10,77 @@ _SRC_DIR = os.path.dirname(os.path.abspath(__file__))
 if _SRC_DIR not in sys.path:
     sys.path.insert(0, _SRC_DIR)
 
+
+# =============================================================
+# UTILITIES: UTF-8 + LOG SILENCE
+# Gọi TRƯỚC mọi import khác (ui.* có thể import androguard)
+# =============================================================
+def _ensure_utf8_console() -> None:
+    """Windows cmd.exe cp1252 → UTF-8."""
+    if sys.platform != "win32":
+        return
+    for stream_name in ("stdout", "stderr"):
+        stream = getattr(sys, stream_name, None)
+        if stream is None:
+            continue
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is None:
+            continue
+        try:
+            reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+
+
+def _silence_androguard() -> None:
+    """Silence androguard logs (loguru + stdlib fallback)."""
+    if os.environ.get("LP_ANDROGUARD_LOG", "").strip().lower() in (
+        "1", "true", "yes", "on"
+    ):
+        return
+
+    # Loguru (androguard 4.x)
+    try:
+        from loguru import logger as _loguru
+        _loguru.disable("androguard")
+    except ImportError:
+        pass
+    except Exception:
+        pass
+
+    # Stdlib fallback
+    for name in list(logging.root.manager.loggerDict.keys()):
+        if name == "androguard" or name.startswith("androguard."):
+            lg = logging.getLogger(name)
+            lg.setLevel(logging.CRITICAL)
+            lg.propagate = False
+            lg.disabled = True
+
+    _ag = logging.getLogger("androguard")
+    _ag.setLevel(logging.CRITICAL)
+    _ag.propagate = False
+
+
+def _silence_noisy_libs() -> None:
+    for noisy, level in (
+        ("urllib3", logging.WARNING),
+        ("requests", logging.WARNING),
+        ("asyncio", logging.WARNING),
+        ("PIL", logging.WARNING),
+    ):
+        logging.getLogger(noisy).setLevel(level)
+
+
+def _setup_environment() -> None:
+    _ensure_utf8_console()
+    _silence_androguard()
+    _silence_noisy_libs()
+
+
+# Gọi ngay khi module load — trước mọi import Qt/ui
+_setup_environment()
+
+
 from PyQt6.QtWidgets import QApplication
 from PyQt6.QtCore import QObject, pyqtSignal
 
@@ -25,15 +96,9 @@ def setup_logging() -> None:
         datefmt="%H:%M:%S",
     )
 
-    # Silence androguard sub-loggers triệt để
-    for name in list(logging.root.manager.loggerDict):
-        if name == "androguard" or name.startswith("androguard."):
-            lg = logging.getLogger(name)
-            lg.setLevel(logging.ERROR)
-            lg.propagate = False
-
-    for noisy in ("urllib3", "requests", "asyncio"):
-        logging.getLogger(noisy).setLevel(logging.WARNING)
+    # Silence qua helper (loguru + stdlib)
+    _silence_androguard()
+    _silence_noisy_libs()
 
 
 class _UpdaterBridge(QObject):
@@ -46,7 +111,6 @@ def _check_for_updates(bridge: _UpdaterBridge, window: MainWindow) -> None:
     from core.github_updater import GitHubUpdater
 
     def _on_result(info):
-        # Chạy trong worker thread → emit signal (Qt queue về main)
         bridge.update_available.emit(info)
 
     GitHubUpdater().check_async(_on_result)
@@ -75,6 +139,7 @@ def _show_update_dialog(window: MainWindow, info) -> None:
 
 
 def main() -> int:
+    _setup_environment()
     setup_logging()
 
     print(f"[i] Regex engine: {RE_ENGINE}")
@@ -90,7 +155,6 @@ def main() -> int:
     window = MainWindow()
     window.show()
 
-    # Check update — chạy sau 1s để GUI kịp render
     bridge = _UpdaterBridge()
     bridge.update_available.connect(
         lambda info: _show_update_dialog(window, info)
@@ -103,4 +167,5 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    _setup_environment()
     sys.exit(main())

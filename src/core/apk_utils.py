@@ -19,6 +19,13 @@ _PROJECT_ROOT = os.path.dirname(
 TOOLS_DIR = os.path.join(_PROJECT_ROOT, "tools")
 NAILGUN = shutil.which("ng")
 
+# Fail tolerance cho copytree (5% file fail → cache considered broken)
+_COPY_FAIL_TOLERANCE = 0.05
+
+# Disk threshold riêng cho READ vs WRITE
+_DISK_MIN_READ_PCT = 3.0    # cache LOAD chỉ cần đọc
+_DISK_MIN_WRITE_PCT = 15.0  # cache SAVE cần không gian
+
 
 # ============================================================
 # JAVA SUBPROCESS WITH STREAMING + HEARTBEAT
@@ -55,13 +62,9 @@ def _run_java_with_heartbeat(
     def _heartbeat():
         while not stop_hb.wait(heartbeat_sec):
             elapsed = time.monotonic() - start
-            log_callback(
-                f"[i] [{label}] vẫn đang chạy... ({elapsed:.0f}s)"
-            )
+            log_callback(f"[i] [{label}] vẫn đang chạy... ({elapsed:.0f}s)")
             if elapsed > timeout_sec:
-                log_callback(
-                    f"[!] [{label}] Timeout {timeout_sec}s — kill"
-                )
+                log_callback(f"[!] [{label}] Timeout {timeout_sec}s — kill")
                 killed["flag"] = True
                 try:
                     proc.kill()
@@ -110,7 +113,40 @@ def _run_java_with_heartbeat(
 
 
 # ============================================================
-# SAFE COPytree WITH HEARTBEAT
+# SYMLINK / JUNCTION FAST PATH
+# ============================================================
+def _try_link(src: str, dst: str) -> bool:
+    """
+    Thử tạo symlink/junction thay vì copy → gần như tức thời.
+    Windows: junction (mklink /J) — không cần admin.
+    Unix: os.symlink.
+    Trả True nếu thành công.
+    """
+    # Cleanup dst
+    try:
+        if os.path.islink(dst) or os.path.isfile(dst):
+            os.remove(dst)
+        elif os.path.isdir(dst):
+            shutil.rmtree(dst, ignore_errors=True)
+    except OSError:
+        return False
+
+    try:
+        if os.name == "nt":
+            result = subprocess.run(
+                ["cmd", "/c", "mklink", "/J", dst, src],
+                capture_output=True, text=True, timeout=10,
+            )
+            return result.returncode == 0
+        else:
+            os.symlink(src, dst, target_is_directory=True)
+            return True
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
+# ============================================================
+# SAFE COPYTREE — mode read/write + verify count
 # ============================================================
 def _safe_copytree(
     src: str,
@@ -118,24 +154,40 @@ def _safe_copytree(
     log_callback: Callable[[str], None],
     label: str = "Cache",
     heartbeat_sec: int = 15,
+    mode: str = "write",          # "read" (cache load) | "write" (cache save)
+    fail_tolerance: float = _COPY_FAIL_TOLERANCE,
 ) -> bool:
     """
-    Copy tree với heartbeat + disk check. Trả True nếu OK.
-    Dùng cho cache save/load — tránh UI treo khi copy 50k files.
+    Copy tree với:
+      - mode=read: thử symlink/junction trước (near-instant)
+      - disk check theo mode (read=3%, write=15%)
+      - verify count: fail nếu >fail_tolerance file fail
+
+    Trả True nếu OK (hoặc link thành công). Raise RuntimeError nếu
+    fail quá nhiều.
     """
-    # ---- Disk free check (>15% required) ----
+    # ---- mode=read: fast path link ----
+    if mode == "read":
+        if _try_link(src, dst):
+            log_callback(f"[✔] [{label}] Linked (junction/symlink) — no disk cost")
+            return True
+        # Fallback to copy
+
+    # ---- Disk check theo mode ----
+    min_pct = _DISK_MIN_READ_PCT if mode == "read" else _DISK_MIN_WRITE_PCT
     try:
         usage = shutil.disk_usage(os.path.dirname(dst) or dst)
         free_pct = usage.free * 100 / usage.total
-        if free_pct < 15:
+        if free_pct < min_pct:
             log_callback(
-                f"[i] [{label}] Disk chỉ còn {free_pct:.1f}% — skip copy"
+                f"[i] [{label}] Disk còn {free_pct:.1f}% (<{min_pct}%) "
+                f"— skip {mode}"
             )
             return False
     except OSError:
         pass
 
-    # ---- Count files for progress ----
+    # ---- Count files ----
     try:
         total = sum(len(files) for _, _, files in os.walk(src))
         log_callback(f"[*] [{label}] Copy {total} files → {dst}")
@@ -144,43 +196,69 @@ def _safe_copytree(
 
     # ---- Cleanup dst ----
     if os.path.exists(dst):
-        try:
-            shutil.rmtree(dst, ignore_errors=True)
-        except OSError:
-            pass
+        shutil.rmtree(dst, ignore_errors=True)
 
-    # ---- Copy with heartbeat ----
+    # ---- Copy with heartbeat + per-file verify ----
     start = time.monotonic()
     stop_hb = threading.Event()
 
     def _heartbeat():
         while not stop_hb.wait(heartbeat_sec):
             elapsed = time.monotonic() - start
-            log_callback(
-                f"[i] [{label}] vẫn đang copy... ({elapsed:.0f}s)"
-            )
+            log_callback(f"[i] [{label}] vẫn đang copy... ({elapsed:.0f}s)")
 
     hb = threading.Thread(target=_heartbeat, daemon=True)
     hb.start()
 
+    copied = 0
+    failed = 0
+    failed_samples: list[str] = []
+
     try:
-        shutil.copytree(src, dst)
-        elapsed = time.monotonic() - start
-        log_callback(f"[✔] [{label}] Copied in {elapsed:.1f}s")
-        return True
-    except shutil.Error as e:
-        n = len(e.args[0]) if e.args else 0
-        log_callback(
-            f"[i] [{label}] Bỏ qua {n} file lỗi "
-            f"(path > 260 ký tự trên Windows)"
-        )
-        return True   # Partial OK
-    except OSError as e:
-        log_callback(f"[!] [{label}] Copy failed: {e}")
-        return False
+        for root, dirs, files in os.walk(src):
+            rel = os.path.relpath(root, src)
+            target_root = dst if rel == "." else os.path.join(dst, rel)
+            try:
+                os.makedirs(target_root, exist_ok=True)
+            except OSError as e:
+                log_callback(f"[!] [{label}] makedirs {target_root}: {e}")
+                failed += len(files)
+                continue
+            for f in files:
+                s = os.path.join(root, f)
+                t = os.path.join(target_root, f)
+                try:
+                    shutil.copy2(s, t)
+                    copied += 1
+                except (OSError, shutil.Error) as e:
+                    failed += 1
+                    if len(failed_samples) < 3:
+                        failed_samples.append(f"{f}: {e}")
     finally:
         stop_hb.set()
         hb.join(timeout=3)
+
+    elapsed = time.monotonic() - start
+    grand = copied + failed
+    fail_ratio = failed / grand if grand else 0.0
+
+    for sample in failed_samples:
+        log_callback(f"[i] [{label}] skip: {sample}")
+
+    if failed > 0:
+        log_callback(
+            f"[!] [{label}] {failed}/{grand} file fail "
+            f"({fail_ratio*100:.2f}%) sau {elapsed:.1f}s"
+        )
+
+    if fail_ratio > fail_tolerance:
+        raise RuntimeError(
+            f"[{label}] Copy fail ratio {fail_ratio*100:.2f}% > "
+            f"{fail_tolerance*100:.0f}% — cache sẽ bị corrupt, bỏ."
+        )
+
+    log_callback(f"[✔] [{label}] Copied {copied}/{grand} in {elapsed:.1f}s")
+    return True
 
 
 # ============================================================
@@ -250,17 +328,21 @@ def decompile_apk(
                     f"[*] Cache hit (age {age_days:.1f}d ≤ "
                     f"{cache_ttl_days}d) — dùng cache"
                 )
-                if _safe_copytree(
-                    cache_dir, output_dir,
-                    log_callback=log_callback,
-                    label="Cache load",
-                    heartbeat_sec=15,
-                ):
-                    return output_dir
-                else:
-                    log_callback(
-                        "[i] Cache copy fail — decompile lại từ đầu"
+                try:
+                    ok = _safe_copytree(
+                        cache_dir, output_dir,
+                        log_callback=log_callback,
+                        label="Cache load",
+                        heartbeat_sec=15,
+                        mode="read",         # ← FIX: cho phép link/read
                     )
+                    if ok:
+                        return output_dir
+                    log_callback(
+                        "[i] Cache load skip — decompile lại từ đầu"
+                    )
+                except RuntimeError as e:
+                    log_callback(f"[!] Cache corrupt: {e} — decompile lại")
             else:
                 log_callback(
                     f"[i] Cache cũ ({age_days:.1f}d) — decompile lại"
@@ -304,7 +386,7 @@ def decompile_apk(
 def _safe_save_cache(
     output_dir: str, apk_path: str, log_callback
 ) -> None:
-    """Lưu decompiled vào cache với heartbeat + disk check."""
+    """Lưu decompiled vào cache. Verify count — không silent partial."""
     try:
         cache_dir = get_cache_dir(apk_path)
         _safe_copytree(
@@ -312,7 +394,10 @@ def _safe_save_cache(
             log_callback=log_callback,
             label="Cache save",
             heartbeat_sec=15,
+            mode="write",
         )
+    except RuntimeError as e:
+        log_callback(f"[!] [Cache] Save aborted (partial fail): {e}")
     except Exception as e:
         log_callback(f"[i] [Cache] Disabled: {e}")
 
@@ -369,25 +454,14 @@ def _verify_recompiled_apk(
     log_callback,
     input_apk_for_delta: str | None = None,
 ) -> None:
-    """
-    Verify APK output sau recompile:
-      - File tồn tại + size > 100 byte
-      - Valid ZIP (không corrupted)
-      - Có AndroidManifest.xml
-      - Có ≥ 1 file .dex
-      - Size delta hợp lý (< 10x input)
-    Raise RuntimeError nếu fail.
-    """
+    """Verify APK output sau recompile (ZIP + manifest + dex + size delta)."""
     if not os.path.exists(apk_path):
         raise RuntimeError(f"Output APK không tồn tại: {apk_path}")
 
     size = os.path.getsize(apk_path)
     if size < 100:
-        raise RuntimeError(
-            f"Output APK quá nhỏ ({size} byte) — corrupt"
-        )
+        raise RuntimeError(f"Output APK quá nhỏ ({size} byte) — corrupt")
 
-    # ZIP valid
     try:
         with zipfile.ZipFile(apk_path, "r") as z:
             bad = z.testzip()
@@ -397,20 +471,13 @@ def _verify_recompiled_apk(
     except zipfile.BadZipFile as e:
         raise RuntimeError(f"APK không phải ZIP hợp lệ: {e}")
 
-    # Manifest
     if "AndroidManifest.xml" not in names:
-        raise RuntimeError(
-            "APK thiếu AndroidManifest.xml — recompile fail"
-        )
+        raise RuntimeError("APK thiếu AndroidManifest.xml — recompile fail")
 
-    # ≥ 1 dex
     dex_count = sum(1 for n in names if n.endswith(".dex"))
     if dex_count == 0:
-        raise RuntimeError(
-            "APK không có file .dex — recompile fail"
-        )
+        raise RuntimeError("APK không có file .dex — recompile fail")
 
-    # Size delta
     delta_msg = ""
     if input_apk_for_delta and os.path.exists(input_apk_for_delta):
         try:
@@ -462,7 +529,6 @@ def sign_apk(
         from core.sign_with_key import APKSigner
         signed = APKSigner(TOOLS_DIR).sign_apk(apk_path, key_type)
 
-    # Verify signature
     if verify:
         _verify_signed_apk(signed, log_callback)
 
@@ -470,7 +536,7 @@ def sign_apk(
 
 
 def _verify_signed_apk(apk_path: str, log_callback) -> None:
-    """Verify APK có META-INF signature entries (v1) hoặc v2/v3 block."""
+    """Verify APK có META-INF signature entries (v1)."""
     if not os.path.exists(apk_path):
         raise RuntimeError(f"Signed APK không tồn tại: {apk_path}")
 
