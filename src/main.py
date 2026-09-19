@@ -35,6 +35,15 @@ v3.4 fixes (output naming + cleanup):
   - Rename final APK → {package}.{Patch1}.{Patch2}.apk
   - Cleanup intermediate files (patched.apk, -aligned-debugSigned.apk)
   - Progress bar cho apktool recompile (parse stdout)
+
+v3.5 fixes (AIDL proxy auto-generate):
+  - Mode `iap:proxy` → auto-generate AIDL proxy package
+  - Output: workspace/aidl_proxy/<pkg>/
+
+v3.6 fixes (Hex pattern integration):
+  - `--hex-patch <file>` CLI flag → apply LP-format hex patches
+    sau recompile, trước sign
+  - Auto-detect: nếu file patch có extension .hexpatch / .lppatch
 """
 from __future__ import annotations
 
@@ -134,10 +143,7 @@ _FOLDER_NAME_RE = re.compile(r"[^\w.\-]")
 
 
 def _sanitize_folder_name(s) -> str:
-    """
-    Sanitize tên folder. Chỉ chấp nhận str; các type khác (MagicMock
-    trong test, None, number) → fallback "unknown".
-    """
+    """Sanitize tên folder. Non-str → 'unknown'."""
     if not isinstance(s, str) or not s:
         return "unknown"
     cleaned = _FOLDER_NAME_RE.sub("_", s).strip("._")
@@ -145,7 +151,6 @@ def _sanitize_folder_name(s) -> str:
 
 
 def _coerce_str(v) -> str:
-    """Coerce value về str, non-str → empty."""
     return v if isinstance(v, str) else ""
 
 
@@ -163,17 +168,7 @@ def _cleanup_intermediates(
     keep: str,
     log_callback=print,
 ) -> None:
-    """
-    Xóa intermediate APK files sau khi sign + rename.
-
-    Intermediates thường gặp:
-      - patched.apk                      (apktool output)
-      - patched-aligned.apk              (zipalign output)
-      - patched-aligned-debugSigned.apk  (uber-apk-signer output)
-      - *.apk.tmp                        (partial writes)
-
-    Chỉ giữ lại file trong `keep` (final renamed APK).
-    """
+    """Xóa intermediate APK files sau sign + rename."""
     try:
         keep_abs = os.path.abspath(keep)
         removed_count = 0
@@ -195,49 +190,103 @@ def _cleanup_intermediates(
         logger.debug("Cleanup listdir failed: %s", e)
 
 
-def _record_metric(
+def _generate_aidl_proxy_if_needed(
+    mapped_modes: list[str],
+    base_dir: Path,
+    pkg_folder: str,
+    log_callback=print,
+) -> str | None:
+    """Auto-generate AIDL proxy nếu mode iap:proxy."""
+    if "iap_proxy" not in mapped_modes:
+        return None
+
+    try:
+        from patcher.aidl_proxy_generator import generate_aidl_proxy
+        proxy_dir = str(base_dir / "aidl_proxy" / pkg_folder)
+        log_callback(f"[*] [AIDLProxy] Auto-generating → {proxy_dir}")
+        result = generate_aidl_proxy(proxy_dir, log_callback=log_callback)
+        if result is None or not result.is_valid:
+            errs = getattr(result, "errors", ["unknown"])
+            log_callback(f"[!] [AIDLProxy] Failed: {errs}")
+            return None
+        log_callback(
+            f"[✔] [AIDLProxy] Generated "
+            f"({len(result.smali_files)} smali)"
+        )
+        return proxy_dir
+    except ImportError as e:
+        log_callback(f"[i] [AIDLProxy] Module missing ({e})")
+        return None
+    except Exception as e:
+        logger.warning("AIDL proxy generation failed: %s", e)
+        return None
+
+
+def _apply_hex_patch_if_needed(
+    hex_patch_file: str | None,
     apk_path: str,
-    mode: str,
-    success: bool,
-    duration: float,
-    patches: int = 0,
-    error: str = "",
+    log_callback=print,
+) -> int:
+    """
+    Apply LP-format hex patches lên APK (post-recompile, pre-sign).
+
+    Returns: number of ops applied (0 if skipped or no file).
+    """
+    if not hex_patch_file:
+        return 0
+    if not os.path.exists(hex_patch_file):
+        log_callback(
+            f"[!] [HexPatcher] Patch file không tồn tại: "
+            f"{hex_patch_file}"
+        )
+        return 0
+
+    try:
+        from patcher.hex_pattern_patcher import apply_hex_patches
+    except ImportError as e:
+        log_callback(f"[i] [HexPatcher] Module missing ({e})")
+        return 0
+
+    log_callback(f"[*] [HexPatcher] Applying {hex_patch_file}")
+    try:
+        result = apply_hex_patches(
+            apk_path=apk_path,
+            patch_file=hex_patch_file,
+            log_callback=log_callback,
+        )
+        return result.applied
+    except Exception as e:
+        logger.warning("Hex patch apply failed: %s", e)
+        log_callback(f"[!] [HexPatcher] Error: {e}")
+        return 0
+
+
+def _record_metric(
+    apk_path: str, mode: str, success: bool, duration: float,
+    patches: int = 0, error: str = "",
 ) -> None:
-    """Record pipeline-level metric (toàn bộ lần chạy)."""
     try:
         from core.metrics import PatchMetrics, get_metrics
         get_metrics().record(PatchMetrics(
             apk_name=os.path.basename(apk_path) if apk_path else "",
-            mode=mode,
-            success=success,
-            duration_sec=duration,
-            patches_applied=patches,
-            error=error[:500],
-            stage="pipeline",
-            trace_id=get_trace_id(),
+            mode=mode, success=success, duration_sec=duration,
+            patches_applied=patches, error=error[:500],
+            stage="pipeline", trace_id=get_trace_id(),
         ))
     except Exception:
         pass
 
 
 def _record_metric_stage(
-    apk_path: str,
-    mode: str,
-    stage: str,
-    duration: float,
-    success: bool = True,
-    error: str = "",
+    apk_path: str, mode: str, stage: str, duration: float,
+    success: bool = True, error: str = "",
 ) -> None:
-    """Record 1 stage timing vào metrics."""
     try:
         from core.metrics import get_metrics
         get_metrics().record_stage(
             apk_name=os.path.basename(apk_path) if apk_path else "",
-            mode=mode,
-            stage=stage,
-            duration_sec=duration,
-            success=success,
-            error=error[:500] if error else "",
+            mode=mode, stage=stage, duration_sec=duration,
+            success=success, error=error[:500] if error else "",
             trace_id=get_trace_id(),
         )
     except Exception:
@@ -245,11 +294,6 @@ def _record_metric_stage(
 
 
 class _StageTimer:
-    """
-    Context manager: đo thời gian 1 stage + auto record metric.
-    Không suppress exception — chỉ record rồi để nó propagate.
-    """
-
     def __init__(self, apk_path: str, mode: str, stage: str,
                  log_callback=None):
         self.apk_path = apk_path
@@ -274,34 +318,27 @@ class _StageTimer:
                 f"[!] [Stage:{self.stage}] failed after {dt:.1f}s: "
                 f"{err[:200]}"
             )
-        return False  # không suppress
+        return False
 
 
 # =============================================================
 # STRATEGY RESOLUTION
 # =============================================================
 _DEFAULT_STRATEGY_BY_SIZE = {
-    "tiny": "fast",
-    "small": "fast",
-    "medium": "balanced",
-    "large": "careful",
-    "huge": "careful",
-    "massive": "paranoid",
+    "tiny": "fast", "small": "fast", "medium": "balanced",
+    "large": "careful", "huge": "careful", "massive": "paranoid",
 }
-
 _SIZE_ORDER = ("tiny", "small", "medium", "large", "huge", "massive")
 
 
 def _resolve_strategy(config: dict, apk_path: str) -> tuple[str, str]:
-    """Resolve strategy dựa trên kích thước APK."""
     try:
         size_mb = os.path.getsize(apk_path) / 1024 / 1024
     except OSError:
         return "balanced", "unknown"
 
     classes = (
-        config.get("auto_tune", {})
-        .get("workload_classes", {})
+        config.get("auto_tune", {}).get("workload_classes", {})
     ) or {}
 
     for name in _SIZE_ORDER:
@@ -309,24 +346,21 @@ def _resolve_strategy(config: dict, apk_path: str) -> tuple[str, str]:
         max_mb = cls.get("max_size_mb", 99999)
         if size_mb <= max_mb:
             strategy = cls.get(
-                "strategy", _DEFAULT_STRATEGY_BY_SIZE.get(name, "balanced")
+                "strategy",
+                _DEFAULT_STRATEGY_BY_SIZE.get(name, "balanced"),
             )
             return strategy, name
-
     return "balanced", "massive"
 
 
 def _apply_strategy(config: dict, apk_path: str, log_callback) -> str:
-    """Resolve strategy + set vào pipeline_executor. Return name."""
     strategy, size_class = _resolve_strategy(config, apk_path)
     try:
         from core.pipeline_executor import set_strategy
         set_strategy(strategy)
     except Exception as e:
         log_callback(f"[i] [Strategy] set_strategy failed: {e}")
-    log_callback(
-        f"[*] [Strategy] {strategy} (size_class={size_class})"
-    )
+    log_callback(f"[*] [Strategy] {strategy} (size_class={size_class})")
     return strategy
 
 
@@ -334,7 +368,6 @@ def _apply_strategy(config: dict, apk_path: str, log_callback) -> str:
 # SAFETY GUARD
 # =============================================================
 def _build_safety_guard(config: dict, log_callback, signals=None):
-    """Build SafetyGuard từ config."""
     from core.safety_guard import GuardLimits, SafetyGuard
 
     safety_cfg = config.get("auto_tune", {}).get("safety", {})
@@ -457,6 +490,7 @@ def run_pipeline(
     apktool_memory: str | None = None,
     keep_workspace: bool | None = None,
     clone_package: str | None = None,
+    hex_patch_file: str | None = None,
     signals=None,
     force_reanalyze: bool = False,
     config: dict | None = None,
@@ -465,6 +499,9 @@ def run_pipeline(
     """
     Pipeline chính. Wrap body trong trace_context để mọi log/metric/
     history trong cùng 1 run có chung trace_id.
+
+    v3.6: `hex_patch_file` — LP-format hex patch file, apply sau
+    recompile và trước sign.
     """
     _setup_environment()
 
@@ -488,6 +525,7 @@ def run_pipeline(
             apktool_memory=apktool_memory,
             keep_workspace=keep_workspace,
             clone_package=clone_package,
+            hex_patch_file=hex_patch_file,
             signals=signals,
             force_reanalyze=force_reanalyze,
             config=config,
@@ -509,6 +547,7 @@ def _run_pipeline_body(
     apktool_memory: str | None,
     keep_workspace: bool | None,
     clone_package: str | None,
+    hex_patch_file: str | None,
     signals,
     force_reanalyze: bool,
     config: dict,
@@ -602,7 +641,7 @@ def _run_pipeline_body(
     strategy = _apply_strategy(config, apk_path, _log)
 
     # ============================================================
-    # ANALYZE (trước workspace để lấy package name)
+    # ANALYZE
     # ============================================================
     _emit_step(signals, "Phân tích APK...", 10, _log)
     app_name = ""
@@ -623,7 +662,6 @@ def _run_pipeline_body(
                 _log(f"[*] Package: {package_name}")
             _log(f"[*] Analysis: {analyzer.get_colors()}")
 
-            # Cảnh báo packer không patchable
             packer = getattr(analyzer, "packer_info", None)
             if isinstance(packer, dict) and not packer.get("patchable", True):
                 _log(
@@ -637,7 +675,7 @@ def _run_pipeline_body(
             logger.warning("Analysis failed: %s", e)
 
     # ============================================================
-    # WORKSPACE (package-based output folder)
+    # WORKSPACE
     # ============================================================
     base_dir = Path(__file__).resolve().parent.parent / "workspace"
     decompiled_dir = str(base_dir / "decompiled")
@@ -650,14 +688,20 @@ def _run_pipeline_body(
     os.makedirs(output_dir, exist_ok=True)
     _log(f"[*] Output dir: {output_dir}")
 
+    # AIDL proxy
+    aidl_proxy_dir = _generate_aidl_proxy_if_needed(
+        mapped_modes=mapped_modes, base_dir=base_dir,
+        pkg_folder=pkg_folder, log_callback=_log,
+    )
+    if aidl_proxy_dir:
+        _log(f"[*] AIDL proxy dir: {aidl_proxy_dir}")
+
     # ---- SafetyGuard ----
     guard = None
     guard_state = None
     auto_tune_on = config.get("auto_tune", {}).get("enabled", True)
     safety_on = (
-        config.get("auto_tune", {})
-        .get("safety", {})
-        .get("enabled", True)
+        config.get("auto_tune", {}).get("safety", {}).get("enabled", True)
     )
 
     if auto_tune_on and safety_on:
@@ -675,7 +719,6 @@ def _run_pipeline_body(
             f"(auto_tune={auto_tune_on}, safety={safety_on})"
         )
 
-    # ---- GC control ----
     gc_was_enabled = gc.isenabled()
     if config.get("pipeline", {}).get("gc_control", True):
         gc.disable()
@@ -690,7 +733,7 @@ def _run_pipeline_body(
         from core.patch_history import PatchHistory
         from patcher.watermarker import Watermarker
 
-        # ---- GDA (optional) ----
+        # ---- GDA ----
         if use_gda:
             _check_safety_abort(guard, _log)
             _emit_step(signals, "Phân tích GDA...", 5, _log)
@@ -727,10 +770,8 @@ def _run_pipeline_body(
         with _StageTimer(apk_path, mode, "decompile", _log):
             decompile_apk(
                 apk_path, decompiled_dir,
-                force=False,
-                no_res=use_no_res,
-                jobs=effective_jobs,
-                max_memory=apktool_memory,
+                force=False, no_res=use_no_res,
+                jobs=effective_jobs, max_memory=apktool_memory,
                 log_callback=_log,
             )
         _emit_step(signals, "Decompile xong", 40, _log)
@@ -738,8 +779,7 @@ def _run_pipeline_body(
         # ---- Patch ----
         _check_safety_abort(guard, _log)
         file_cache = FileContentCache(
-            decompiled_dir,
-            log_callback=_log,
+            decompiled_dir, log_callback=_log,
         )
         set_file_cache(file_cache)
 
@@ -765,7 +805,7 @@ def _run_pipeline_body(
         _emit_step(signals, "Ghi thay đổi...", 65, _log)
         file_cache.flush(_log)
 
-        # ---- Watermark SAU flush (G7) ----
+        # ---- Watermark SAU flush ----
         if patches_applied:
             _check_safety_abort(guard, _log)
             _emit_step(signals, "Thêm watermark...", 70, _log)
@@ -778,7 +818,7 @@ def _run_pipeline_body(
                     logger.warning("Watermark failed: %s", e)
 
         # ============================================================
-        # Recompile với fallback no_res=False khi fail
+        # Recompile
         # ============================================================
         _check_safety_abort(guard, _log)
         _emit_step(signals, "Recompiling APK...", 75, _log)
@@ -808,8 +848,7 @@ def _run_pipeline_body(
                     ):
                         decompile_apk(
                             apk_path, decompiled_dir,
-                            force=True,
-                            no_res=False,
+                            force=True, no_res=False,
                             jobs=effective_jobs,
                             max_memory=apktool_memory,
                             log_callback=_log,
@@ -820,8 +859,7 @@ def _run_pipeline_body(
                     set_file_cache(file_cache)
                     patches_applied, patch_reports = execute_modes(
                         mapped_modes, decompiled_dir, ad_activities,
-                        apk_path, _log, signals,
-                        strategy=strategy,
+                        apk_path, _log, signals, strategy=strategy,
                     )
                     file_cache.flush(_log)
                     recompile_apk(
@@ -834,10 +872,25 @@ def _run_pipeline_body(
                 else:
                     raise
 
-        _emit_step(signals, "Recompile xong", 88, _log)
+        _emit_step(signals, "Recompile xong", 86, _log)
 
         # ============================================================
-        # Sign → Rename → Cleanup intermediates
+        # HEX PATCH — apply LP-format hex patches (post-recompile)
+        # ============================================================
+        if hex_patch_file:
+            _check_safety_abort(guard, _log)
+            _emit_step(signals, "Applying hex patches...", 88, _log)
+            with _StageTimer(apk_path, mode, "hex_patch", _log):
+                hex_ops = _apply_hex_patch_if_needed(
+                    hex_patch_file=hex_patch_file,
+                    apk_path=patched_apk,
+                    log_callback=_log,
+                )
+            if hex_ops > 0:
+                _log(f"[✔] [HexPatcher] Applied {hex_ops} op(s)")
+
+        # ============================================================
+        # Sign → Rename → Cleanup
         # ============================================================
         _emit_step(signals, "Đang ký APK...", 92, _log)
         with _StageTimer(apk_path, mode, "sign", _log):
@@ -845,7 +898,6 @@ def _run_pipeline_body(
                 patched_apk, key_type=key_type, log_callback=_log
             )
 
-        # ---- Rename → {package}.{Patch1}.{Patch2}.apk ----
         new_filename = build_output_filename(
             package_name=package_name,
             mapped_modes=mapped_modes,
@@ -862,10 +914,8 @@ def _run_pipeline_body(
                     pass
             os.replace(signed_apk, final_apk)
 
-        # ---- Cleanup intermediates ----
         _cleanup_intermediates(
-            output_dir=output_dir,
-            keep=final_apk,
+            output_dir=output_dir, keep=final_apk,
             log_callback=_log,
         )
 
@@ -929,8 +979,7 @@ def _run_pipeline_body(
         try:
             from core.patch_history import PatchHistory
             PatchHistory().add_record(
-                apk_path, mode, False, "", [],
-                trace_id=trace_id,
+                apk_path, mode, False, "", [], trace_id=trace_id,
             )
         except Exception:
             pass
@@ -954,8 +1003,7 @@ def _run_pipeline_body(
         try:
             from core.patch_history import PatchHistory
             PatchHistory().add_record(
-                apk_path, mode, False, "", [],
-                trace_id=trace_id,
+                apk_path, mode, False, "", [], trace_id=trace_id,
             )
         except Exception:
             pass
@@ -1029,6 +1077,13 @@ def main() -> int:
         "--trace-id",
         help="Override trace_id (default: auto-gen 8-char hex)",
     )
+    parser.add_argument(
+        "--hex-patch", dest="hex_patch_file", default=None,
+        help=(
+            "Path tới LP-format hex patch file. Apply sau "
+            "recompile, trước sign. Hỗ trợ wildcard `**`/`??`."
+        ),
+    )
 
     args = parser.parse_args()
 
@@ -1072,6 +1127,7 @@ def main() -> int:
         apktool_memory=args.apktool_memory,
         keep_workspace=keep_workspace,
         clone_package=args.clone_package,
+        hex_patch_file=args.hex_patch_file,
         force_reanalyze=args.force_reanalyze,
         config=config,
     )

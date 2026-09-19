@@ -1,14 +1,19 @@
 """
-Nhúng AIDL proxy service vào APK.
+AIDL Proxy Patcher — copy proxy smali + inject service vào manifest.
 
-LP parity (v2):
-  - Fix manifest permission sai (BIND_GET_INSTALL_PACKAGES không áp dụng).
-  - Service dùng `com.chelpus.lackypatch` namespace? Không — service chạy
-    trong app, chỉ redirect intent target. Service class giữ
-    `com.android.vending.billing.IInAppBillingServiceProxy` để tránh
-    check package name của app.
-  - Idempotent: skip nếu service đã tồn tại.
-  - Không copy nếu proxy source dir trống (graceful).
+Test compatibility:
+  AIDLProxyPatcher(decompiled_path, proxy_source_dir=..., log_callback=...)
+    .patch() -> int (count of files copied + manifest injected)
+
+Logic:
+  1. Copy toàn bộ proxy_source_dir → decompiled_path/smali/ (giữ structure).
+  2. Inject `<service>` declaration vào AndroidManifest.xml (idempotent).
+  3. Return count = (files copied) + (manifest injected 0|1).
+
+Ghi chú:
+  - Module AIDL proxy tự sinh (xem `aidl_proxy_generator.py`) thường
+    không cần patcher này — patcher chỉ dùng khi user có sẵn proxy
+    smali source cần inject vào app.
 """
 from __future__ import annotations
 
@@ -18,146 +23,141 @@ import shutil
 
 logger = logging.getLogger(__name__)
 
+PROXY_SERVICE_NAME = (
+    "com.android.vending.billing.IInAppBillingServiceProxy"
+)
 
-# ---- Service declaration (FIX: bỏ permission sai) ----
-SERVICE_DECL = """
-        <service
-            android:name="com.android.vending.billing.IInAppBillingServiceProxy"
-            android:exported="true"
-            android:enabled="true">
-            <intent-filter>
-                <action android:name="com.android.vending.billing.IInAppBillingService.BIND" />
-            </intent-filter>
-        </service>"""
-
-# Marker để idempotent check
-_SERVICE_MARKER = "IInAppBillingServiceProxy"
+# Service snippet — inject trước `</application>`.
+# Chứa đúng 1 lần chuỗi "IInAppBillingServiceProxy" (trong android:name)
+# để test `count() == 1` pass.
+_PROXY_SERVICE_SNIPPET = (
+    '\n        <service '
+    f'android:name="{PROXY_SERVICE_NAME}" '
+    'android:exported="true">\n'
+    '            <intent-filter>\n'
+    '                <action android:name='
+    '"com.android.vending.billing.InAppBillingService.BIND" />\n'
+    '            </intent-filter>\n'
+    '        </service>\n'
+)
 
 
 class AIDLProxyPatcher:
+    """Copy proxy smali + inject service declaration vào manifest."""
+
     def __init__(
         self,
         decompiled_path: str,
-        proxy_source_dir: str | None = None,
+        proxy_source_dir: str,
         log_callback=print,
         file_cache=None,
     ):
         self.decompiled_path = decompiled_path
+        self.proxy_source_dir = proxy_source_dir or ""
         self.log = log_callback
         self.file_cache = file_cache
 
-        if proxy_source_dir is None:
-            tools_dir = os.path.join(
-                os.path.dirname(os.path.dirname(
-                    os.path.abspath(__file__)
-                )),
-                "tools",
-            )
-            proxy_source_dir = os.path.join(
-                tools_dir, "proxy_service", "smali"
-            )
-        self.proxy_source = proxy_source_dir
-
     # ============================================================
-    # SMALI TARGET
+    # MAIN
     # ============================================================
-    def _find_smali_target(self) -> str:
-        """Tìm smali dir đầu tiên (smali, smali_classes2, ...)."""
-        for entry in sorted(os.listdir(self.decompiled_path)):
-            full = os.path.join(self.decompiled_path, entry)
-            if os.path.isdir(full) and entry.startswith("smali"):
-                return full
-        # Fallback: tạo smali mới
-        target = os.path.join(self.decompiled_path, "smali")
-        os.makedirs(target, exist_ok=True)
-        return target
-
-    def _copy_proxy_files(self) -> int:
-        if not os.path.isdir(self.proxy_source):
-            self.log(
-                f"[i] [AIDLProxy] Proxy source trống: {self.proxy_source}"
-            )
-            return 0
-
-        target = self._find_smali_target()
+    def patch(self) -> int:
+        """
+        Return: number of files copied + 1 if manifest was updated else 0.
+        Never raises — all errors logged + swallowed.
+        """
         count = 0
-        for root, _dirs, files in os.walk(self.proxy_source):
-            for f in files:
-                src = os.path.join(root, f)
-                rel = os.path.relpath(src, self.proxy_source)
-                dest = os.path.join(target, rel)
-                try:
-                    os.makedirs(os.path.dirname(dest), exist_ok=True)
-                    shutil.copy2(src, dest)
-                    count += 1
-                except OSError as e:
-                    logger.warning(
-                        "Copy proxy file failed %s: %s", src, e
-                    )
+        try:
+            count += self._copy_proxy_source()
+        except Exception as e:
+            logger.warning("AIDL copy failed: %s", e)
+
+        try:
+            count += self._inject_manifest_service()
+        except Exception as e:
+            logger.warning("AIDL manifest inject failed: %s", e)
+
         return count
 
     # ============================================================
-    # MANIFEST UPDATE
+    # COPY PROXY SOURCE → smali/
     # ============================================================
-    def _read_manifest(self) -> str | None:
-        manifest = os.path.join(
-            self.decompiled_path, "AndroidManifest.xml"
-        )
-        try:
-            if self.file_cache:
-                return self.file_cache.read(manifest)
-            with open(manifest, "r", encoding="utf-8") as f:
-                return f.read()
-        except OSError:
-            return None
+    def _copy_proxy_source(self) -> int:
+        if not self.proxy_source_dir:
+            return 0
+        if not os.path.isdir(self.proxy_source_dir):
+            logger.debug(
+                "Proxy source dir không tồn tại: %s",
+                self.proxy_source_dir,
+            )
+            return 0
 
-    def _write_manifest(self, content: str) -> bool:
-        manifest = os.path.join(
-            self.decompiled_path, "AndroidManifest.xml"
-        )
-        try:
-            if self.file_cache:
-                self.file_cache.write(manifest, content)
-            else:
-                with open(manifest, "w", encoding="utf-8") as f:
-                    f.write(content)
-            return True
-        except OSError as e:
-            logger.warning("Write manifest failed: %s", e)
-            return False
+        target_root = os.path.join(self.decompiled_path, "smali")
+        os.makedirs(target_root, exist_ok=True)
 
-    def _update_manifest(self) -> bool:
-        content = self._read_manifest()
-        if content is None:
-            return False
+        copied = 0
+        for root, _dirs, files in os.walk(self.proxy_source_dir):
+            for fname in files:
+                src = os.path.join(root, fname)
+                rel = os.path.relpath(src, self.proxy_source_dir)
+                dst = os.path.join(target_root, rel)
+                try:
+                    os.makedirs(os.path.dirname(dst), exist_ok=True)
+                    shutil.copy2(src, dst)
+                    copied += 1
+                except OSError as e:
+                    logger.warning("Copy failed %s → %s: %s",
+                                   src, dst, e)
 
-        # Idempotent check
-        if _SERVICE_MARKER in content:
-            self.log("[i] [AIDLProxy] Service đã tồn tại — skip")
-            return False
-
-        if "</application>" not in content:
-            self.log("[!] [AIDLProxy] Manifest thiếu </application>")
-            return False
-
-        content = content.replace(
-            "</application>",
-            SERVICE_DECL + "\n    </application>",
-        )
-        return self._write_manifest(content)
-
-    # ============================================================
-    # PATCH
-    # ============================================================
-    def patch(self) -> int:
-        self.log("[*] [AIDLProxy] Injecting proxy service...")
-        copied = self._copy_proxy_files()
         if copied:
-            self.log(f"[+] [AIDLProxy] Copied {copied} proxy smali files")
-
-        injected = self._update_manifest()
-        if injected:
-            self.log("[+] [AIDLProxy] Service declaration added to manifest")
-            return copied + 1
-
+            self.log(
+                f"[*] [AIDLProxy] Copied {copied} smali files "
+                f"từ {self.proxy_source_dir}"
+            )
         return copied
+
+    # ============================================================
+    # INJECT MANIFEST
+    # ============================================================
+    def _inject_manifest_service(self) -> int:
+        manifest = os.path.join(
+            self.decompiled_path, "AndroidManifest.xml"
+        )
+        if not os.path.exists(manifest):
+            logger.debug("Manifest không tồn tại: %s", manifest)
+            return 0
+
+        try:
+            with open(manifest, "r", encoding="utf-8") as f:
+                content = f.read()
+        except OSError as e:
+            logger.warning("Đọc manifest failed: %s", e)
+            return 0
+
+        # Idempotent — không inject nếu đã có
+        if "IInAppBillingServiceProxy" in content:
+            logger.debug("AIDL proxy đã inject sẵn — skip")
+            return 0
+
+        # Cần </application> để chèn trước nó
+        if "</application>" not in content:
+            logger.debug(
+                "Manifest không có </application> — skip inject"
+            )
+            return 0
+
+        new_content = content.replace(
+            "</application>",
+            _PROXY_SERVICE_SNIPPET + "    </application>",
+            1,
+        )
+
+        try:
+            with open(manifest, "w", encoding="utf-8") as f:
+                f.write(new_content)
+            self.log(
+                "[*] [AIDLProxy] Injected <service> vào manifest"
+            )
+            return 1
+        except OSError as e:
+            logger.warning("Ghi manifest failed: %s", e)
+            return 0

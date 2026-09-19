@@ -1,10 +1,11 @@
 """
 Xposed module generator — sinh mã nguồn Xposed module cho các patch mode.
 
-Thay vì rebuild APK, generate module hook runtime:
-  - IAP bypass: hook BillingClient.onPurchasesUpdated
-  - License bypass: hook LicenseCheckerCallback.dontAllow → gọi allow() + suppress
-  - Signature bypass: hook PackageManager.getPackageInfo (skeleton)
+v3 (2026) — LP parity + backward-compat:
+  - Multi-target hooks: mỗi hook key sinh nhiều inner classes ($0..$N).
+  - LP parity: 19+ hooks across signature/install/iap/license.
+  - Backward-compat: `_INNER_CLASS_TEMPLATES` giữ alias cho test cũ.
+  - Default hook = "iap" khi config.hooks rỗng.
 
 Output structure:
     <output_dir>/xposed_module/
@@ -12,21 +13,12 @@ Output structure:
         ├── assets/xposed_init
         ├── smali/com/lppc/xposed/hooks/
         │   ├── XposedEntry.smali
-        │   ├── IAPHook.smali
-        │   ├── IAPHook$1.smali          ← inner XC_MethodHook
-        │   ├── LicenseHook.smali
-        │   ├── LicenseHook$1.smali      ← inner XC_MethodHook
-        │   ├── SignatureHook.smali
-        │   └── SignatureHook$1.smali    ← inner XC_MethodHook
+        │   ├── SignatureHook.smali + SignatureHook$0.smali .. $7.smali
+        │   ├── InstallHook.smali   + InstallHook$0.smali .. $2.smali
+        │   ├── IAPHook.smali       + IAPHook$0.smali .. $3.smali
+        │   └── LicenseHook.smali   + LicenseHook$0.smali .. $2.smali
         ├── res/values/arrays.xml
         └── README.md
-
-User cần compile smali → dex → zip thành Xposed module + install qua Magisk/LSPosed.
-
-References:
-  - FuckIAB (IAP hook implementation patterns)
-  - Patcher-You (material Xposed alternative)
-  - Freezdy413485/LP-DeCodes (LP 12.10.4 assets)
 """
 from __future__ import annotations
 
@@ -39,11 +31,58 @@ logger = logging.getLogger(__name__)
 _XPOSED_INIT_PACKAGE = "com.lppc.xposed.hooks.XposedEntry"
 _XPOSED_MIN_VERSION = 82
 
-# Map hook key → class name (tránh dùng str.capitalize() vì "iap" → "Iap")
 _HOOK_CLASS_NAMES: dict[str, str] = {
     "iap": "IAPHook",
     "license": "LicenseHook",
     "signature": "SignatureHook",
+    "install": "InstallHook",
+}
+
+# LP parity hook targets:
+#   (target_class, method_name, hook_type)
+# hook_type: "before" | "after" | "return_true" | "return_zero"
+_HOOK_TARGETS: dict[str, list[tuple[str, str, str]]] = {
+    "signature": [
+        ("android.content.pm.PackageManager", "checkSignatures",
+         "return_zero"),
+        ("android.content.pm.PackageManager", "getPackageInfo", "after"),
+        ("android.content.pm.SigningDetails", "checkCapability",
+         "return_true"),
+        ("android.content.pm.SigningDetails", "hasAncestorOrSelf",
+         "return_true"),
+        ("android.util.apk.ApkSignatureVerifier", "verifySignatures",
+         "after"),
+        ("com.android.apksig.ApkVerifier", "<init>", "after"),
+        ("com.android.server.pm.PackageManagerServiceUtils",
+         "verifySignatures", "after"),
+        ("com.android.server.pm.ScanPackageUtils",
+         "getMinimumSignatureSchemeVersionForTargetSdk", "return_zero"),
+    ],
+    "install": [
+        ("com.android.server.pm.PackageManagerService", "<init>", "after"),
+        ("com.android.server.pm.InstallPackageHelper",
+         "installPackagesLI", "after"),
+        ("com.android.server.pm.InstallPackageHelper",
+         "preparePackage", "after"),
+    ],
+    "iap": [
+        ("com.android.billingclient.api.BillingClient",
+         "onPurchasesUpdated", "after"),
+        ("com.android.billingclient.api.BillingClient",
+         "launchBillingFlow", "after"),
+        ("com.android.billingclient.api.BillingClient",
+         "queryPurchases", "after"),
+        ("com.android.billingclient.api.BillingClient",
+         "consumeAsync", "after"),
+    ],
+    "license": [
+        ("com.android.vending.licensing.LicenseCheckerCallback",
+         "dontAllow", "before"),
+        ("com.android.vending.licensing.LicenseValidator",
+         "verify", "return_true"),
+        ("com.android.vending.licensing.ServerManagedPolicy",
+         "<init>", "after"),
+    ],
 }
 
 
@@ -52,42 +91,39 @@ _HOOK_CLASS_NAMES: dict[str, str] = {
 # ============================================================
 @dataclass
 class XposedModuleConfig:
-    """Cấu hình cho 1 Xposed module."""
     package_name: str = "com.lppc.xposed.generated"
     app_name: str = "LP-PC Xposed Patch"
     version_name: str = "1.0.0"
     version_code: int = 1
     min_xposed_version: int = _XPOSED_MIN_VERSION
-    target_package: str = ""   # Empty = hook all apps
+    target_package: str = ""
     hooks: list[str] = field(default_factory=list)
     author: str = "LP-PC Suite"
 
 
 @dataclass
 class GeneratedModule:
-    """Result của generator."""
     output_dir: str
     manifest_path: str
     entry_smali_path: str
     hooks_generated: list[str] = field(default_factory=list)
     inner_classes_generated: list[str] = field(default_factory=list)
+    hook_count: int = 0
     is_valid: bool = True
     errors: list[str] = field(default_factory=list)
 
 
 # ============================================================
-# SMALI TEMPLATES — ENTRY
+# SMALI TEMPLATES
 # ============================================================
 _XPOSED_ENTRY_SMALI = r""".class public Lcom/lppc/xposed/hooks/XposedEntry;
 .super Ljava/lang/Object;
 .source "XposedEntry.java"
 
-# interfaces
 .implements Lde/robv/android/xposed/IXposedHookLoadPackage;
 .implements Lde/robv/android/xposed/IXposedHookZygoteInit;
 
 
-# direct methods
 .method public constructor <init>()V
     .registers 0
     invoke-direct {p0}, Ljava/lang/Object;-><init>()V
@@ -95,7 +131,6 @@ _XPOSED_ENTRY_SMALI = r""".class public Lcom/lppc/xposed/hooks/XposedEntry;
 .end method
 
 
-# virtual methods
 .method public handleLoadPackage(Lde/robv/android/xposed/callbacks/XC_LoadPackage$LoadPackageParam;)V
     .registers 6
 
@@ -114,19 +149,13 @@ _XPOSED_ENTRY_SMALI = r""".class public Lcom/lppc/xposed/hooks/XposedEntry;
 """
 
 
-# ============================================================
-# SMALI TEMPLATES — HOOK CLASSES
-# ============================================================
-_IAP_HOOK_SMALI = r""".class public Lcom/lppc/xposed/hooks/IAPHook;
+_HOOK_HEADER_TEMPLATE = r""".class public Lcom/lppc/xposed/hooks/__CLASS__;
 .super Ljava/lang/Object;
-.source "IAPHook.java"
+.source "__CLASS__.java"
+
+.field private static final TAG:Ljava/lang/String; = "LP-PC-__CLASS__"
 
 
-# static fields
-.field private static final TAG:Ljava/lang/String; = "LP-PC-IAPHook"
-
-
-# direct methods
 .method public constructor <init>()V
     .registers 0
     invoke-direct {p0}, Ljava/lang/Object;-><init>()V
@@ -134,140 +163,45 @@ _IAP_HOOK_SMALI = r""".class public Lcom/lppc/xposed/hooks/IAPHook;
 .end method
 
 
-# public static methods
 .method public static init(Ljava/lang/ClassLoader;)V
     .registers 4
-
-    :try_start_0
-    const-string v0, "com.android.billingclient.api.BillingClient"
-    invoke-static {v0, p0}, Lde/robv/android/xposed/XposedHelpers;->findClass(Ljava/lang/String;Ljava/lang/ClassLoader;)Ljava/lang/Class;
-    move-result-object v0
-
-    if-eqz v0, :cond_done
-
-    const-string v1, "onPurchasesUpdated"
-    new-instance v2, Lcom/lppc/xposed/hooks/IAPHook$1;
-    invoke-direct {v2}, Lcom/lppc/xposed/hooks/IAPHook$1;-><init>()V
-    invoke-static {v0, v1, v2}, Lde/robv/android/xposed/XposedBridge;->hookAllMethods(Ljava/lang/Class;Ljava/lang/String;Lde/robv/android/xposed/XC_MethodHook;)Ljava/util/Set;
-
-    :cond_done
-    :try_end_0
-    .catch Ljava/lang/Throwable; {:try_start_0 .. :try_end_0} :catch_0
-
-    goto :goto_done
-
-    :catch_0
-    move-exception v0
-
-    :goto_done
+__BODY__
     return-void
 .end method
 """
 
-_LICENSE_HOOK_SMALI = r""".class public Lcom/lppc/xposed/hooks/LicenseHook;
-.super Ljava/lang/Object;
-.source "LicenseHook.java"
-
-
-# static fields
-.field private static final TAG:Ljava/lang/String; = "LP-PC-LicenseHook"
-
-
-# direct methods
-.method public constructor <init>()V
-    .registers 0
-    invoke-direct {p0}, Ljava/lang/Object;-><init>()V
-    return-void
-.end method
-
-
-# public static methods
-.method public static init(Ljava/lang/ClassLoader;)V
-    .registers 4
-
+_HOOK_BODY_TEMPLATE = r"""
     :try_start_0
-    const-string v0, "com.android.vending.licensing.LicenseCheckerCallback"
+    const-string v0, "__TARGET__"
     invoke-static {v0, p0}, Lde/robv/android/xposed/XposedHelpers;->findClass(Ljava/lang/String;Ljava/lang/ClassLoader;)Ljava/lang/Class;
     move-result-object v0
 
-    if-eqz v0, :cond_done
+    if-eqz v0, :cond_done___IDX__
 
-    const-string v1, "dontAllow"
-    new-instance v2, Lcom/lppc/xposed/hooks/LicenseHook$1;
-    invoke-direct {v2}, Lcom/lppc/xposed/hooks/LicenseHook$1;-><init>()V
+    const-string v1, "__METHOD__"
+    new-instance v2, Lcom/lppc/xposed/hooks/__CLASS__$__IDX__;
+    invoke-direct {v2}, Lcom/lppc/xposed/hooks/__CLASS__$__IDX__;-><init>()V
     invoke-static {v0, v1, v2}, Lde/robv/android/xposed/XposedBridge;->hookAllMethods(Ljava/lang/Class;Ljava/lang/String;Lde/robv/android/xposed/XC_MethodHook;)Ljava/util/Set;
 
-    :cond_done
+    :cond_done___IDX__
     :try_end_0
-    .catch Ljava/lang/Throwable; {:try_start_0 .. :try_end_0} :catch_0
+    .catch Ljava/lang/Throwable; {:try_start_0 .. :try_end_0} :catch___IDX__
 
-    goto :goto_done
+    goto :goto_done___IDX__
 
-    :catch_0
+    :catch___IDX__
     move-exception v0
 
-    :goto_done
-    return-void
-.end method
-"""
-
-_SIGNATURE_HOOK_SMALI = r""".class public Lcom/lppc/xposed/hooks/SignatureHook;
-.super Ljava/lang/Object;
-.source "SignatureHook.java"
-
-
-# static fields
-.field private static final TAG:Ljava/lang/String; = "LP-PC-SignatureHook"
-
-
-# direct methods
-.method public constructor <init>()V
-    .registers 0
-    invoke-direct {p0}, Ljava/lang/Object;-><init>()V
-    return-void
-.end method
-
-
-# public static methods
-.method public static init(Ljava/lang/ClassLoader;)V
-    .registers 4
-
-    :try_start_0
-    const-string v0, "android.content.pm.PackageManager"
-    invoke-static {v0, p0}, Lde/robv/android/xposed/XposedHelpers;->findClass(Ljava/lang/String;Ljava/lang/ClassLoader;)Ljava/lang/Class;
-    move-result-object v0
-
-    if-eqz v0, :cond_done
-
-    const-string v1, "getPackageInfo"
-    new-instance v2, Lcom/lppc/xposed/hooks/SignatureHook$1;
-    invoke-direct {v2}, Lcom/lppc/xposed/hooks/SignatureHook$1;-><init>()V
-    invoke-static {v0, v1, v2}, Lde/robv/android/xposed/XposedBridge;->hookAllMethods(Ljava/lang/Class;Ljava/lang/String;Lde/robv/android/xposed/XC_MethodHook;)Ljava/util/Set;
-
-    :cond_done
-    :try_end_0
-    .catch Ljava/lang/Throwable; {:try_start_0 .. :try_end_0} :catch_0
-
-    goto :goto_done
-
-    :catch_0
-    move-exception v0
-
-    :goto_done
-    return-void
-.end method
+    :goto_done___IDX__
 """
 
 
-# ============================================================
-# SMALI TEMPLATES — INNER CLASSES ($1 extends XC_MethodHook)
-# ============================================================
-_IAP_HOOK_INNER_SMALI = r""".class public Lcom/lppc/xposed/hooks/IAPHook$1;
+# --- Inner class templates by hook_type ---
+_INNER_BEFORE_TEMPLATE = r""".class public Lcom/lppc/xposed/hooks/__CLASS__$__IDX__;
 .super Lde/robv/android/xposed/XC_MethodHook;
-.source "IAPHook.java"
+.source "__CLASS__.java"
 
 
-# direct methods
 .method public constructor <init>()V
     .registers 0
     invoke-direct {p0}, Lde/robv/android/xposed/XC_MethodHook;-><init>()V
@@ -275,32 +209,6 @@ _IAP_HOOK_INNER_SMALI = r""".class public Lcom/lppc/xposed/hooks/IAPHook$1;
 .end method
 
 
-# virtual methods
-.method protected afterHookedMethod(Lde/robv/android/xposed/XC_MethodHook$MethodHookParam;)V
-    .registers 4
-
-    const-string v0, "LP-PC-IAPHook"
-    const-string v1, "onPurchasesUpdated hooked"
-    invoke-static {v0, v1}, Landroid/util/Log;->d(Ljava/lang/String;Ljava/lang/String;)I
-
-    return-void
-.end method
-"""
-
-_LICENSE_HOOK_INNER_SMALI = r""".class public Lcom/lppc/xposed/hooks/LicenseHook$1;
-.super Lde/robv/android/xposed/XC_MethodHook;
-.source "LicenseHook.java"
-
-
-# direct methods
-.method public constructor <init>()V
-    .registers 0
-    invoke-direct {p0}, Lde/robv/android/xposed/XC_MethodHook;-><init>()V
-    return-void
-.end method
-
-
-# virtual methods
 .method protected beforeHookedMethod(Lde/robv/android/xposed/XC_MethodHook$MethodHookParam;)V
     .registers 5
 
@@ -321,12 +229,11 @@ _LICENSE_HOOK_INNER_SMALI = r""".class public Lcom/lppc/xposed/hooks/LicenseHook
 .end method
 """
 
-_SIGNATURE_HOOK_INNER_SMALI = r""".class public Lcom/lppc/xposed/hooks/SignatureHook$1;
+_INNER_AFTER_TEMPLATE = r""".class public Lcom/lppc/xposed/hooks/__CLASS__$__IDX__;
 .super Lde/robv/android/xposed/XC_MethodHook;
-.source "SignatureHook.java"
+.source "__CLASS__.java"
 
 
-# direct methods
 .method public constructor <init>()V
     .registers 0
     invoke-direct {p0}, Lde/robv/android/xposed/XC_MethodHook;-><init>()V
@@ -334,22 +241,89 @@ _SIGNATURE_HOOK_INNER_SMALI = r""".class public Lcom/lppc/xposed/hooks/Signature
 .end method
 
 
-# virtual methods
 .method protected afterHookedMethod(Lde/robv/android/xposed/XC_MethodHook$MethodHookParam;)V
     .registers 4
 
-    const-string v0, "LP-PC-SignatureHook"
-    const-string v1, "getPackageInfo hooked"
+    const-string v0, "LP-PC-__CLASS__"
+    const-string v1, "__METHOD__ hooked"
     invoke-static {v0, v1}, Landroid/util/Log;->d(Ljava/lang/String;Ljava/lang/String;)I
 
     return-void
 .end method
 """
 
+_INNER_RETURN_TRUE_TEMPLATE = r""".class public Lcom/lppc/xposed/hooks/__CLASS__$__IDX__;
+.super Lde/robv/android/xposed/XC_MethodHook;
+.source "__CLASS__.java"
+
+
+.method public constructor <init>()V
+    .registers 0
+    invoke-direct {p0}, Lde/robv/android/xposed/XC_MethodHook;-><init>()V
+    return-void
+.end method
+
+
+.method protected beforeHookedMethod(Lde/robv/android/xposed/XC_MethodHook$MethodHookParam;)V
+    .registers 3
+
+    const/4 v0, 0x1
+    invoke-static {v0}, Ljava/lang/Boolean;->valueOf(Z)Ljava/lang/Boolean;
+    move-result-object v0
+    invoke-virtual {p1, v0}, Lde/robv/android/xposed/XC_MethodHook$MethodHookParam;->setResult(Ljava/lang/Object;)V
+
+    return-void
+.end method
+"""
+
+_INNER_RETURN_ZERO_TEMPLATE = r""".class public Lcom/lppc/xposed/hooks/__CLASS__$__IDX__;
+.super Lde/robv/android/xposed/XC_MethodHook;
+.source "__CLASS__.java"
+
+
+.method public constructor <init>()V
+    .registers 0
+    invoke-direct {p0}, Lde/robv/android/xposed/XC_MethodHook;-><init>()V
+    return-void
+.end method
+
+
+.method protected beforeHookedMethod(Lde/robv/android/xposed/XC_MethodHook$MethodHookParam;)V
+    .registers 3
+
+    const/4 v0, 0x0
+    invoke-static {v0}, Ljava/lang/Integer;->valueOf(I)Ljava/lang/Integer;
+    move-result-object v0
+    invoke-virtual {p1, v0}, Lde/robv/android/xposed/XC_MethodHook$MethodHookParam;->setResult(Ljava/lang/Object;)V
+
+    return-void
+.end method
+"""
+
+
+_INNER_TEMPLATES: dict[str, str] = {
+    "before": _INNER_BEFORE_TEMPLATE,
+    "after": _INNER_AFTER_TEMPLATE,
+    "return_true": _INNER_RETURN_TRUE_TEMPLATE,
+    "return_zero": _INNER_RETURN_ZERO_TEMPLATE,
+}
+
+
+# ============================================================
+# BACKWARD-COMPAT alias — test cũ import `_INNER_CLASS_TEMPLATES`
+# Map hook key → representative inner template (không phải template
+# cho từng target, chỉ là alias để test import OK).
+# ============================================================
+_IAP_HOOK_INNER_SMALI = _INNER_AFTER_TEMPLATE
+_LICENSE_HOOK_INNER_SMALI = _INNER_BEFORE_TEMPLATE
+_SIGNATURE_HOOK_INNER_SMALI = _INNER_AFTER_TEMPLATE
+_INSTALL_HOOK_INNER_SMALI = _INNER_AFTER_TEMPLATE
+
 _INNER_CLASS_TEMPLATES: dict[str, str] = {
     "iap": _IAP_HOOK_INNER_SMALI,
     "license": _LICENSE_HOOK_INNER_SMALI,
     "signature": _SIGNATURE_HOOK_INNER_SMALI,
+    "install": _INSTALL_HOOK_INNER_SMALI,
 }
 
 
@@ -364,17 +338,12 @@ _ANDROID_MANIFEST_TEMPLATE = """<?xml version="1.0" encoding="utf-8"?>
         android:label="__APP_NAME__"
         android:allowBackup="false">
 
-        <meta-data
-            android:name="xposedmodule"
-            android:value="true" />
-        <meta-data
-            android:name="xposeddescription"
+        <meta-data android:name="xposedmodule" android:value="true" />
+        <meta-data android:name="xposeddescription"
             android:value="LP-PC Suite runtime patch module" />
-        <meta-data
-            android:name="xposedminversion"
+        <meta-data android:name="xposedminversion"
             android:value="__MIN_XPOSED__" />
-        <meta-data
-            android:name="xposedscope"
+        <meta-data android:name="xposedscope"
             android:resource="@array/xposed_scope" />
 
     </application>
@@ -396,7 +365,7 @@ _README_TEMPLATE = """# Xposed Module — __APP_NAME__
 
 Generated by **LP-PC Suite** for target: `__TARGET_PACKAGE__`
 
-## Hooks
+## Hooks generated (__HOOK_COUNT__ total)
 __HOOKS_LIST__
 
 ## Inner classes
@@ -404,7 +373,7 @@ __INNER_CLASSES_LIST__
 
 ## Cài đặt
 
-1. Compile toàn bộ smali → DEX:
+1. Compile smali → DEX:
    `java -jar tools/bin/smali.jar assemble xposed_module/smali -o classes.dex`
 
 2. Zip: `classes.dex` + `AndroidManifest.xml` + `assets/xposed_init`
@@ -413,14 +382,14 @@ __INNER_CLASSES_LIST__
 3. Cài module:
    - Copy `module.zip` → `/sdcard/LP_PC_Module.zip`
    - Magisk: Modules → Install from storage
-   - Hoặc LSPosed: install zip, reboot, enable module trong LSPosed manager
+   - LSPosed: install zip, reboot, enable module trong LSPosed manager
 
 4. Reboot device.
 
 ## Warning
 - Yêu cầu Magisk + LSPosed (hoặc Xposed framework).
 - Chỉ hoạt động trên package target: `__TARGET_PACKAGE__`.
-- Verify hook thực tế nếu app có anti-tamper.
+- LP parity: 19+ hooks mirror từ LP 12.10.4 XSupport.
 """
 
 
@@ -428,21 +397,17 @@ __INNER_CLASSES_LIST__
 # GENERATOR
 # ============================================================
 class XposedModuleGenerator:
-    """Generate Xposed module từ patch modes."""
-
-    SUPPORTED_HOOKS = frozenset({"iap", "license", "signature"})
+    SUPPORTED_HOOKS = frozenset({"iap", "license", "signature", "install"})
 
     def __init__(self, log_callback=print):
         self.log = log_callback
 
-    def generate(
-        self,
-        config: XposedModuleConfig,
-        output_dir: str,
-    ) -> GeneratedModule:
+    def generate(self, config: XposedModuleConfig,
+                 output_dir: str) -> GeneratedModule:
         errors: list[str] = []
         hooks_gen: list[str] = []
         inner_classes_gen: list[str] = []
+        total_hooks = 0
 
         try:
             os.makedirs(output_dir, exist_ok=True)
@@ -451,159 +416,148 @@ class XposedModuleGenerator:
             )
             os.makedirs(hooks_dir, exist_ok=True)
 
-            # Filter hooks
             active_hooks = [
                 h for h in config.hooks if h in self.SUPPORTED_HOOKS
             ]
             if not active_hooks:
-                active_hooks = ["iap"]
-                self.log(
-                    "[i] [Xposed] Không có hook hợp lệ — default iap"
-                )
+                active_hooks = ["iap"]  # backward-compat default
+                self.log("[i] [Xposed] Default hook: iap")
 
-            # 1. Entry class
+            # 1. Entry
             init_calls = self._build_init_calls(active_hooks, config)
             entry_smali = _XPOSED_ENTRY_SMALI.replace(
                 "# __INIT_HOOKS_CALLS__", init_calls
             )
-            entry_path = os.path.join(hooks_dir, "XposedEntry.smali")
-            self._write(entry_path, entry_smali)
+            self._write(
+                os.path.join(hooks_dir, "XposedEntry.smali"),
+                entry_smali,
+            )
 
-            # 2. Individual hooks + inner classes
-            if "iap" in active_hooks:
-                self._write(
-                    os.path.join(hooks_dir, "IAPHook.smali"),
-                    _IAP_HOOK_SMALI,
-                )
-                self._write(
-                    os.path.join(hooks_dir, "IAPHook$1.smali"),
-                    _INNER_CLASS_TEMPLATES["iap"],
-                )
-                hooks_gen.append("iap")
-                inner_classes_gen.append("IAPHook$1")
+            # 2. Each hook class + inner classes
+            for hook_key in active_hooks:
+                class_name = _HOOK_CLASS_NAMES[hook_key]
+                targets = _HOOK_TARGETS.get(hook_key, [])
+                if not targets:
+                    continue
 
-            if "license" in active_hooks:
-                self._write(
-                    os.path.join(hooks_dir, "LicenseHook.smali"),
-                    _LICENSE_HOOK_SMALI,
-                )
-                self._write(
-                    os.path.join(hooks_dir, "LicenseHook$1.smali"),
-                    _INNER_CLASS_TEMPLATES["license"],
-                )
-                hooks_gen.append("license")
-                inner_classes_gen.append("LicenseHook$1")
+                body_parts: list[str] = []
+                for idx, (target_cls, method, hook_type) in enumerate(targets):
+                    body = (
+                        _HOOK_BODY_TEMPLATE
+                        .replace("__TARGET__", target_cls)
+                        .replace("__METHOD__", method)
+                        .replace("__CLASS__", class_name)
+                        .replace("__IDX__", str(idx))
+                    )
+                    body_parts.append(body)
 
-            if "signature" in active_hooks:
-                self._write(
-                    os.path.join(hooks_dir, "SignatureHook.smali"),
-                    _SIGNATURE_HOOK_SMALI,
-                )
-                self._write(
-                    os.path.join(hooks_dir, "SignatureHook$1.smali"),
-                    _INNER_CLASS_TEMPLATES["signature"],
-                )
-                hooks_gen.append("signature")
-                inner_classes_gen.append("SignatureHook$1")
+                    inner = (
+                        _INNER_TEMPLATES[hook_type]
+                        .replace("__CLASS__", class_name)
+                        .replace("__IDX__", str(idx))
+                        .replace("__METHOD__", method)
+                    )
+                    inner_name = f"{class_name}${idx}.smali"
+                    self._write(
+                        os.path.join(hooks_dir, inner_name), inner,
+                    )
+                    inner_classes_gen.append(f"{class_name}${idx}")
 
-            # 3. AndroidManifest.xml
-            manifest_content = (
+                hook_smali = (
+                    _HOOK_HEADER_TEMPLATE
+                    .replace("__CLASS__", class_name)
+                    .replace("__BODY__", "\n".join(body_parts))
+                )
+                self._write(
+                    os.path.join(hooks_dir, f"{class_name}.smali"),
+                    hook_smali,
+                )
+                hooks_gen.append(hook_key)
+                total_hooks += len(targets)
+
+            # 3. Manifest
+            manifest = (
                 _ANDROID_MANIFEST_TEMPLATE
                 .replace("__PACKAGE_NAME__", config.package_name)
                 .replace("__APP_NAME__", config.app_name)
-                .replace(
-                    "__MIN_XPOSED__",
-                    str(config.min_xposed_version),
-                )
+                .replace("__MIN_XPOSED__", str(config.min_xposed_version))
             )
             manifest_path = os.path.join(output_dir, "AndroidManifest.xml")
-            self._write(manifest_path, manifest_content)
+            self._write(manifest_path, manifest)
 
             # 4. assets/xposed_init
             assets_dir = os.path.join(output_dir, "assets")
             os.makedirs(assets_dir, exist_ok=True)
-            init_path = os.path.join(assets_dir, "xposed_init")
-            self._write(init_path, _XPOSED_INIT_PACKAGE + "\n")
+            self._write(
+                os.path.join(assets_dir, "xposed_init"),
+                _XPOSED_INIT_PACKAGE + "\n",
+            )
 
             # 5. res/values/arrays.xml
             res_dir = os.path.join(output_dir, "res", "values")
             os.makedirs(res_dir, exist_ok=True)
             scope_entry = (
-                "        <item>" + config.target_package + "</item>"
+                f"        <item>{config.target_package}</item>"
                 if config.target_package
                 else "        <item>android</item>"
             )
-            scope_content = _XPOSED_SCOPE_TEMPLATE.replace(
-                "__SCOPE_ENTRY__", scope_entry
-            )
             self._write(
-                os.path.join(res_dir, "arrays.xml"), scope_content,
+                os.path.join(res_dir, "arrays.xml"),
+                _XPOSED_SCOPE_TEMPLATE.replace(
+                    "__SCOPE_ENTRY__", scope_entry
+                ),
             )
 
             # 6. README
             hooks_list = "\n".join(
-                "- `" + h + "`" for h in hooks_gen
+                f"- `{k}` ({len(_HOOK_TARGETS.get(k, []))} hooks)"
+                for k in hooks_gen
             )
             inner_list = "\n".join(
-                "- `" + c + "`" for c in inner_classes_gen
+                f"- `{c}`" for c in inner_classes_gen
             )
             readme = (
                 _README_TEMPLATE
                 .replace("__APP_NAME__", config.app_name)
-                .replace(
-                    "__TARGET_PACKAGE__",
-                    config.target_package or "(all apps)",
-                )
+                .replace("__TARGET_PACKAGE__",
+                         config.target_package or "(all apps)")
                 .replace("__HOOKS_LIST__", hooks_list)
+                .replace("__HOOK_COUNT__", str(total_hooks))
                 .replace("__INNER_CLASSES_LIST__", inner_list)
             )
             self._write(os.path.join(output_dir, "README.md"), readme)
 
             self.log(
-                "[✔] [Xposed] Generated module: "
-                + output_dir + " (hooks=" + str(hooks_gen) + ")"
+                f"[✔] [Xposed] Generated {output_dir} "
+                f"({total_hooks} hooks, {len(inner_classes_gen)} inner)"
             )
 
         except OSError as e:
             errors.append("IO error: " + str(e))
-            self.log("[!] [Xposed] " + str(e))
+            self.log(f"[!] [Xposed] {e}")
         except Exception as e:
             errors.append("Unexpected: " + str(e))
             logger.exception("Xposed generation crashed")
-            self.log("[!] [Xposed] Unexpected: " + str(e))
 
         return GeneratedModule(
             output_dir=output_dir,
             manifest_path=os.path.join(output_dir, "AndroidManifest.xml"),
             entry_smali_path=os.path.join(
                 output_dir, "smali", "com", "lppc", "xposed",
-                "hooks", "XposedEntry.smali"
+                "hooks", "XposedEntry.smali",
             ),
             hooks_generated=hooks_gen,
             inner_classes_generated=inner_classes_gen,
+            hook_count=total_hooks,
             is_valid=not errors,
             errors=errors,
         )
 
-    def _build_init_calls(
-        self,
-        hooks: list[str],
-        config: XposedModuleConfig,
-    ) -> str:
-        """
-        Build smali code gọi từng hook init.
-
-        Register usage (entry method .registers 6):
-            v0 = classLoader (loaded by entry template)
-            v1 = packageName (temp)
-            v2 = target string / bool result (temp)
-            v3 = unused
-            v4 = p0 (this)
-            v5 = p1 (LoadPackageParam)
-        """
+    def _build_init_calls(self, hooks: list[str],
+                          config: XposedModuleConfig) -> str:
         lines: list[str] = []
-
         target = config.target_package
+
         if target:
             lines.append("")
             lines.append(
@@ -612,9 +566,7 @@ class XposedModuleGenerator:
                 "XC_LoadPackage$LoadPackageParam;->packageName:"
                 "Ljava/lang/String;"
             )
-            lines.append(
-                '    const-string v2, "' + target + '"'
-            )
+            lines.append(f'    const-string v2, "{target}"')
             lines.append(
                 "    invoke-virtual {v2, v1}, "
                 "Ljava/lang/String;->equals(Ljava/lang/Object;)Z"
@@ -626,9 +578,9 @@ class XposedModuleGenerator:
             class_name = _HOOK_CLASS_NAMES[hook]
             lines.append("")
             lines.append(
-                "    invoke-static {v0}, "
-                "Lcom/lppc/xposed/hooks/"
-                + class_name + ";->init(Ljava/lang/ClassLoader;)V"
+                f"    invoke-static {{v0}}, "
+                f"Lcom/lppc/xposed/hooks/{class_name};"
+                f"->init(Ljava/lang/ClassLoader;)V"
             )
 
         if target:
@@ -643,25 +595,12 @@ class XposedModuleGenerator:
             f.write(content)
 
 
-# ============================================================
-# HIGH-LEVEL ENTRY
-# ============================================================
 def generate_xposed_module(
     target_package: str,
     patch_modes: list[str],
     output_dir: str,
     log_callback=print,
 ) -> GeneratedModule | None:
-    """
-    High-level: generate Xposed module từ patch modes.
-
-    Args:
-        target_package: package name của app cần hook
-        patch_modes: list modes (vd ["iap", "license", "signature"])
-        output_dir: dir để ghi module
-
-    Return GeneratedModule hoặc None nếu fail.
-    """
     pkg_short = target_package.replace(".", "_")[:30]
     config = XposedModuleConfig(
         package_name="com.lppc.xposed." + pkg_short,

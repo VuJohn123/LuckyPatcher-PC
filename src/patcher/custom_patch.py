@@ -1,10 +1,16 @@
 """
 Custom patch parser + applier — hỗ trợ .txt và .lpzip.
 
-v3 (LP parity):
-  - Hỗ trợ `**` mask operand — pattern survive qua app updates.
-    Ví dụ: `const/4 v0, **` → match mọi giá trị immediate.
-  - ReDoS-safe dùng core.regex_safe.
+v4 (LP parity + extended mask):
+  - Mask syntax mở rộng:
+      **       → `\\S+`  (một operand không space)
+      *        → `[^,}\\s]+`  (một operand, không vượt dấu phẩy/ngoặc)
+      ?        → `\\S*`  (zero hoặc một operand)
+      <reg>    → `[vp]\\d+`  (bất kỳ register nào)
+      <label>  → `:\\w+`  (bất kỳ label)
+      <any>    → `.*?`  (bất kỳ - non-greedy)
+  - Support LP pattern format: `**` đầu pattern = wildcard prefix.
+  - ReDoS-safe qua core.regex_safe.
 """
 from __future__ import annotations
 
@@ -15,7 +21,7 @@ import shutil
 import tempfile
 import zipfile
 
-from core.regex_safe import safe_sub, is_safe_pattern
+from core.regex_safe import safe_sub, is_safe_pattern, safe_search
 from core.smali_utils import get_all_smali_files
 
 logger = logging.getLogger(__name__)
@@ -25,23 +31,65 @@ _MAX_PATH_LEN = 250
 
 
 # ============================================================
-# MASK PARSER (** → regex wildcard)
+# MASK SYNTAX
 # ============================================================
-def _apply_mask(pattern: str) -> str:
-    """
-    Convert LP mask syntax sang regex:
-      - `**` → `\\S+` (một operand bất kỳ, không space)
-      - Literal đã escape để tránh regex injection từ user input.
-    """
-    # Escape phần literal, sau đó replace `\*\*` (escape của **)
-    escaped = re.escape(pattern)
-    # re.escape('**') → '\\*\\*'
-    escaped = escaped.replace(r"\*\*", r"\S+")
-    return escaped
+_MASK_MAP = (
+    # Order matters — longest markers first
+    ("**", r"\S+"),         # one non-space token
+    ("<reg>", r"[vp]\d+"),  # v0..v31, p0..p31
+    ("<label>", r":\w+"),   # :cond_0, :goto_1, etc.
+    ("<any>", r".*?"),      # any non-greedy
+    ("*", r"[^,}\s]+"),     # one token, no comma/brace/space
+    ("?", r"\S*"),          # zero or one token
+)
 
 
 def _has_mask(pattern: str) -> bool:
-    return "**" in pattern
+    return any(m in pattern for m, _ in _MASK_MAP)
+
+
+def _apply_mask(pattern: str) -> str:
+    """
+    Convert LP mask syntax → regex.
+
+    Escapes literal chars first, then replaces markers (which after
+    escape are still recognizable because we scan for marker text
+    BEFORE escaping — must do it carefully).
+
+    Approach:
+      1. Split pattern by markers, keeping order.
+      2. Escape literal segments.
+      3. Join with regex fragments.
+    """
+    # Find all marker positions
+    markers = []
+    i = 0
+    while i < len(pattern):
+        matched = False
+        for marker, regex in _MASK_MAP:
+            if pattern.startswith(marker, i):
+                markers.append((i, marker, regex))
+                i += len(marker)
+                matched = True
+                break
+        if not matched:
+            i += 1
+
+    if not markers:
+        return re.escape(pattern)
+
+    # Build escaped chunks + regex chunks
+    parts: list[str] = []
+    last_end = 0
+    for pos, marker, regex in markers:
+        if pos > last_end:
+            parts.append(re.escape(pattern[last_end:pos]))
+        parts.append(regex)
+        last_end = pos + len(marker)
+    if last_end < len(pattern):
+        parts.append(re.escape(pattern[last_end:]))
+
+    return "".join(parts)
 
 
 # ============================================================
@@ -187,7 +235,6 @@ class CustomPatchApplier:
                     if not pattern:
                         continue
 
-                    # Mask transform
                     if masked:
                         pattern = _apply_mask(pattern)
                         masked_used += 1
@@ -212,20 +259,19 @@ class CustomPatchApplier:
             )
         if masked_used:
             self.log(
-                f"[i] [CustomPatch] Used ** mask in {masked_used} ops"
+                f"[i] [CustomPatch] Used mask in {masked_used} ops"
             )
         return patched
 
     def _find_files(self, pattern: str) -> list[str]:
         if not is_safe_pattern(pattern)[0]:
             self.log(
-                f"[!] [CustomPatch] target pattern rejected"
+                "[!] [CustomPatch] target pattern rejected"
             )
             return []
 
         matched = []
         try:
-            from core.regex_safe import safe_search
             for filepath in get_all_smali_files(self.decompiled_path):
                 if len(filepath) > _MAX_PATH_LEN:
                     continue
