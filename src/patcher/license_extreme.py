@@ -1,11 +1,13 @@
 """
 License Extreme — bytecode pattern matching (LP parity).
 
-v3 (2026):
-  - Mở rộng invoke-removal: Google LVL + Amazon DRM + Samsung IAP +
-    Huawei IAP + Play Billing v3-v7 (getBuyIntent, launchBillingFlow).
-  - Thêm pattern detection cho binding-based license check.
-  - Market-specific mở rộng (Amazon/Samsung/Huawei/Yandex).
+v4 (2026):
+  - Mở rộng invoke-removal cho 8 store SDK:
+    Google LVL, Play Billing v3-v7, Amazon DRM, Samsung IAP, Huawei IAP,
+    Yandex Store, Unity IAP, Facebook IAP.
+  - Pattern detection cho bindService-based LVL.
+  - Market-specific keyword patch (Amazon/Samsung/Huawei/Yandex).
+  - Bytecode signature matching (obfuscation-resistant).
 """
 from __future__ import annotations
 
@@ -21,46 +23,102 @@ from patcher.base import BasePatcher
 
 logger = logging.getLogger(__name__)
 
+
+# ============================================================
+# LICENSE METHOD KEYWORDS
+# ============================================================
 LICENSE_KEYWORDS = frozenset({
-    "allow", "dontallow", "checklicense", "islicensed",
-    "verifylicense", "ispurchased", "haspurchased",
+    "allow", "dontallow",
+    "checklicense", "islicensed", "verifylicense",
+    "licensevalid", "hasvalidlicense",
+    "onlicensecheck", "onlicensefail", "onlicenseerror",
+    "ispurchased", "haspurchased", "ispurchasevalid",
+    "verifypurchase", "validatepurchase",
+    "checkpurchase", "verifyreceipt",
     "ispro", "isproversion", "ispremiumuser", "ispaiduser",
-    "isfullversion", "isunlocked",
+    "isfullversion", "isunlocked", "ispremium",
+    "haspro", "hassubscription", "issubscribed",
+    "checkprostatus", "verifyprostatus", "checkpremium",
+    "islicensedapp", "islicensevalid", "isapplicensed",
+    "verifyapplicense", "checkapplicense",
+    "isamazonlicensed", "checkamazonlicense",
+    "issamsunglicensed", "ishuaweilicensed",
 })
 
-# Thêm invoke patterns cho các market khác
+
+# ============================================================
+# INVOKE-REMOVAL PATTERNS (LP parity, 8 stores)
+# ============================================================
 _EXTRA_INVOKE_PATTERNS = (
-    # Google Play Billing license-in-purchase
+    # Google Play Billing v3-v7
     re.compile(r".*invoke.*getBuyIntent.*\n"),
+    re.compile(r".*invoke.*getBuyIntentToReplaceSkus.*\n"),
+    re.compile(r".*invoke.*getBuyIntentExtraParams.*\n"),
     re.compile(r".*invoke.*launchBillingFlow.*\n"),
     re.compile(r".*invoke.*queryPurchases.*\n"),
-    # Amazon DRM
-    re.compile(r".*invoke.*amazon.*verify.*\n", re.IGNORECASE),
+    re.compile(r".*invoke.*querySkuDetails.*\n"),
+    re.compile(r".*invoke.*queryProductDetails.*\n"),
+    re.compile(r".*invoke.*consumePurchase.*\n"),
+    re.compile(r".*invoke.*acknowledgePurchase.*\n"),
+    # Amazon DRM/IAP
     re.compile(r".*invoke.*com/amazon/venezia.*\n"),
+    re.compile(r".*invoke.*com/amazon/identity.*\n"),
+    re.compile(r".*invoke.*com/amazon/device/iap.*\n"),
     # Samsung IAP
     re.compile(r".*invoke.*com/sec/android/iap.*\n"),
     # Huawei IAP
     re.compile(r".*invoke.*com/huawei/hms/iap.*\n"),
+    # Yandex Store
+    re.compile(r".*invoke.*com/yandex/store.*\n"),
+    # Unity IAP
+    re.compile(r".*invoke.*UnityPurchasing.*\n"),
+    re.compile(r".*invoke.*IStoreListener.*\n"),
+    re.compile(r".*invoke.*IExtensionProvider.*\n"),
+    # Facebook IAP
+    re.compile(r".*invoke.*PurchaseWithProduct.*\n"),
+    # Adjust wrapper
+    re.compile(r".*invoke.*onTrackedPurchase.*\n"),
 )
 
 
+# Prefilter keywords cho patch_extreme
+_EXTREME_PREFILTER_KEYWORDS = (
+    "LicenseChecker", "ILicensingService", "checkLicense",
+    "getBuyIntent", "launchBillingFlow", "queryPurchases",
+    "com/amazon/venezia", "com/sec/android/iap",
+    "com/huawei/hms/iap", "com/yandex/store",
+    "UnityPurchasing",
+)
+
+
+_PATH_HINTS_EXTREME = (
+    "license", "licensing", "lvl",
+    "billing", "purchase", "iap", "store",
+    "amazon", "samsung", "huawei", "yandex",
+    "unity", "facebook",
+)
+
+
+# ============================================================
+# PATCHER
+# ============================================================
 class LicenseExtremePatcher(BasePatcher):
     def patch(self) -> int:
         return self.patch_extreme()
 
     # ============================================================
-    # EXTREME — remove invoke patterns
+    # EXTREME — remove invoke patterns (8 stores)
     # ============================================================
     def patch_extreme(self) -> int:
         self.log("[*] [LicenseExtreme] Extreme mode (invoke removal)")
 
         def _transform(content: str, filepath: str) -> str | None:
-            # Quick prefilter
+            # Quick prefilter — file có ít nhất 1 signal
             if not any(k in content for k in (
                 "LicenseChecker", "ILicensingService", "checkLicense",
                 "getBuyIntent", "launchBillingFlow", "queryPurchases",
                 "com/amazon/venezia", "com/sec/android/iap",
-                "com/huawei/hms/iap",
+                "com/huawei/hms/iap", "com/yandex/store",
             )):
                 return None
 
@@ -79,20 +137,13 @@ class LicenseExtremePatcher(BasePatcher):
 
         return self.patch_files(
             _transform,
-            prefilter_keywords=(
-                "LicenseChecker", "ILicensingService", "checkLicense",
-                "getBuyIntent", "launchBillingFlow",
-                "com/amazon/venezia", "com/sec/android/iap",
-            ),
-            path_hints=(
-                "license", "licensing", "lvl",
-                "billing", "purchase", "iap", "store",
-            ),
+            prefilter_keywords=_EXTREME_PREFILTER_KEYWORDS,
+            path_hints=_PATH_HINTS_EXTREME,
             label="LicenseExtreme",
         )
 
     # ============================================================
-    # PATTERN — bindService-based LVL
+    # PATTERN — bindService-based LVL (obfuscation-resistant)
     # ============================================================
     def patch_pattern(self) -> int:
         self.log("[*] [LicenseExtreme] Bytecode pattern mode")
@@ -150,6 +201,16 @@ class LicenseExtremePatcher(BasePatcher):
     def patch_samsung_apps(self) -> int:
         return self._patch_by_keyword(
             ("samsung", "galaxy", "com/sec/android/iap"), "Samsung",
+        )
+
+    def patch_huawei_apps(self) -> int:
+        return self._patch_by_keyword(
+            ("huawei", "hms", "com/huawei/hms/iap"), "Huawei",
+        )
+
+    def patch_yandex_apps(self) -> int:
+        return self._patch_by_keyword(
+            ("yandex", "com/yandex/store"), "Yandex",
         )
 
     def _patch_by_keyword(

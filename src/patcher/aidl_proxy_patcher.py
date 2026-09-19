@@ -1,19 +1,17 @@
 """
 AIDL Proxy Patcher — copy proxy smali + inject service vào manifest.
 
-Test compatibility:
-  AIDLProxyPatcher(decompiled_path, proxy_source_dir=..., log_callback=...)
-    .patch() -> int (count of files copied + manifest injected)
+Đây là PATCHER (chèn proxy đã có sẵn vào target app). Khác với
+`aidl_proxy_generator.py` là GENERATOR (tạo proxy package từ đầu).
 
-Logic:
-  1. Copy toàn bộ proxy_source_dir → decompiled_path/smali/ (giữ structure).
+Flow:
+  1. Copy toàn bộ `proxy_source_dir` → `<decompiled>/smali/` (giữ structure).
   2. Inject `<service>` declaration vào AndroidManifest.xml (idempotent).
   3. Return count = (files copied) + (manifest injected 0|1).
 
-Ghi chú:
-  - Module AIDL proxy tự sinh (xem `aidl_proxy_generator.py`) thường
-    không cần patcher này — patcher chỉ dùng khi user có sẵn proxy
-    smali source cần inject vào app.
+Test contract (từ test_aidl_proxy_patcher.py):
+  AIDLProxyPatcher(decompiled_path, proxy_source_dir=..., log_callback=...)
+    .patch() -> int
 """
 from __future__ import annotations
 
@@ -28,8 +26,7 @@ PROXY_SERVICE_NAME = (
 )
 
 # Service snippet — inject trước `</application>`.
-# Chứa đúng 1 lần chuỗi "IInAppBillingServiceProxy" (trong android:name)
-# để test `count() == 1` pass.
+# Chỉ chứa chuỗi "IInAppBillingServiceProxy" 1 lần (android:name).
 _PROXY_SERVICE_SNIPPET = (
     '\n        <service '
     f'android:name="{PROXY_SERVICE_NAME}" '
@@ -105,8 +102,9 @@ class AIDLProxyPatcher:
                     shutil.copy2(src, dst)
                     copied += 1
                 except OSError as e:
-                    logger.warning("Copy failed %s → %s: %s",
-                                   src, dst, e)
+                    logger.warning(
+                        "Copy failed %s → %s: %s", src, dst, e,
+                    )
 
         if copied:
             self.log(
