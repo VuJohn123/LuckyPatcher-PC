@@ -15,6 +15,8 @@ v2 fixes:
 v3 fixes:
   - ParallelFileProcessor dùng logger.warning thay print() cho
     consistent logging (audit_quality compliant).
+  - APKCache version-aware: get_cached_analysis(min_version=N) → trả None
+    nếu cache cũ hơn N (tự động invalidate khi analyzer logic đổi).
 """
 from __future__ import annotations
 
@@ -148,9 +150,7 @@ class FileContentCache:
     WRITE: Dict unbounded nhưng flush theo threshold để tránh OOM.
           Auto-flush khi buffer vượt `write_flush_threshold` file.
 
-    THREAD-SAFE: dùng RLock cho mọi operation. Pipeline có thể chạy
-    2+ patcher song song (ThreadPoolExecutor workers=2), nên cache
-    phải chịu được concurrent read/write/flush.
+    THREAD-SAFE: dùng RLock cho mọi operation.
     """
 
     DEFAULT_READ_CACHE_SIZE = 2000
@@ -176,28 +176,19 @@ class FileContentCache:
         self._read_hits = 0
         self._read_misses = 0
         self._write_count = 0
-
-        # Thread-safety: RLock cho phép reentrant (write gọi flush khi
-        # vượt threshold, cùng thread).
         self._lock = threading.RLock()
 
     # ---------------- READ ----------------
     def read(self, filepath: str) -> str:
         with self._lock:
-            # Modified buffer wins
             if filepath in self._modified:
                 return self._modified[filepath]
-
-            # LRU cache hit
             if filepath in self._read_cache:
                 self._read_cache.move_to_end(filepath)
                 self._read_hits += 1
                 return self._read_cache[filepath]
-
-            # Cache miss → load from disk
             self._read_misses += 1
 
-        # Load ngoài lock (I/O chậm, không block thread khác)
         content = self._load_from_disk(filepath)
 
         with self._lock:
@@ -236,19 +227,10 @@ class FileContentCache:
             self.flush(self._log)
 
     def flush(self, log_callback=print) -> tuple[int, int]:
-        """
-        Ghi tất cả file modified xuống disk.
-
-        Return (count_ok, count_error). Atomic swap buffer dưới lock,
-        write disk ngoài lock (I/O chậm) để không block reader.
-        """
         with self._lock:
             if not self._modified:
                 log_callback("[*] [FileCache] Không có thay đổi để ghi")
                 return 0, 0
-
-            # Atomic swap — copy ref rồi clear. Thread khác ghi vào
-            # buffer mới, không bị mất.
             pending = self._modified
             self._modified = {}
 
@@ -267,18 +249,10 @@ class FileContentCache:
 
         if errors:
             log_callback(
-                f"[*] [FileCache] Đã ghi {count} file "
-                f"({errors} lỗi)"
+                f"[*] [FileCache] Đã ghi {count} file ({errors} lỗi)"
             )
         else:
             log_callback(f"[*] [FileCache] Đã ghi {count} file")
-
-        # NOTE: KHÔNG clear _read_cache ở đây.
-        # Lý do: thread khác có thể đang giữ content từ cache và sắp
-        # dùng nó để so sánh. Clear sẽ khiến nó re-read từ disk (chưa
-        # chắc đã flush xong). Modified buffer đã thắng trong read(),
-        # nên read sau flush vẫn trả đúng data.
-
         return count, errors
 
     # ---------------- INTROSPECTION ----------------
@@ -329,9 +303,18 @@ class ParallelFileProcessor:
 
 
 # ============================================================
-# APK CACHE
+# APK CACHE — VERSION-AWARE
 # ============================================================
 class APKCache:
+    """
+    Cache analysis results, keyed by APK hash.
+
+    v2: version-aware — cache entries have `analyzer_version` field.
+        get_cached_analysis(apk, min_version=N) → None nếu cache cũ.
+        Cho phép invalidate tự động khi analyzer logic thay đổi
+        (chỉ cần bump _ANALYZER_CACHE_VERSION trong analyzer.py).
+    """
+
     def __init__(self, cache_dir: str | None = None):
         if cache_dir is None:
             cache_dir = os.path.join(
@@ -348,24 +331,58 @@ class APKCache:
                 hasher.update(chunk)
         return os.path.join(self.cache_dir, f"{hasher.hexdigest()}.json")
 
-    def get_cached_analysis(self, apk_path: str) -> dict | None:
-        cache_path = self.get_cache_path(apk_path)
+    def get_cached_analysis(
+        self, apk_path: str, min_version: int = 0,
+    ) -> dict | None:
+        """
+        Load cached analysis.
+
+        Args:
+            apk_path: path tới APK.
+            min_version: analyzer version tối thiểu. Nếu cache < min_version
+                         → trả None (force re-analyze).
+
+        Returns:
+            dict (findings, summary, colors, cached_at, analyzer_version)
+            hoặc None nếu không có / cache stale / lỗi đọc.
+        """
+        try:
+            cache_path = self.get_cache_path(apk_path)
+        except OSError:
+            return None
+
         if not os.path.exists(cache_path):
             return None
+
         try:
             with open(cache_path, "r", encoding="utf-8") as f:
-                return json_loads(f.read())
+                data = json_loads(f.read())
         except (OSError, ValueError):
             return None
 
-    def save_analysis(self, apk_path: str, findings: list,
-                      summary: dict, colors: list) -> None:
+        # Version check — stale cache invalidation
+        if isinstance(data, dict):
+            cached_ver = int(data.get("analyzer_version", 0))
+            if cached_ver < min_version:
+                logger.info(
+                    "Cache stale (v%d < v%d) — re-analyze: %s",
+                    cached_ver, min_version, apk_path,
+                )
+                return None
+        return data
+
+    def save_analysis(
+        self, apk_path: str, findings: list,
+        summary: dict, colors: list,
+        version: int = 0,
+    ) -> None:
         cache_path = self.get_cache_path(apk_path)
         data = json_dumps({
             "findings": findings,
             "summary": summary,
             "colors": colors,
             "cached_at": time.time(),
+            "analyzer_version": version,
         })
         try:
             with open(cache_path, "w", encoding="utf-8") as f:

@@ -1,0 +1,72 @@
+{
+  "main_window": {
+    "title": "LP-PC Suite v4 – Công cụ Modding chuyên nghiệp"
+  },
+  "sidebar": {
+    "logo": "🛠 LP-PC Suite",
+    "apps": "📱  Ứng dụng đã cài",
+    "detail": "🔍  Chi tiết APK",
+    "tools": "⚙️  Công cụ",
+    "version": "v4.0.0"
+  },
+  "toolbar": {
+    "search_placeholder": "🔍  Tìm ứng dụng...",
+    "filter_all": "Tất cả",
+    "filter_license": "Kiểm tra License",
+    "filter_ads": "Quảng cáo",
+    "filter_custom": "Custom Patch",
+    "filter_system": "Hệ thống",
+    "browse": "📁  Chọn APK",
+    "download": "📥  Tải APK",
+    "workspace": "📂  Workspace",
+    "reload": "🔄  Tải lại",
+    "toolbox": "🧰  Hộp công cụ"
+  },
+  "status": {
+    "ready": "Sẵn sàng",
+    "loaded": "Đã tải: {name}",
+    "completed": "Hoàn thành: {output}",
+    "failed": "Patch thất bại",
+    "loaded_apps": "Đã tải {count} ứng dụng từ thiết bị",
+    "loaded_demo": "Đã tải {count} ứng dụng demo (thiết bị chưa kết nối ADB)"
+  },
+  "log_panel": {
+    "title": "📋  Nhật ký hoạt động",
+    "clear": "Xóa",
+    "expand_tooltip": "Mở rộng / thu gọn log"
+  },
+  "detail": {
+    "back": "←  Quay lại",
+    "rebuild_btn": "🔨 Tạo APK đã sửa (Rebuild)",
+    "menu_btn": "📋 Menu các Patch",
+    "features_title": "🔍 Đặc điểm phát hiện",
+    "quick_actions": "🛠 Hành động nhanh",
+    "action_remove_license": "🔑 Gỡ xác minh License",
+    "action_remove_ads": "🚫 Xóa Google Ads",
+    "action_iap": "💳 Giả lập IAP (Rebuild)",
+    "action_custom": "📄 Custom Patch",
+    "action_perms": "⚙️ Đổi quyền",
+    "action_resign": "✍️ Ký lại APK"
+  },
+  "switches": {
+    "billing": "💰 Billing",
+    "proxy": "🌐 Proxy",
+    "autorepeat": "🔄 Tự lặp",
+    "save": "💾 Lưu",
+    "reset": "♻️ Reset",
+    "billing_tip": "Bật/tắt giả lập Google Billing",
+    "proxy_tip": "Bật/tắt proxy IAP local",
+    "autorepeat_tip": "Tự động lặp giao dịch IAP đã lưu",
+    "save_tip": "Lưu giao dịch IAP để phục hồi sau",
+    "on": "BẬT",
+    "off": "TẮT"
+  },
+  "dialog": {
+    "warning_title": "⚠️ Cảnh báo an toàn",
+    "continue": "Tiếp tục",
+    "stop": "Dừng",
+    "cancel": "Hủy",
+    "ok": "OK",
+    "close": "Đóng"
+  }
+}

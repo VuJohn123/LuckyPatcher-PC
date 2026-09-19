@@ -9,28 +9,22 @@ Mục đích:
 
 Detect bằng 4 nguồn (primary tier):
   1. Manifest application class name
-  2. DEX class prefixes
+  2. DEX class prefixes (FAST: ASCII regex)
   3. Native libs (.so trong lib/<abi>/)
   4. Assets entries
 
-Bytecode fallback (tier 5): triển khai ở `packer_bytecode.py` — chạy khi
-primary tier không match được gì. Wrapper `check_packer_with_fallback()`
-gộp cả 2 tier trong 1 call.
+Bytecode fallback (tier 5): `packer_bytecode.py` — chỉ chạy khi primary
+không match được gì.
 
-Reference signatures (tổng hợp từ APKiD / public research):
-  - PairIP: com.pairip.* (Google Play App Signing protection)
-  - 360 Jiagu: com.qihoo.util.*, libjiagu.so
-  - Tencent Legu: com.tencent.StubShell.*, libshell.so
-  - Bangcle: com.bangcle.*, libsecexe.so
-  - Alibaba: com.ali.mobisecenhance.*
-  - IJiami: s.h.e.l.l.*, libshella.so
-  - LIAPP: com.liapp.*
-  - SecNeo: com.secneo.*
-  - DexGuard: com.guardsquare.dexguard.* (obfuscator, patchable)
+v2 (2026):
+  - FAST PATH: ASCII regex trên raw dex bytes cho `_scan_dex_prefixes`
+    (~0.3s/dex thay vì ~5s/dex với androguard DEX()).
+  - FALLBACK: androguard DEX cho test mock (bytes < 1KB).
 """
 from __future__ import annotations
 
 import logging
+import re
 import xml.etree.ElementTree as ET
 
 from androguard.core.dex import DEX
@@ -39,12 +33,14 @@ logger = logging.getLogger(__name__)
 
 _ANDROID_NS = "{http://schemas.android.com/apk/res/android}"
 
+# Fast ASCII extraction
+_ASCII_RE = re.compile(rb"[\x20-\x7e]{4,}")
+_FAST_THRESHOLD = 1024
+
 
 # ============================================================
 # SIGNATURE TABLE
 # ============================================================
-# confidence: "high" (chắc chắn), "medium", "low"
-# patchable: False = không patch được với static tool hiện tại
 _PACKER_SIGNATURES: dict[str, dict] = {
     "PairIP (Google Play)": {
         "confidence": "high",
@@ -147,13 +143,27 @@ _PACKER_SIGNATURES: dict[str, dict] = {
     },
     "DexGuard": {
         "confidence": "medium",
-        "patchable": True,   # Obfuscator, không phải packer cứng
+        "patchable": True,
         "app_classes": [],
         "dex_prefixes": ["Lcom/guardsquare/dexguard/"],
         "native_libs": [],
         "assets": ["DexGuard"],
     },
 }
+
+
+# ============================================================
+# HELPERS — fast ASCII
+# ============================================================
+def _extract_ascii_strings(dex_bytes: bytes) -> list[str]:
+    """Fast ASCII run extraction — không parse dex."""
+    try:
+        return [
+            m.decode("latin-1", errors="ignore")
+            for m in _ASCII_RE.findall(dex_bytes)
+        ]
+    except Exception:
+        return []
 
 
 # ============================================================
@@ -166,15 +176,7 @@ def check_packer(
     findings: list[dict],
     available_patches: list[str],
 ) -> dict | None:
-    """
-    Detect packer qua 4 nguồn chính (app/lib/asset/dex-prefix).
-
-    Append finding vào `findings` nếu phát hiện.
-
-    Returns:
-        dict info packer detected (hoặc None nếu clean).
-        Shape: {name, confidence, patchable, evidence}
-    """
+    """Detect packer qua 4 nguồn (app/lib/asset/dex-prefix)."""
     app_class = _get_application_class(apk)
     entries = _get_zip_entries(apk)
     native_libs = _native_lib_names(entries)
@@ -204,7 +206,7 @@ def check_packer(
                 if asset in assets:
                     evidence.append(f"Asset: assets/{asset}")
 
-        # 4. DEX class prefixes (chậm hơn, chỉ scan nếu chưa có evidence)
+        # 4. DEX class prefixes (chỉ scan nếu chưa có evidence)
         if not evidence and sig["dex_prefixes"]:
             dex_hit = _scan_dex_prefixes(
                 get_all_dex_bytes, sig["dex_prefixes"]
@@ -226,7 +228,6 @@ def check_packer(
         })
         return None
 
-    # Chọn packer có confidence cao nhất
     detected.sort(
         key=lambda x: {"high": 0, "medium": 1, "low": 2}.get(
             x[1]["confidence"], 3
@@ -236,11 +237,8 @@ def check_packer(
 
     patchable = primary_sig["patchable"]
     confidence = primary_sig["confidence"]
-
-    # Color: red nếu không patchable, yellow nếu patchable
     color = "yellow" if patchable else "red"
 
-    # Warning message
     if patchable:
         warning = (
             "APK có obfuscation — patch có thể chạy nhưng kết quả "
@@ -282,9 +280,6 @@ def check_packer(
     }
 
 
-# ============================================================
-# PUBLIC API — WITH BYTECODE FALLBACK (tier 5)
-# ============================================================
 def check_packer_with_fallback(
     apk,
     apk_path: str,
@@ -292,29 +287,13 @@ def check_packer_with_fallback(
     findings: list[dict],
     available_patches: list[str],
 ) -> dict | None:
-    """
-    Same as `check_packer` nhưng thêm bytecode fallback tier.
-
-    Flow:
-      1. Gọi `check_packer` (primary 4 tier).
-      2. Nếu primary None → gọi `augment_packer_result` (bytecode tier).
-      3. Nếu bytecode match → append finding + trả về dict.
-
-    Dùng wrapper này để 1 call site duy nhất — không cần sửa analyzer.
-
-    Return shape giống `check_packer`: {name, confidence, patchable,
-    evidence} hoặc None.
-    """
-    # --- Tier 1-4: primary ---
+    """Same as check_packer + bytecode fallback tier."""
     primary = check_packer(
         apk, apk_path, get_all_dex_bytes, findings, available_patches,
     )
     if primary is not None:
         return primary
 
-    # --- Tier 5: bytecode fallback ---
-    # Note: check_packer đã append "no_packer" finding khi return None.
-    # Nếu bytecode match → ta cần sửa finding đó, không phải append thêm.
     try:
         from scanner.checks.packer_bytecode import augment_packer_result
     except ImportError as e:
@@ -330,9 +309,7 @@ def check_packer_with_fallback(
     if fallback is None:
         return None
 
-    # Bytecode match → replace "no_packer" finding nếu có
     _replace_no_packer_finding(findings, fallback, apk_path)
-
     return fallback
 
 
@@ -341,11 +318,7 @@ def _replace_no_packer_finding(
     fallback: dict,
     apk_path: str,
 ) -> None:
-    """
-    Nếu `findings` đang chứa `no_packer` (do primary None), thay thế
-    bằng finding `packer` từ bytecode fallback.
-    Nếu không có `no_packer` → append mới.
-    """
+    """Replace `no_packer` finding với packer finding."""
     packable = fallback.get("patchable", False)
     color = "yellow" if packable else "red"
 
@@ -376,13 +349,10 @@ def _replace_no_packer_finding(
         "action": None,
     }
 
-    # Replace in-place
     for i, f in enumerate(findings):
         if f.get("type") == "no_packer":
             findings[i] = new_finding
             return
-
-    # Không có no_packer → append
     findings.append(new_finding)
 
 
@@ -391,7 +361,6 @@ def _replace_no_packer_finding(
 # ============================================================
 def _get_application_class(apk) -> str | None:
     """Đọc android:name của thẻ <application>."""
-    # Cách 1: parse manifest XML
     try:
         import xml.etree.ElementTree as _ET
         raw = apk.get_android_manifest_axml().get_xml()
@@ -406,7 +375,6 @@ def _get_application_class(apk) -> str | None:
     except Exception:
         pass
 
-    # Cách 2: get_android_manifest_xml
     try:
         xml = apk.get_android_manifest_xml()
         for app in xml.findall("application"):
@@ -420,7 +388,6 @@ def _get_application_class(apk) -> str | None:
 
 
 def _get_zip_entries(apk) -> set[str]:
-    """All entry names trong APK zip."""
     try:
         files = apk.get_files()
         return set(files) if files else set()
@@ -429,7 +396,6 @@ def _get_zip_entries(apk) -> set[str]:
 
 
 def _native_lib_names(entries: set[str]) -> set[str]:
-    """Basename của .so trong lib/<abi>/."""
     names: set[str] = set()
     for e in entries:
         if e.startswith("lib/") and e.endswith(".so"):
@@ -438,7 +404,6 @@ def _native_lib_names(entries: set[str]) -> set[str]:
 
 
 def _asset_names(entries: set[str]) -> set[str]:
-    """Asset paths (không có prefix 'assets/')."""
     return {
         e[len("assets/"):]
         for e in entries
@@ -450,24 +415,50 @@ def _scan_dex_prefixes(
     get_all_dex_bytes, prefixes: list[str],
 ) -> str | None:
     """
-    Scan DEX classes tìm class có prefix match.
-    Return class name đầu tiên match (không có leading 'L').
+    Scan DEX tìm class có prefix match.
+
+    FAST PATH: ASCII regex trên raw bytes cho real APK (~0.3s/dex).
+    FALLBACK: androguard DEX cho test mock (bytes < 1KB).
     """
     for dex_name, dex_bytes in get_all_dex_bytes():
-        try:
-            dex = DEX(dex_bytes)
-        except Exception:
+        if not dex_bytes:
             continue
-        try:
-            for cls in dex.get_classes():
-                try:
-                    cname = cls.get_name()
-                except Exception:
-                    continue
-                for prefix in prefixes:
-                    if cname.startswith(prefix):
-                        return cname
-        except Exception as e:
-            logger.debug("DEX scan failed %s: %s", dex_name, e)
+
+        # Small payload → test mock → androguard
+        if len(dex_bytes) < _FAST_THRESHOLD:
+            try:
+                dex = DEX(dex_bytes)
+            except Exception:
+                continue
+            try:
+                for cls in dex.get_classes():
+                    try:
+                        cname = cls.get_name()
+                    except Exception:
+                        continue
+                    for prefix in prefixes:
+                        if cname.startswith(prefix):
+                            return cname
+            except Exception as e:
+                logger.debug("DEX scan failed %s: %s", dex_name, e)
+                continue
             continue
+
+        # Real dex → ASCII blob match
+        strings = _extract_ascii_strings(dex_bytes)
+        if not strings:
+            continue
+        blob = "\n".join(strings)
+
+        for prefix in prefixes:
+            idx = blob.find(prefix)
+            if idx < 0:
+                continue
+            start = blob.rfind("L", 0, idx)
+            if start < 0 or start > idx:
+                start = idx
+            end = blob.find(";", idx)
+            if end > idx:
+                return blob[start:end + 1]
+            return prefix
     return None

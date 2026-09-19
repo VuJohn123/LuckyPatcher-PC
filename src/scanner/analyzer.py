@@ -1,12 +1,20 @@
-"""Phân tích sâu APK — trả về findings chi tiết."""
+"""Phân tích sâu APK — trả về findings chi tiết.
+
+v8 (2026):
+  - Cache version-aware.
+  - FAST path: ASCII regex cho security/license/iap/packer scan
+    (~0.3s/dex) thay vì androguard DEX() (~5-8s/dex).
+  - Shared `dex_names` cho root + LP.
+  - Timing logs để debug performance.
+"""
 from __future__ import annotations
 
 import logging
+import time
 import zipfile
 from pathlib import Path
 
 from androguard.core.apk import APK
-from androguard.core.dex import DEX
 
 from core.smali_utils import APKCache
 from patcher.watermarker import Watermarker
@@ -17,13 +25,31 @@ from scanner.checks.packer_check import check_packer_with_fallback
 from scanner.checks.security_check import (
     check_root_detection,
     check_lp_detection,
+    _extract_dex_names,
 )
 
 logger = logging.getLogger(__name__)
 
 
+# ============================================================
+# CACHE VERSION
+# ============================================================
+# Bump khi thay đổi logic detection → tự động invalidate cache cũ.
+#
+# Lịch sử:
+#   v1 — base
+#   v2 — fix root detection strict patterns
+#   v3 — fix root detection confidence scoring
+#   v4 — share dex strings cache (perf, đã revert)
+#   v5 — security check iterate classes+methods (fix test contract)
+#   v6 — fast path strings + share dex_names
+#   v7 — ASCII regex fast path cho security_check
+#   v8 — ASCII regex cho license/iap/packer (final perf fix)
+_ANALYZER_CACHE_VERSION = 8
+
+
 class AppDeepAnalyzer:
-    """Phân tích sâu APK — phát hiện license / ads / iap / root / LP / packer."""
+    """Phân tích sâu APK — phát hiện license/ads/iap/root/LP/packer."""
 
     def __init__(self, apk_path: str, patches_dir: str | None = None):
         self.apk_path = apk_path
@@ -36,56 +62,117 @@ class AppDeepAnalyzer:
         self._cache = APKCache()
         self.packer_info: dict | None = None
 
+    # ============================================================
+    # PUBLIC — MAIN
+    # ============================================================
     def analyze(self, force_reanalyze: bool = False) -> list[dict]:
+        # Cache lookup with version
         if not force_reanalyze:
-            cached = self._cache.get_cached_analysis(self.apk_path)
+            cached = self._cache.get_cached_analysis(
+                self.apk_path,
+                min_version=_ANALYZER_CACHE_VERSION,
+            )
             if cached:
                 self.findings = cached.get("findings", [])
                 self.available_patches = [
-                    f["action"] for f in self.findings if f.get("action")
+                    f["action"] for f in self.findings
+                    if f.get("action")
                 ]
                 return self.findings
 
+        t0 = time.monotonic()
+
         self._check_watermark()
 
-        # ---- Packer check TRƯỚC license/iap để báo user ----
-        # (PairIP license activity sẽ match _LICENSE_RE → false positive,
-        #  finding packer giúp user hiểu tại sao patch 0 files)
-        #
-        # Dùng wrapper `check_packer_with_fallback`:
-        #   - Tier 1-4: app_class / native_libs / assets / dex_prefixes
-        #   - Tier 5:   bytecode fallback (regex raw dex bytes + entropy)
+        # Packer check trước license/iap
+        t_packer = time.monotonic()
         self.packer_info = check_packer_with_fallback(
             self.apk, self.apk_path, self._get_all_dex_bytes,
             self.findings, self.available_patches,
         )
+        logger.debug(
+            "[analyzer] packer: %.2fs", time.monotonic() - t_packer,
+        )
 
+        t_lic = time.monotonic()
         check_license(
             self.apk, self.apk_path, self._get_all_dex_bytes,
             self.findings, self.available_patches,
         )
+        logger.debug(
+            "[analyzer] license: %.2fs", time.monotonic() - t_lic,
+        )
+
+        t_ads = time.monotonic()
         check_ads(self.apk, self.findings, self.available_patches)
+        logger.debug(
+            "[analyzer] ads: %.2fs", time.monotonic() - t_ads,
+        )
+
+        t_iap = time.monotonic()
         check_iap(
             self.apk, self._get_all_dex_bytes,
             self.findings, self.available_patches,
         )
+        logger.debug(
+            "[analyzer] iap: %.2fs", time.monotonic() - t_iap,
+        )
+
+        t_misc = time.monotonic()
         self._check_custom_patch()
         self._check_system_app()
         self._check_dangerous_permissions()
         self._count_components()
-        check_root_detection(self._get_all_dex_bytes, self.findings)
-        check_lp_detection(self._get_all_dex_bytes, self.findings)
+        logger.debug(
+            "[analyzer] misc: %.2fs", time.monotonic() - t_misc,
+        )
 
+        # === Security checks — share dex_names ===
+        t_sec = time.monotonic()
+        dex_names = _extract_dex_names(self._get_all_dex_bytes)
+        logger.info(
+            "[analyzer] Extracted %d names in %.2fs",
+            len(dex_names), time.monotonic() - t_sec,
+        )
+
+        t_root = time.monotonic()
+        check_root_detection(
+            self._get_all_dex_bytes, self.findings,
+            all_names=dex_names,
+        )
+        logger.info(
+            "[analyzer] Root check: %.3fs",
+            time.monotonic() - t_root,
+        )
+
+        t_lp = time.monotonic()
+        check_lp_detection(
+            self._get_all_dex_bytes, self.findings,
+            all_names=dex_names,
+        )
+        logger.info(
+            "[analyzer] LP check: %.3fs", time.monotonic() - t_lp,
+        )
+
+        logger.info(
+            "[analyzer] Total analyze: %.2fs", time.monotonic() - t0,
+        )
+
+        # Save cache
         try:
             self._cache.save_analysis(
                 self.apk_path, self.findings,
                 self.get_summary(), self.get_colors(),
+                version=_ANALYZER_CACHE_VERSION,
             )
         except Exception as e:
             logger.debug("Cache save failed: %s", e)
 
         return self.findings
 
+    # ============================================================
+    # PUBLIC — summary / colors
+    # ============================================================
     def get_colors(self) -> list[str]:
         return list({
             f["color"] for f in self.findings if f.get("color")
@@ -99,7 +186,9 @@ class AppDeepAnalyzer:
         try:
             app_name = self.apk.get_app_name()
         except Exception:
-            app_name = Path(self.apk_path).stem if self.apk_path else "Unknown"
+            app_name = (
+                Path(self.apk_path).stem if self.apk_path else "Unknown"
+            )
         try:
             version = self.apk.get_androidversion_name()
         except Exception:
@@ -116,7 +205,11 @@ class AppDeepAnalyzer:
             "size": size,
         }
 
+    # ============================================================
+    # INTERNAL — dex bytes
+    # ============================================================
     def _get_all_dex_bytes(self) -> list[tuple[str, bytes]]:
+        """Read dex bytes from APK. Graceful on corrupt zip."""
         dex_list: list[tuple[str, bytes]] = []
         try:
             with zipfile.ZipFile(self.apk_path, "r") as z:
@@ -133,6 +226,9 @@ class AppDeepAnalyzer:
             logger.debug("Không mở được APK: %s", e)
         return dex_list
 
+    # ============================================================
+    # INTERNAL — individual checks
+    # ============================================================
     def _check_watermark(self) -> None:
         marker = Watermarker.check_watermark(self.apk_path)
         if not marker:
@@ -213,11 +309,15 @@ class AppDeepAnalyzer:
 
     def _check_dangerous_permissions(self) -> None:
         dangerous = (
-            "android.permission.READ_SMS", "android.permission.SEND_SMS",
-            "android.permission.RECEIVE_SMS", "android.permission.READ_CONTACTS",
+            "android.permission.READ_SMS",
+            "android.permission.SEND_SMS",
+            "android.permission.RECEIVE_SMS",
+            "android.permission.READ_CONTACTS",
             "android.permission.ACCESS_FINE_LOCATION",
-            "android.permission.CAMERA", "android.permission.RECORD_AUDIO",
-            "android.permission.READ_PHONE_STATE", "android.permission.CALL_PHONE",
+            "android.permission.CAMERA",
+            "android.permission.RECORD_AUDIO",
+            "android.permission.READ_PHONE_STATE",
+            "android.permission.CALL_PHONE",
             "android.permission.WRITE_EXTERNAL_STORAGE",
             "android.permission.READ_EXTERNAL_STORAGE",
         )

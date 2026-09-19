@@ -1,46 +1,61 @@
 """
 MainWindow — UI shell cho LP-PC Suite.
-Logic business chuyển sang AppController (src/ui/app_controller.py).
 
-Layout:
-  Sidebar | Toolbar / Progress / Switches / Stacked Pages / Log (collapsible)
+v4 (2026):
+  - Log panel RESIZABLE qua QSplitter (drag handle giữa content/log).
+  - i18n integration: dùng core.i18n.t() cho các string chính.
+  - Giữ collapse button cho quick toggle.
+  - Drag & drop + shortcuts.
 """
 from __future__ import annotations
 
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
     QLabel, QToolBar, QStatusBar, QComboBox, QLineEdit,
-    QStackedWidget, QFrame, QProgressBar, QMessageBox,
+    QStackedWidget, QFrame, QProgressBar, QMessageBox, QSplitter,
 )
 from PyQt6.QtCore import Qt, QSize
-from PyQt6.QtGui import QFont
+from PyQt6.QtGui import QFont, QKeySequence, QShortcut
 
 from .app_list_widget import AppListWidget
 from .log_widget import LogWidget
 from .apk_detail_widget import APKDetailWidget
 from .switches_panel import SwitchesPanel
 from .app_controller import AppController
+from .toolbox_menu import ToolboxMenu
+from core.i18n import t
 
 
 class MainWindow(QMainWindow):
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("LP-PC Suite v4 – Professional Modding Tool")
-        self.resize(1280, 820)
+        self.setWindowTitle(t("main_window.title"))
 
-        # --- Controller TRƯỚC (không phụ thuộc UI trong __init__) ---
+        # Responsive sizing
+        from PyQt6.QtWidgets import QApplication
+        screen = QApplication.primaryScreen()
+        if screen:
+            avail = screen.availableGeometry()
+            w = min(1280, int(avail.width() * 0.92))
+            h = min(820, int(avail.height() * 0.92))
+            self.resize(w, h)
+            self.setMinimumSize(900, 600)
+        else:
+            self.resize(1280, 820)
+
+        self.setAcceptDrops(True)
+
         self.controller = AppController(self)
-
-        # --- UI shell ---
         self._build_ui()
-
-        # --- Wire controller signals → UI slots ---
         self._wire_controller()
+        self._wire_toolbox()
+        self._install_shortcuts()
 
-        # --- Bootstrap ---
         self._on_log("[i] LP-PC Suite v4.0.0 khởi động")
-        self._on_log("[i] Sẵn sàng nhận APK hoặc kết nối thiết bị ADB")
+        self._on_log(
+            "[i] Sẵn sàng nhận APK hoặc kết nối thiết bị ADB"
+        )
         self.controller.load_device_apps()
 
     # ============================================================
@@ -63,8 +78,9 @@ class MainWindow(QMainWindow):
         right_layout.addWidget(self._build_toolbar())
         right_layout.addWidget(self._build_progress_panel())
 
-        # Switches panel — dùng iap_manager từ controller
-        self.switches_panel = SwitchesPanel(self.controller.iap_manager)
+        self.switches_panel = SwitchesPanel(
+            self.controller.iap_manager
+        )
         right_layout.addWidget(self.switches_panel)
 
         # Stacked pages
@@ -72,17 +88,26 @@ class MainWindow(QMainWindow):
         self.stacked.addWidget(self._build_apps_page())
         self.stacked.addWidget(self._build_detail_page())
         self.stacked.addWidget(self._build_tools_page())
-        right_layout.addWidget(self.stacked, 1)
 
-        # Collapsible log
-        right_layout.addWidget(self._build_log_panel())
+        # === SPLITTER giữa content và log (RESIZABLE) ===
+        splitter = QSplitter(Qt.Orientation.Vertical)
+        splitter.setObjectName("mainSplitter")
+        splitter.setChildrenCollapsible(False)
+        splitter.setHandleWidth(4)
+        splitter.addWidget(self.stacked)
+        splitter.addWidget(self._build_log_panel())
+        splitter.setStretchFactor(0, 4)   # content chiếm 4/5
+        splitter.setStretchFactor(1, 1)   # log chiếm 1/5
+        splitter.setSizes([600, 150])     # initial size
+
+        self.main_splitter = splitter
+        right_layout.addWidget(splitter, 1)
 
         root.addWidget(right, 1)
 
-        # Status bar
         self.status_bar = QStatusBar()
         self.setStatusBar(self.status_bar)
-        self.status_bar.showMessage("Sẵn sàng")
+        self.status_bar.showMessage(t("status.ready"))
 
     # ------------------------------------------------------------
     def _build_sidebar(self) -> QFrame:
@@ -92,23 +117,23 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(8, 20, 8, 20)
         layout.setSpacing(6)
 
-        logo = QLabel("🛠 LP-PC Suite")
+        logo = QLabel(t("sidebar.logo"))
         logo.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
         logo.setStyleSheet("color: #58a6ff; padding: 12px 8px;")
         logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(logo)
         layout.addSpacing(20)
 
-        self.btn_apps = QPushButton("📱  Installed Apps")
+        self.btn_apps = QPushButton(t("sidebar.apps"))
         self.btn_apps.setCheckable(True)
         self.btn_apps.setChecked(True)
         self.btn_apps.setAutoExclusive(True)
 
-        self.btn_detail = QPushButton("🔍  APK Detail")
+        self.btn_detail = QPushButton(t("sidebar.detail"))
         self.btn_detail.setCheckable(True)
         self.btn_detail.setAutoExclusive(True)
 
-        self.btn_tools = QPushButton("⚙️  Tools")
+        self.btn_tools = QPushButton(t("sidebar.tools"))
         self.btn_tools.setCheckable(True)
         self.btn_tools.setAutoExclusive(True)
 
@@ -117,15 +142,20 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.btn_tools)
         layout.addStretch()
 
-        version = QLabel("v4.0.0")
+        version = QLabel(t("sidebar.version"))
         version.setStyleSheet("color: #484f58; font-size: 11px;")
         version.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(version)
 
-        # Wire navigation (lambda resolve self.stacked khi click)
-        self.btn_apps.clicked.connect(lambda: self.stacked.setCurrentIndex(0))
-        self.btn_detail.clicked.connect(lambda: self.stacked.setCurrentIndex(1))
-        self.btn_tools.clicked.connect(lambda: self.stacked.setCurrentIndex(2))
+        self.btn_apps.clicked.connect(
+            lambda: self.stacked.setCurrentIndex(0)
+        )
+        self.btn_detail.clicked.connect(
+            lambda: self.stacked.setCurrentIndex(1)
+        )
+        self.btn_tools.clicked.connect(
+            lambda: self.stacked.setCurrentIndex(2)
+        )
         return sidebar
 
     # ------------------------------------------------------------
@@ -135,36 +165,55 @@ class MainWindow(QMainWindow):
         tb.setIconSize(QSize(18, 18))
 
         self.search_edit = QLineEdit()
-        self.search_edit.setPlaceholderText("🔍  Search apps...")
+        self.search_edit.setPlaceholderText(
+            t("toolbar.search_placeholder")
+        )
         self.search_edit.setMinimumWidth(220)
-        self.search_edit.textChanged.connect(self._filter_apps)
+        self.search_edit.textChanged.connect(
+            lambda _: self._filter_apps()
+        )
         tb.addWidget(self.search_edit)
 
         self.filter_combo = QComboBox()
-        self.filter_combo.addItems(
-            ["All", "License check", "Ads", "Custom patch", "System"]
+        self.filter_combo.addItems([
+            t("toolbar.filter_all"),
+            t("toolbar.filter_license"),
+            t("toolbar.filter_ads"),
+            t("toolbar.filter_custom"),
+            t("toolbar.filter_system"),
+        ])
+        self.filter_combo.currentTextChanged.connect(
+            lambda _: self._filter_apps()
         )
-        self.filter_combo.currentTextChanged.connect(self._filter_apps)
         tb.addWidget(self.filter_combo)
         tb.addSeparator()
 
-        btn_browse = QPushButton("📁  Browse APK")
+        btn_browse = QPushButton(t("toolbar.browse"))
         btn_browse.clicked.connect(self._on_browse_clicked)
         tb.addWidget(btn_browse)
 
-        btn_download = QPushButton("📥  Download APK")
+        btn_download = QPushButton(t("toolbar.download"))
         btn_download.clicked.connect(self._on_download_clicked)
         tb.addWidget(btn_download)
 
-        btn_workspace = QPushButton("📂  Workspace")
+        btn_workspace = QPushButton(t("toolbar.workspace"))
         btn_workspace.clicked.connect(self._on_workspace_clicked)
         tb.addWidget(btn_workspace)
+
+        btn_reload = QPushButton(t("toolbar.reload"))
+        btn_reload.clicked.connect(self._on_reload_clicked)
+        tb.addWidget(btn_reload)
+
+        tb.addSeparator()
+
+        self.btn_toolbox = QPushButton(t("toolbar.toolbox"))
+        self.btn_toolbox.clicked.connect(self._on_toolbox_clicked)
+        tb.addWidget(self.btn_toolbox)
 
         return tb
 
     # ------------------------------------------------------------
     def _build_progress_panel(self) -> QWidget:
-        """Progress panel LP-style: step label + progress bar."""
         container = QWidget()
         container.setObjectName("progressContainer")
         layout = QVBoxLayout(container)
@@ -197,7 +246,9 @@ class MainWindow(QMainWindow):
         self.app_list.app_context_menu_requested.connect(
             self._on_app_context_menu
         )
-        self.app_list.itemDoubleClicked.connect(self._on_app_double_click)
+        self.app_list.itemDoubleClicked.connect(
+            self._on_app_double_click
+        )
         layout.addWidget(self.app_list)
         return page
 
@@ -205,12 +256,44 @@ class MainWindow(QMainWindow):
         page = QWidget()
         layout = QVBoxLayout(page)
         layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        back_bar = QWidget()
+        back_bar.setStyleSheet(
+            "background-color: #161b22;"
+            "border-bottom: 1px solid #30363d;"
+        )
+        back_layout = QHBoxLayout(back_bar)
+        back_layout.setContentsMargins(12, 6, 12, 6)
+
+        back_btn = QPushButton(t("detail.back"))
+        back_btn.setFixedHeight(28)
+        back_btn.setStyleSheet(
+            "QPushButton {"
+            "  background: transparent; color: #58a6ff;"
+            "  border: none; font-weight: bold;"
+            "  text-align: left; padding: 4px 8px;"
+            "}"
+            "QPushButton:hover { color: #79c0ff; }"
+        )
+        back_btn.clicked.connect(
+            lambda: self.stacked.setCurrentIndex(0)
+        )
+        back_layout.addWidget(back_btn)
+        back_layout.addStretch()
+        layout.addWidget(back_bar)
+
         self.apk_detail = APKDetailWidget()
         self.apk_detail.patch_action_requested.connect(
             self._on_detail_action
         )
-        self.apk_detail.rebuild_requested.connect(self._on_rebuild_clicked)
-        layout.addWidget(self.apk_detail)
+        self.apk_detail.rebuild_requested.connect(
+            self._on_rebuild_clicked
+        )
+        self.apk_detail.menu_of_patches_requested.connect(
+            self._on_menu_of_patches_clicked
+        )
+        layout.addWidget(self.apk_detail, 1)
         return page
 
     def _build_tools_page(self) -> QWidget:
@@ -238,8 +321,13 @@ class MainWindow(QMainWindow):
 
     # ------------------------------------------------------------
     def _build_log_panel(self) -> QWidget:
+        """
+        Log panel giờ là 1 QWidget trong QSplitter — resizable
+        bằng cách kéo handle giữa content và log.
+        """
         container = QWidget()
         container.setObjectName("logContainer")
+        container.setMinimumHeight(60)
         layout = QVBoxLayout(container)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
@@ -251,14 +339,14 @@ class MainWindow(QMainWindow):
         h_layout.setContentsMargins(12, 4, 8, 4)
         h_layout.setSpacing(8)
 
-        title = QLabel("📋  Nhật ký hoạt động")
+        title = QLabel(t("log_panel.title"))
         title.setStyleSheet(
             "color: #8b949e; font-size: 11px; font-weight: bold;"
         )
         h_layout.addWidget(title)
         h_layout.addStretch()
 
-        self.btn_clear_log = QPushButton("Xóa")
+        self.btn_clear_log = QPushButton(t("log_panel.clear"))
         self.btn_clear_log.setFixedSize(52, 22)
         self.btn_clear_log.setStyleSheet("""
             QPushButton {
@@ -271,31 +359,34 @@ class MainWindow(QMainWindow):
         self.btn_clear_log.clicked.connect(self._clear_log)
         h_layout.addWidget(self.btn_clear_log)
 
-        self.btn_expand_log = QPushButton("▲")
-        self.btn_expand_log.setFixedSize(24, 22)
-        self.btn_expand_log.setStyleSheet("""
+        # Collapse button (vẫn giữ để quick toggle)
+        self.btn_collapse_log = QPushButton("⤓")
+        self.btn_collapse_log.setFixedSize(24, 22)
+        self.btn_collapse_log.setStyleSheet("""
             QPushButton {
                 background: transparent; color: #8b949e;
-                border: none; font-size: 11px; font-weight: bold;
+                border: none; font-size: 12px; font-weight: bold;
             }
             QPushButton:hover { color: #58a6ff; }
         """)
-        self.btn_expand_log.setCheckable(True)
-        self.btn_expand_log.setToolTip("Mở rộng / thu gọn log")
-        self.btn_expand_log.toggled.connect(self._toggle_log_expand)
-        h_layout.addWidget(self.btn_expand_log)
+        self.btn_collapse_log.setToolTip(
+            t("log_panel.expand_tooltip")
+        )
+        self.btn_collapse_log.clicked.connect(
+            self._toggle_collapse_log
+        )
+        h_layout.addWidget(self.btn_collapse_log)
 
         layout.addWidget(header)
 
         self.log = LogWidget()
-        self.log.setMinimumHeight(80)
-        self.log.setMaximumHeight(120)
+        self.log.setMinimumHeight(40)
         layout.addWidget(self.log)
 
         return container
 
     # ============================================================
-    # WIRING (View ↔ Controller)
+    # WIRING
     # ============================================================
     def _wire_controller(self) -> None:
         self.controller.log_message.connect(self._on_log)
@@ -303,15 +394,49 @@ class MainWindow(QMainWindow):
         self.controller.analysis_ready.connect(self._on_analysis_ready)
         self.controller.progress_update.connect(self._on_progress)
         self.controller.progress_hide.connect(self._hide_progress)
-        self.controller.show_detail_page.connect(self._show_detail_page)
+        self.controller.show_detail_page.connect(
+            self._show_detail_page
+        )
         self.controller.step_update.connect(self._on_step_update)
-        # Safety prompt: controller emits → main thread dialog
         self.controller.safety_prompt_requested.connect(
             self._on_safety_prompt
         )
 
+    def _wire_toolbox(self) -> None:
+        self.toolbox = ToolboxMenu(self)
+        self.toolbox.clone_requested.connect(
+            self.controller._open_clone_dialog
+        )
+        self.toolbox.iap_manager_requested.connect(
+            self._on_iap_manager
+        )
+        self.toolbox.download_patch_requested.connect(
+            self._on_download_patch
+        )
+        self.toolbox.system_tool_requested.connect(
+            self._on_system_tool
+        )
+        self.toolbox.patch_requested.connect(
+            self._on_system_patch
+        )
+
+    def _install_shortcuts(self) -> None:
+        QShortcut(QKeySequence("Ctrl+O"), self, self._on_browse_clicked)
+        QShortcut(QKeySequence("Ctrl+D"), self, self._on_download_clicked)
+        QShortcut(QKeySequence("Ctrl+W"), self, self._on_workspace_clicked)
+        QShortcut(QKeySequence("Ctrl+L"), self, self._clear_log)
+        QShortcut(QKeySequence("F5"), self, self._on_reload_clicked)
+        QShortcut(QKeySequence("Esc"), self, self._on_escape)
+        QShortcut(
+            QKeySequence("Ctrl+F"), self,
+            lambda: self.search_edit.setFocus(),
+        )
+        QShortcut(QKeySequence("Ctrl+T"), self, self._on_toolbox_clicked)
+        QShortcut(QKeySequence("Ctrl+J"), self,
+                  self._toggle_collapse_log)
+
     # ============================================================
-    # EVENT HANDLERS → delegate controller
+    # EVENT HANDLERS
     # ============================================================
     def _on_browse_clicked(self) -> None:
         self.controller.browse_apk()
@@ -321,6 +446,20 @@ class MainWindow(QMainWindow):
 
     def _on_workspace_clicked(self) -> None:
         self.controller.open_workspace()
+
+    def _on_reload_clicked(self) -> None:
+        self.app_list.clear_all()
+        self.controller.load_device_apps()
+
+    def _on_toolbox_clicked(self) -> None:
+        btn = self.btn_toolbox
+        pos = btn.mapToGlobal(btn.rect().bottomLeft())
+        self.toolbox.exec(pos)
+
+    def _on_escape(self) -> None:
+        if self.stacked.currentIndex() != 0:
+            self.stacked.setCurrentIndex(0)
+            self.btn_apps.setChecked(True)
 
     def _on_app_context_menu(
         self, pkg: str, name: str,
@@ -337,13 +476,69 @@ class MainWindow(QMainWindow):
     def _on_rebuild_clicked(self) -> None:
         self.controller.open_rebuild_dialog()
 
+    def _on_menu_of_patches_clicked(self) -> None:
+        self.controller.open_menu_of_patches(
+            self.controller.last_package,
+            self.controller.last_app_name,
+            self.controller.last_colors,
+            self.controller.last_findings,
+            use_tree=True,
+        )
+
+    def _on_iap_manager(self) -> None:
+        from .iap_manager_dialog import IAPManagerDialog
+        dlg = IAPManagerDialog(
+            self.controller.iap_manager, self.window()
+        )
+        dlg.exec()
+
+    def _on_download_patch(self) -> None:
+        from PyQt6.QtWidgets import QInputDialog
+        url, ok = QInputDialog.getText(
+            self, "Download Custom Patch",
+            "URL của custom patch (.txt / .lpzip):",
+        )
+        if ok and url.strip():
+            self._on_log(f"[*] Sẽ tải custom patch: {url}")
+
+    def _on_system_tool(self, tool_name: str) -> None:
+        messages = {
+            "xposed_iap": "Xposed: Support IAP & LVL Emulation",
+            "xposed_enable": "Xposed: Enable module",
+            "backup": "Backup selected APK",
+            "install_supersu": "Install SuperSU",
+            "install_busybox": "Install/Update BusyBox",
+            "clear_dalvik": "Clear Dalvik Cache",
+            "move_system": "Move App to /system/app/",
+            "disable_billing": "Disable Google Billing Emulation",
+            "change_dir": "Change working directory",
+        }
+        msg = messages.get(tool_name, tool_name)
+        self._on_log(f"[i] [Toolbox] {msg}")
+
+    def _on_system_patch(
+        self, action: str, features: dict
+    ) -> None:
+        if action == "system_patch":
+            enabled = [k for k, v in features.items() if v]
+            self._on_log(
+                f"[*] [Toolbox] System patch: {', '.join(enabled)}"
+            )
+            QMessageBox.information(
+                self, "System Patch",
+                "System patch yêu cầu root + ADB.\n"
+                "Đang phát triển.",
+            )
+        elif action == "test_patch":
+            self._on_log("[*] [Toolbox] Chạy test patch...")
+
     def _filter_apps(self) -> None:
         text = self.search_edit.text().lower()
         filt = self.filter_combo.currentText()
         self.app_list.filter(text, filt)
 
     # ============================================================
-    # CONTROLLER SIGNALS → UI UPDATE
+    # CONTROLLER → UI
     # ============================================================
     def _on_log(self, message: str) -> None:
         self.log.append_log(message)
@@ -357,11 +552,10 @@ class MainWindow(QMainWindow):
     def _on_progress(self, current: int, total: int) -> None:
         if total > 0:
             pct = int(current * 100 / total)
-            if self.progress_container.isVisible():
-                self.progress_bar.setValue(pct)
+            self.progress_container.setVisible(True)
+            self.progress_bar.setValue(pct)
 
     def _on_step_update(self, step_name: str, pct: int) -> None:
-        """LP-style step: hiển thị label + cập nhật %."""
         self.progress_container.setVisible(True)
         self.step_label.setText(f"⏳ {step_name}")
         self.progress_bar.setValue(max(0, min(100, pct)))
@@ -376,27 +570,19 @@ class MainWindow(QMainWindow):
         self.stacked.setCurrentIndex(1)
 
     # ============================================================
-    # SAFETY PROMPT — Y/N dialog khi vượt ngưỡng N lần
+    # SAFETY PROMPT
     # ============================================================
     def _on_safety_prompt(
         self, reason: str, details: dict, count: int, callback
     ) -> None:
-        """
-        Chạy trên main thread (Qt signal queue từ worker thread).
-        Block worker thread tối đa 60s (config: prompt_timeout_sec).
-
-        FIX: setTextFormat(RichText) để render HTML đúng.
-        """
         msg = QMessageBox(self)
         msg.setIcon(QMessageBox.Icon.Warning)
-        msg.setWindowTitle("⚠️ Cảnh báo an toàn")
-
-        # === FIX: bật RichText cho CẢ text() và informativeText() ===
+        msg.setWindowTitle(t("dialog.warning_title"))
         msg.setTextFormat(Qt.TextFormat.RichText)
 
         msg.setText(
             f"<b>Phát hiện <span style='color:#f85149;'>"
-            f"{reason.upper()}</span> vượt ngưỡng {count} lần liên tiếp!</b>"
+            f"{reason.upper()}</span> vượt ngưỡng {count} lần!</b>"
         )
 
         detail_lines = [
@@ -407,16 +593,21 @@ class MainWindow(QMainWindow):
             "<b>Chi tiết:</b><br>"
             + "<br>".join(detail_lines)
             + "<br><br>"
-            "<b>Continue</b>: nâng ngưỡng +5% và tiếp tục "
-            "(chấp nhận rủi ro)<br>"
-            "<b>Stop</b>: dừng pipeline an toàn"
+            f"<b>{t('dialog.continue')}</b>: nâng ngưỡng +5% "
+            f"và tiếp tục<br>"
+            f"<b>{t('dialog.stop')}</b>: dừng pipeline an toàn"
         )
 
         msg.setStandardButtons(
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+            QMessageBox.StandardButton.Yes
+            | QMessageBox.StandardButton.No
         )
-        msg.button(QMessageBox.StandardButton.Yes).setText("Continue")
-        msg.button(QMessageBox.StandardButton.No).setText("Stop")
+        msg.button(QMessageBox.StandardButton.Yes).setText(
+            t("dialog.continue")
+        )
+        msg.button(QMessageBox.StandardButton.No).setText(
+            t("dialog.stop")
+        )
         msg.setDefaultButton(QMessageBox.StandardButton.No)
         msg.setWindowModality(Qt.WindowModality.ApplicationModal)
 
@@ -427,25 +618,67 @@ class MainWindow(QMainWindow):
             f"{'CONTINUE' if user_continue else 'STOP'}"
         )
 
-        # Trả kết quả về worker thread đang chờ
         try:
             callback(user_continue)
         except Exception:
             pass
 
     # ============================================================
-    # LOG PANEL HELPERS
+    # LOG PANEL — collapse toggle
     # ============================================================
-    def _toggle_log_expand(self, expanded: bool) -> None:
-        if expanded:
-            self.log.setMaximumHeight(400)
-            self.btn_expand_log.setText("▼")
+    def _toggle_collapse_log(self) -> None:
+        """Collapse/expand log bằng cách set splitter sizes."""
+        if not hasattr(self, "main_splitter"):
+            return
+
+        sizes = self.main_splitter.sizes()
+        if sizes[1] <= 60:
+            # Expand
+            total = sum(sizes)
+            self.main_splitter.setSizes([int(total * 0.75), int(total * 0.25)])
+            self.btn_collapse_log.setText("⤓")
         else:
-            self.log.setMaximumHeight(120)
-            self.btn_expand_log.setText("▲")
+            # Collapse
+            total = sum(sizes)
+            self.main_splitter.setSizes([total - 40, 40])
+            self.btn_collapse_log.setText("⤒")
 
     def _clear_log(self) -> None:
         self.log.clear_log()
+
+    # ============================================================
+    # DRAG & DROP
+    # ============================================================
+    _DROP_EXTS = (".apk", ".xapk", ".apks")
+
+    def _is_valid_drop(self, mime) -> bool:
+        if not mime.hasUrls():
+            return False
+        for url in mime.urls():
+            p = url.toLocalFile().lower()
+            if p.endswith(self._DROP_EXTS):
+                return True
+        return False
+
+    def dragEnterEvent(self, event) -> None:
+        if self._is_valid_drop(event.mimeData()):
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def dragMoveEvent(self, event) -> None:
+        if self._is_valid_drop(event.mimeData()):
+            event.acceptProposedAction()
+
+    def dropEvent(self, event) -> None:
+        for url in event.mimeData().urls():
+            p = url.toLocalFile()
+            if p.lower().endswith(self._DROP_EXTS):
+                self._on_log(f"[*] Drop file: {p}")
+                self.controller.load_apk(p)
+                event.acceptProposedAction()
+                return
+        event.ignore()
 
     # ============================================================
     # CLOSE

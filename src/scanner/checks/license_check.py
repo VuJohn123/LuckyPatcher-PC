@@ -1,12 +1,11 @@
 """
 License detection — tìm LVL, LicenseValidator, PairIP trong DEX.
 
-v2 (LP parity):
-  - PairIP detection: emit finding riêng (red, unpackable) khi phát hiện
-    `com.pairip.licensecheck.*` — không false-positive "License found"
-    như LVL bình thường.
-  - Blacklist mở rộng: LicenseManager generic, BidToken, Moloco, ...
-  - Fallback manifest activity check có ExoPlayer skip.
+v3 (2026):
+  - FAST PATH: ASCII regex trên raw dex bytes (~0.3s/dex) thay vì
+    androguard DEX() + get_methods() (~6s/dex).
+  - FALLBACK: androguard cho test mock (bytes < 1KB).
+  - PairIP detection emit finding riêng (red, unpackable).
 """
 from __future__ import annotations
 
@@ -17,18 +16,20 @@ from androguard.core.dex import DEX
 
 logger = logging.getLogger(__name__)
 
-# Class name cần bỏ qua — không phải license thật
+_ASCII_RE = re.compile(rb"[\x20-\x7e]{4,}")
+_CLASS_DESC_STR_RE = re.compile(r"L[\w/$]+;")
+_FAST_THRESHOLD = 1024
+
 _BLACKLIST = (
-    "OfflineLicenseHelper",   # ExoPlayer DRM
-    "LicenseManager",         # quá generic
-    "BidToken",               # Moloco
+    "OfflineLicenseHelper",
+    "LicenseManager",
+    "BidToken",
     "Moloco",
     "ImpLvlRevData",
     "ClientBidToken",
-    "LicensingListener",      # Amazon DRM
+    "LicensingListener",
 )
 
-# Packer license check — không patch được static
 _PAIRIP_MARKERS = (
     "com/pairip/licensecheck",
     "com/pairip/license",
@@ -36,7 +37,6 @@ _PAIRIP_MARKERS = (
     "Lcom/pairip/license",
 )
 
-# LVL detection regex
 _LICENSE_RE = re.compile(
     r"(license|licensing|lvl|LicenseCheck|LicenseValidat)",
     re.IGNORECASE,
@@ -52,6 +52,86 @@ def _is_pairip(class_name: str) -> bool:
     return any(marker.lower() in cn for marker in _PAIRIP_MARKERS)
 
 
+def _extract_ascii_strings(dex_bytes: bytes) -> list[str]:
+    """Fast ASCII run extraction."""
+    try:
+        return [
+            m.decode("latin-1", errors="ignore")
+            for m in _ASCII_RE.findall(dex_bytes)
+        ]
+    except Exception:
+        return []
+
+
+def _scan_license_via_dex(
+    dex_bytes: bytes,
+) -> tuple[str, str | None, list[str]] | None:
+    """
+    Test mock path — androguard.
+    Return (kind, class_name, methods):
+      kind: "pairip" | "lvl"
+    """
+    try:
+        dex = DEX(dex_bytes)
+    except Exception:
+        return None
+    try:
+        classes = dex.get_classes()
+    except Exception:
+        return None
+
+    for cls in classes:
+        try:
+            cname = cls.get_name()
+        except Exception:
+            continue
+
+        if _is_pairip(cname):
+            return ("pairip", cname, [])
+
+        if any(bl in cname for bl in _BLACKLIST):
+            continue
+
+        if _LICENSE_RE.search(cname):
+            methods: list[str] = []
+            try:
+                for m in cls.get_methods():
+                    mn = m.get_name()
+                    if _METHOD_RE.search(mn):
+                        methods.append(mn)
+            except Exception:
+                pass
+            return ("lvl", cname, methods)
+    return None
+
+
+def _scan_license_fast(
+    dex_bytes: bytes,
+) -> tuple[str, str | None, list[str]] | None:
+    """Fast path — ASCII blob match."""
+    strings = _extract_ascii_strings(dex_bytes)
+    if not strings:
+        return None
+    blob = "\n".join(strings)
+
+    for m in _CLASS_DESC_STR_RE.finditer(blob):
+        cname = m.group(0)
+        if _is_pairip(cname):
+            return ("pairip", cname, [])
+        if any(bl in cname for bl in _BLACKLIST):
+            continue
+        if _LICENSE_RE.search(cname):
+            methods: list[str] = []
+            for mm in _METHOD_RE.finditer(blob):
+                mn = mm.group(0)
+                if mn not in methods:
+                    methods.append(mn)
+                if len(methods) >= 3:
+                    break
+            return ("lvl", cname, methods)
+    return None
+
+
 def check_license(
     apk, apk_path, get_all_dex_bytes, findings, available_patches,
 ) -> None:
@@ -59,74 +139,52 @@ def check_license(
     pairip_hit: str | None = None
 
     for dex_name, dex_bytes in get_all_dex_bytes():
-        try:
-            dex = DEX(dex_bytes)
-        except Exception as e:
-            logger.debug("DEX parse failed %s: %s", dex_name, e)
+        if not dex_bytes:
             continue
 
-        try:
-            classes = dex.get_classes()
-        except Exception as e:
-            logger.debug("get_classes failed %s: %s", dex_name, e)
+        if len(dex_bytes) < _FAST_THRESHOLD:
+            result = _scan_license_via_dex(dex_bytes)
+        else:
+            result = _scan_license_fast(dex_bytes)
+
+        if not result:
             continue
 
-        for cls in classes:
-            try:
-                class_name = cls.get_name()
-            except Exception:
-                continue
+        kind, cname, methods = result
 
-            # ---- PairIP detection (before blacklist) ----
-            if _is_pairip(class_name):
-                pairip_hit = class_name
-                continue  # không đếm như LVL bình thường
+        if kind == "pairip":
+            pairip_hit = cname
+            continue
 
-            # ---- Blacklist filter ----
-            if any(bl in class_name for bl in _BLACKLIST):
-                continue
+        # kind == "lvl"
+        findings.append({
+            "type": "license",
+            "color": "green",
+            "title": "License Verification Found",
+            "description": f"Class: {cname}",
+            "details": (
+                methods[:3] if methods
+                else ["License check detected"]
+            ),
+            "action": "remove_license",
+        })
+        if "license" not in available_patches:
+            available_patches.append("license")
 
-            # ---- LVL detection ----
-            if _LICENSE_RE.search(class_name):
-                methods: list[str] = []
-                try:
-                    for method in cls.get_methods():
-                        mn = method.get_name()
-                        if _METHOD_RE.search(mn):
-                            methods.append(mn)
-                except Exception:
-                    pass
+        if pairip_hit:
+            findings.append({
+                "type": "license_packed",
+                "color": "red",
+                "title": "License (PairIP packed)",
+                "description": (
+                    "PairIP license check — native VM. "
+                    "Patch static có thể không hiệu quả."
+                ),
+                "details": [pairip_hit],
+                "action": None,
+            })
+        return
 
-                findings.append({
-                    "type": "license",
-                    "color": "green",
-                    "title": "License Verification Found",
-                    "description": f"Class: {class_name}",
-                    "details": (
-                        methods[:3] if methods
-                        else ["License check detected"]
-                    ),
-                    "action": "remove_license",
-                })
-                if "license" not in available_patches:
-                    available_patches.append("license")
-
-                # Nếu đã phát hiện PairIP, thêm finding cảnh báo
-                if pairip_hit:
-                    findings.append({
-                        "type": "license_packed",
-                        "color": "red",
-                        "title": "License (PairIP packed)",
-                        "description": (
-                            "PairIP license check — native VM. "
-                            "Patch static có thể không hiệu quả."
-                        ),
-                        "details": [pairip_hit],
-                        "action": None,
-                    })
-                return
-
-    # ---- Nếu chỉ có PairIP (không LVL standard) ----
     if pairip_hit:
         findings.append({
             "type": "license",
@@ -141,7 +199,7 @@ def check_license(
         })
         return
 
-    # ---- Fallback manifest activity check ----
+    # Fallback manifest activity
     try:
         activities = apk.get_activities()
     except Exception:

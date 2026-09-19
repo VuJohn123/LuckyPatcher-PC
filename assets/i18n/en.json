@@ -1,0 +1,64 @@
+{
+  "main_window": {
+    "title": "LP-PC Suite v4 – Professional Modding Tool"
+  },
+  "sidebar": {
+    "logo": "🛠 LP-PC Suite",
+    "apps": "📱  Installed Apps",
+    "detail": "🔍  APK Detail",
+    "tools": "⚙️  Tools",
+    "version": "v4.0.0"
+  },
+  "toolbar": {
+    "search_placeholder": "🔍  Search apps...",
+    "filter_all": "All",
+    "filter_license": "License check",
+    "filter_ads": "Ads",
+    "filter_custom": "Custom patch",
+    "filter_system": "System",
+    "browse": "📁  Browse APK",
+    "download": "📥  Download APK",
+    "workspace": "📂  Workspace",
+    "reload": "🔄  Reload",
+    "toolbox": "🧰  Toolbox"
+  },
+  "status": {
+    "ready": "Ready",
+    "loaded": "Loaded: {name}",
+    "completed": "Completed: {output}",
+    "failed": "Patch failed",
+    "loaded_apps": "Loaded {count} apps from device",
+    "loaded_demo": "Loaded {count} demo apps (no ADB device)"
+  },
+  "log_panel": {
+    "title": "📋  Activity log",
+    "clear": "Clear",
+    "expand_tooltip": "Expand / collapse log"
+  },
+  "detail": {
+    "back": "←  Back",
+    "rebuild_btn": "🔨 Create Modified APK (Rebuild)",
+    "menu_btn": "📋 Menu of Patches",
+    "features_title": "🔍 Detected Features",
+    "quick_actions": "🛠 Quick Actions"
+  },
+  "dialog": {
+    "warning_title": "⚠️ Safety warning",
+    "continue": "Continue",
+    "stop": "Stop",
+    "cancel": "Cancel",
+    "ok": "OK",
+    "close": "Close"
+  },
+  "switches": {
+    "billing": "💰 Billing",
+    "proxy": "🌐 Proxy",
+    "autorepeat": "🔄 Auto-repeat",
+    "save": "💾 Save",
+    "reset": "♻️ Reset",
+    "billing_tip": "Toggle Google Billing emulation",
+    "proxy_tip": "Toggle local IAP proxy",
+    "autorepeat_tip": "Auto-replay saved IAP transactions",
+    "save_tip": "Save IAP transactions for later restore"
+  }
+}

@@ -12,8 +12,8 @@ if _SRC_DIR not in sys.path:
 
 
 # =============================================================
-# UTILITIES: UTF-8 + LOG SILENCE
-# Gọi TRƯỚC mọi import khác (ui.* có thể import androguard)
+# UTILITIES: UTF-8 + LOG SILENCE + DPI
+# Gọi TRƯỚC mọi import khác
 # =============================================================
 def _ensure_utf8_console() -> None:
     """Windows cmd.exe cp1252 → UTF-8."""
@@ -39,7 +39,6 @@ def _silence_androguard() -> None:
     ):
         return
 
-    # Loguru (androguard 4.x)
     try:
         from loguru import logger as _loguru
         _loguru.disable("androguard")
@@ -48,7 +47,6 @@ def _silence_androguard() -> None:
     except Exception:
         pass
 
-    # Stdlib fallback
     for name in list(logging.root.manager.loggerDict.keys()):
         if name == "androguard" or name.startswith("androguard."):
             lg = logging.getLogger(name)
@@ -71,13 +69,34 @@ def _silence_noisy_libs() -> None:
         logging.getLogger(noisy).setLevel(level)
 
 
+def _setup_high_dpi() -> None:
+    """
+    High-DPI hints TRƯỚC QApplication.
+
+    PyQt6 tự enable AA_EnableHighDpiScaling. Chúng ta chỉ cần set
+    rounding policy + env var cho phép scale 125%/150% Windows.
+    """
+    os.environ.setdefault("QT_ENABLE_HIGHDPI_SCALING", "1")
+    os.environ.setdefault("QT_SCALE_FACTOR_ROUNDING_POLICY", "PassThrough")
+
+    # App-level attribute (nếu chưa tạo QApplication)
+    try:
+        from PyQt6.QtCore import Qt
+        from PyQt6.QtGui import QGuiApplication
+        QGuiApplication.setHighDpiScaleFactorRoundingPolicy(
+            Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
+        )
+    except Exception:
+        pass
+
+
 def _setup_environment() -> None:
     _ensure_utf8_console()
     _silence_androguard()
     _silence_noisy_libs()
 
 
-# Gọi ngay khi module load — trước mọi import Qt/ui
+# Gọi ngay khi module load
 _setup_environment()
 
 
@@ -95,19 +114,15 @@ def setup_logging() -> None:
         format="%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
         datefmt="%H:%M:%S",
     )
-
-    # Silence qua helper (loguru + stdlib)
     _silence_androguard()
     _silence_noisy_libs()
 
 
 class _UpdaterBridge(QObject):
-    """Bridge: worker thread → Qt main thread."""
     update_available = pyqtSignal(object)
 
 
 def _check_for_updates(bridge: _UpdaterBridge, window: MainWindow) -> None:
-    """Chạy sau khi GUI hiện — non-blocking."""
     from core.github_updater import GitHubUpdater
 
     def _on_result(info):
@@ -117,7 +132,6 @@ def _check_for_updates(bridge: _UpdaterBridge, window: MainWindow) -> None:
 
 
 def _show_update_dialog(window: MainWindow, info) -> None:
-    """Slot chạy trên main thread."""
     if info is None:
         return
     from PyQt6.QtWidgets import QMessageBox
@@ -126,7 +140,7 @@ def _show_update_dialog(window: MainWindow, info) -> None:
 
     msg = QMessageBox(window)
     msg.setWindowTitle("🎉 Có bản cập nhật mới")
-    msg.setTextFormat(0x0004)  # RichText
+    msg.setTextFormat(0x0004)
     msg.setText(info.to_html())
     msg.setStandardButtons(
         QMessageBox.StandardButton.Open | QMessageBox.StandardButton.Close
@@ -140,6 +154,7 @@ def _show_update_dialog(window: MainWindow, info) -> None:
 
 def main() -> int:
     _setup_environment()
+    _setup_high_dpi()
     setup_logging()
 
     print(f"[i] Regex engine: {RE_ENGINE}")
