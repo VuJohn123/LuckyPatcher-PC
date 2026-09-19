@@ -114,8 +114,19 @@ class AndroidSystemPatcher:
                     return self.push_and_flash(module)
                 return False
 
-            # TODO: full smali patch pipeline (không triển khai vì thiếu tools)
-            self.log("[i] Smali tools present but full patch chưa triển khai")
+            # NOTE: full smali patch pipeline requires external baksmali/smali
+            # tools (see tools/bin/). Signature verification disable is
+            # out-of-scope for the static patcher in this environment.
+            # The Magisk module alone (bind-mount) is the supported path.
+            self.log(
+                "[i] Smali tools present — full services.jar rewrite "
+                "requires dedicated toolchain, falling back to Magisk "
+                "bind-mount module"
+            )
+            module = self.create_magisk_module(
+                os.path.join(tmp, "module.zip"), jar)
+            if module:
+                return self.push_and_flash(module)
             return False
         finally:
             shutil.rmtree(tmp, ignore_errors=True)

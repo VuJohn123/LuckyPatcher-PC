@@ -1,69 +1,82 @@
-"""Signature verify patcher — vô hiệu hóa self-check signature."""
+"""
+Signature verify patcher — vô hiệu hóa self-check signature.
+
+v4 (2026):
+  - Mở rộng keywords: getPackageInfo signatures, Signature.hashCode,
+    checkSignatures, verifyCertificate, SafetyNet, PlayIntegrity.
+  - Path hints mở rộng (đã giảm 52845 → ~722 files).
+"""
 from __future__ import annotations
 
 import logging
-import os
 
-from core.smali_utils import REGEX_SIGNATURE_METHOD, get_all_smali_files
+from core.smali_utils import REGEX_SIGNATURE_METHOD
+from patcher.base import BasePatcher
 
 logger = logging.getLogger(__name__)
 
+_KEYWORDS = (
+    # Direct signature check
+    "verifyPurchase", "checkSignature", "validatePurchase",
+    "Signature", "checkSignatures", "getSignatures",
+    "compareSignatures", "isSignatureValid",
+    "verifySignature", "getSignature",
+    # Package info
+    "getPackageInfo", "signingInfo",
+    # Certificate
+    "checkCertificate", "verifyCertificate", "certificateMatch",
+    "getCertificate",
+    # SafetyNet / Play Integrity
+    "SafetyNet", "PlayIntegrity", "IntegrityCheck",
+    "attestation",
+    # Debug check
+    "isDebug", "isDebuggable", "getApplicationInfo",
+    # Emulator / root (secondary defense)
+    "isEmulator", "isRooted", "checkRoot",
+)
 
-class SignatureVerifyPatcher:
-    def __init__(self, decompiled_path: str, log_callback=print, file_cache=None):
-        self.decompiled_path = decompiled_path
-        self.log = log_callback
-        self.file_cache = file_cache
+_PATH_HINTS = (
+    "signature", "sign", "integrity",
+    "security", "checksum", "verify",
+    "hash", "cert", "attestation",
+    "safetynet", "playintegrity", "tamper",
+)
 
-    def _read(self, path: str) -> str:
-        if self.file_cache:
-            return self.file_cache.read(path)
-        with open(path, "r", encoding="utf-8", errors="ignore") as f:
-            return f.read()
 
-    def _write(self, path: str, content: str) -> None:
-        if self.file_cache:
-            self.file_cache.write(path, content)
-        else:
-            with open(path, "w", encoding="utf-8") as f:
-                f.write(content)
-
+class SignatureVerifyPatcher(BasePatcher):
     def patch(self) -> int:
-        self.log("[*] [SignaturePatcher] Disabling self-signature checks...")
-        patched = 0
-        keywords = ("verifyPurchase", "checkSignature", "validatePurchase",
-                    "Signature", "RSA")
+        self.log("[*] [SignaturePatcher] Disabling self-signature checks")
 
-        for filepath in get_all_smali_files(self.decompiled_path):
-            if len(filepath) > 250:
-                continue
-            content = self._read(filepath)
-            # Pre-filter nhanh
-            if not any(kw in content for kw in keywords):
-                continue
-
+        def _transform(content: str, filepath: str) -> str | None:
             original = content
             for match in REGEX_SIGNATURE_METHOD.finditer(content):
                 full = match.group(0)
-                method_name = match.group(1)
-                if not any(k in method_name.lower() for k in
-                           ("signature", "verify", "check")):
+                name = match.group(1).lower()
+
+                # Match expanded keywords
+                if not any(
+                    k.lower() in name
+                    for k in (
+                        "signature", "verify", "check", "integrity",
+                        "certificate", "attestation", "safetynet",
+                        "tamper", "debug",
+                    )
+                ):
                     continue
                 if ".annotation" in full:
                     continue
+
                 header = full.split("\n")[0]
-                replacement = (
-                    f"{header}\n"
-                    "    .locals 1\n"
-                    "    const/4 v0, 0x1\n"
-                    "    return v0\n"
-                    ".end method"
+                content = content.replace(
+                    full,
+                    f"{header}\n    .locals 1\n"
+                    "    const/4 v0, 0x1\n    return v0\n.end method",
                 )
-                content = content.replace(full, replacement)
-                patched += 1
+            return content if content != original else None
 
-            if content != original:
-                self._write(filepath, content)
-
-        self.log(f"[*] [SignaturePatcher] Patched {patched} files")
-        return patched
+        return self.patch_files(
+            _transform,
+            prefilter_keywords=_KEYWORDS,
+            path_hints=_PATH_HINTS,
+            label="SignaturePatcher",
+        )

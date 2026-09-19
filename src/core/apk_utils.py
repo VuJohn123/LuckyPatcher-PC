@@ -1,15 +1,55 @@
-"""Tiện ích xử lý APK — decompile, recompile, sign, verify, merge split."""
+"""
+APK utilities — public API for decompile/recompile/sign/verify/merge.
+
+Internal helpers đã tách:
+  - core/subprocess_runner  : java subprocess + watchdog
+  - core/fs_utils           : junction/robocopy/safe copy
+  - core/archive_utils      : 7z/zip archive
+  - core/cache_manager      : decompiled cache dispatcher
+
+v2 fixes:
+  - Import `_run_java_with_heartbeat` alias (missing re-export bug).
+  - Import `_decide_cache_format`, `_cache_save`, `_cache_load` aliases.
+"""
 from __future__ import annotations
 
-import hashlib
 import logging
 import os
 import shutil
-import subprocess
-import threading
-import time
 import zipfile
-from typing import Callable
+
+from core.subprocess_runner import (
+    run_java_with_heartbeat,
+    run_java_with_heartbeat as _run_java_with_heartbeat,
+)
+from core.cache_manager import (
+    cache_load,
+    cache_save,
+    cache_is_valid,
+    cache_mtime,
+    decide_cache_format as _decide_cache_format,
+    cache_save as _cache_save,
+    cache_load as _cache_load,
+    get_apk_hash,
+    get_cache_dir,
+)
+
+# Backward compat re-exports — tests + callers import trực tiếp từ apk_utils
+from core.fs_utils import (
+    remove_dst as _remove_dst,
+    is_link_to as _is_link_to,
+    try_link as _try_link,
+    safe_copytree as _safe_copytree,
+    has_robocopy as _find_robocopy,
+    robocopy_copy as _robocopy_copy,
+)
+from core.archive_utils import (
+    find_7zip as _find_7zip,
+    archive_via_7z as _archive_via_7z,
+    extract_via_7z as _extract_via_7z,
+    archive_via_python as _archive_via_python,
+    extract_via_python as _extract_via_python,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -18,247 +58,6 @@ _PROJECT_ROOT = os.path.dirname(
 )
 TOOLS_DIR = os.path.join(_PROJECT_ROOT, "tools")
 NAILGUN = shutil.which("ng")
-
-# Fail tolerance cho copytree (5% file fail → cache considered broken)
-_COPY_FAIL_TOLERANCE = 0.05
-
-# Disk threshold riêng cho READ vs WRITE
-_DISK_MIN_READ_PCT = 3.0    # cache LOAD chỉ cần đọc
-_DISK_MIN_WRITE_PCT = 15.0  # cache SAVE cần không gian
-
-
-# ============================================================
-# JAVA SUBPROCESS WITH STREAMING + HEARTBEAT
-# ============================================================
-def _run_java_with_heartbeat(
-    cmd: list[str],
-    log_callback: Callable[[str], None],
-    label: str,
-    timeout_sec: int = 1800,
-    heartbeat_sec: int = 10,
-) -> tuple[int, str]:
-    """Chạy Java subprocess với streaming output + heartbeat."""
-    start = time.monotonic()
-    log_callback(f"[*] [{label}] Starting...")
-
-    try:
-        proc = subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            bufsize=1,
-            encoding="utf-8",
-            errors="replace",
-        )
-    except OSError as e:
-        log_callback(f"[!] [{label}] Không chạy được: {e}")
-        return -1, ""
-
-    stop_hb = threading.Event()
-    output_lines: list[str] = []
-    killed = {"flag": False}
-
-    def _heartbeat():
-        while not stop_hb.wait(heartbeat_sec):
-            elapsed = time.monotonic() - start
-            log_callback(f"[i] [{label}] vẫn đang chạy... ({elapsed:.0f}s)")
-            if elapsed > timeout_sec:
-                log_callback(f"[!] [{label}] Timeout {timeout_sec}s — kill")
-                killed["flag"] = True
-                try:
-                    proc.kill()
-                except OSError:
-                    pass
-                return
-
-    def _stream():
-        try:
-            if proc.stdout:
-                for line in proc.stdout:
-                    s = line.rstrip()
-                    if s:
-                        log_callback(f"    {s}")
-                        output_lines.append(s)
-                        if len(output_lines) > 300:
-                            output_lines.pop(0)
-        except Exception:
-            pass
-
-    hb_thread = threading.Thread(target=_heartbeat, daemon=True)
-    stream_thread = threading.Thread(target=_stream, daemon=True)
-    hb_thread.start()
-    stream_thread.start()
-
-    try:
-        rc = proc.wait(timeout=timeout_sec)
-    except subprocess.TimeoutExpired:
-        killed["flag"] = True
-        try:
-            proc.kill()
-        except OSError:
-            pass
-        rc = -1
-
-    stop_hb.set()
-    stream_thread.join(timeout=3)
-
-    elapsed = time.monotonic() - start
-    if killed["flag"]:
-        log_callback(f"[!] [{label}] Killed sau {elapsed:.1f}s")
-    else:
-        log_callback(f"[*] [{label}] Xong trong {elapsed:.1f}s (rc={rc})")
-
-    return rc, "\n".join(output_lines)
-
-
-# ============================================================
-# SYMLINK / JUNCTION FAST PATH
-# ============================================================
-def _try_link(src: str, dst: str) -> bool:
-    """
-    Thử tạo symlink/junction thay vì copy → gần như tức thời.
-    Windows: junction (mklink /J) — không cần admin.
-    Unix: os.symlink.
-    Trả True nếu thành công.
-    """
-    # Cleanup dst
-    try:
-        if os.path.islink(dst) or os.path.isfile(dst):
-            os.remove(dst)
-        elif os.path.isdir(dst):
-            shutil.rmtree(dst, ignore_errors=True)
-    except OSError:
-        return False
-
-    try:
-        if os.name == "nt":
-            result = subprocess.run(
-                ["cmd", "/c", "mklink", "/J", dst, src],
-                capture_output=True, text=True, timeout=10,
-            )
-            return result.returncode == 0
-        else:
-            os.symlink(src, dst, target_is_directory=True)
-            return True
-    except (OSError, subprocess.SubprocessError):
-        return False
-
-
-# ============================================================
-# SAFE COPYTREE — mode read/write + verify count
-# ============================================================
-def _safe_copytree(
-    src: str,
-    dst: str,
-    log_callback: Callable[[str], None],
-    label: str = "Cache",
-    heartbeat_sec: int = 15,
-    mode: str = "write",          # "read" (cache load) | "write" (cache save)
-    fail_tolerance: float = _COPY_FAIL_TOLERANCE,
-) -> bool:
-    """
-    Copy tree với:
-      - mode=read: thử symlink/junction trước (near-instant)
-      - disk check theo mode (read=3%, write=15%)
-      - verify count: fail nếu >fail_tolerance file fail
-
-    Trả True nếu OK (hoặc link thành công). Raise RuntimeError nếu
-    fail quá nhiều.
-    """
-    # ---- mode=read: fast path link ----
-    if mode == "read":
-        if _try_link(src, dst):
-            log_callback(f"[✔] [{label}] Linked (junction/symlink) — no disk cost")
-            return True
-        # Fallback to copy
-
-    # ---- Disk check theo mode ----
-    min_pct = _DISK_MIN_READ_PCT if mode == "read" else _DISK_MIN_WRITE_PCT
-    try:
-        usage = shutil.disk_usage(os.path.dirname(dst) or dst)
-        free_pct = usage.free * 100 / usage.total
-        if free_pct < min_pct:
-            log_callback(
-                f"[i] [{label}] Disk còn {free_pct:.1f}% (<{min_pct}%) "
-                f"— skip {mode}"
-            )
-            return False
-    except OSError:
-        pass
-
-    # ---- Count files ----
-    try:
-        total = sum(len(files) for _, _, files in os.walk(src))
-        log_callback(f"[*] [{label}] Copy {total} files → {dst}")
-    except OSError:
-        total = 0
-
-    # ---- Cleanup dst ----
-    if os.path.exists(dst):
-        shutil.rmtree(dst, ignore_errors=True)
-
-    # ---- Copy with heartbeat + per-file verify ----
-    start = time.monotonic()
-    stop_hb = threading.Event()
-
-    def _heartbeat():
-        while not stop_hb.wait(heartbeat_sec):
-            elapsed = time.monotonic() - start
-            log_callback(f"[i] [{label}] vẫn đang copy... ({elapsed:.0f}s)")
-
-    hb = threading.Thread(target=_heartbeat, daemon=True)
-    hb.start()
-
-    copied = 0
-    failed = 0
-    failed_samples: list[str] = []
-
-    try:
-        for root, dirs, files in os.walk(src):
-            rel = os.path.relpath(root, src)
-            target_root = dst if rel == "." else os.path.join(dst, rel)
-            try:
-                os.makedirs(target_root, exist_ok=True)
-            except OSError as e:
-                log_callback(f"[!] [{label}] makedirs {target_root}: {e}")
-                failed += len(files)
-                continue
-            for f in files:
-                s = os.path.join(root, f)
-                t = os.path.join(target_root, f)
-                try:
-                    shutil.copy2(s, t)
-                    copied += 1
-                except (OSError, shutil.Error) as e:
-                    failed += 1
-                    if len(failed_samples) < 3:
-                        failed_samples.append(f"{f}: {e}")
-    finally:
-        stop_hb.set()
-        hb.join(timeout=3)
-
-    elapsed = time.monotonic() - start
-    grand = copied + failed
-    fail_ratio = failed / grand if grand else 0.0
-
-    for sample in failed_samples:
-        log_callback(f"[i] [{label}] skip: {sample}")
-
-    if failed > 0:
-        log_callback(
-            f"[!] [{label}] {failed}/{grand} file fail "
-            f"({fail_ratio*100:.2f}%) sau {elapsed:.1f}s"
-        )
-
-    if fail_ratio > fail_tolerance:
-        raise RuntimeError(
-            f"[{label}] Copy fail ratio {fail_ratio*100:.2f}% > "
-            f"{fail_tolerance*100:.0f}% — cache sẽ bị corrupt, bỏ."
-        )
-
-    log_callback(f"[✔] [{label}] Copied {copied}/{grand} in {elapsed:.1f}s")
-    return True
 
 
 # ============================================================
@@ -271,25 +70,6 @@ def get_tool_path(name: str) -> str:
     return os.path.join(TOOLS_DIR, name)
 
 
-# ============================================================
-# HASHING / CACHE
-# ============================================================
-def get_apk_hash(apk_path: str) -> str:
-    hasher = hashlib.md5()
-    with open(apk_path, "rb") as f:
-        for chunk in iter(lambda: f.read(4096), b""):
-            hasher.update(chunk)
-    return hasher.hexdigest()
-
-
-def get_cache_dir(apk_path: str, base_cache_dir: str | None = None) -> str:
-    if base_cache_dir is None:
-        base_cache_dir = os.path.join(_PROJECT_ROOT, "workspace", "cache")
-    cache_dir = os.path.join(base_cache_dir, get_apk_hash(apk_path))
-    os.makedirs(cache_dir, exist_ok=True)
-    return cache_dir
-
-
 def _java_cmd(jar_name: str, memory: str = "4096m") -> list[str]:
     jar = get_tool_path(jar_name)
     if NAILGUN:
@@ -298,7 +78,7 @@ def _java_cmd(jar_name: str, memory: str = "4096m") -> list[str]:
 
 
 # ============================================================
-# DECOMPILE — cache TTL + heartbeat
+# DECOMPILE
 # ============================================================
 def decompile_apk(
     apk_path: str,
@@ -312,35 +92,25 @@ def decompile_apk(
     use_cache: bool = True,
     cache_ttl_days: int = 7,
 ) -> str:
+    import time
+
     if jobs is None:
         jobs = max(1, (os.cpu_count() or 4) - 1)
 
-    # ---------------- Cache lookup ----------------
     if use_cache and not force:
         cache_dir = get_cache_dir(apk_path)
-        cached_yml = os.path.join(cache_dir, "apktool.yml")
-        if os.path.exists(cached_yml):
-            age_days = (
-                time.time() - os.path.getmtime(cached_yml)
-            ) / 86400
+        if cache_is_valid(cache_dir):
+            age_days = (time.time() - cache_mtime(cache_dir)) / 86400
             if age_days <= cache_ttl_days:
                 log_callback(
                     f"[*] Cache hit (age {age_days:.1f}d ≤ "
                     f"{cache_ttl_days}d) — dùng cache"
                 )
                 try:
-                    ok = _safe_copytree(
-                        cache_dir, output_dir,
-                        log_callback=log_callback,
-                        label="Cache load",
-                        heartbeat_sec=15,
-                        mode="read",         # ← FIX: cho phép link/read
-                    )
+                    ok = cache_load(cache_dir, output_dir, log_callback)
                     if ok:
                         return output_dir
-                    log_callback(
-                        "[i] Cache load skip — decompile lại từ đầu"
-                    )
+                    log_callback("[i] Cache load skip — decompile lại")
                 except RuntimeError as e:
                     log_callback(f"[!] Cache corrupt: {e} — decompile lại")
             else:
@@ -362,48 +132,40 @@ def decompile_apk(
             f"jobs={current_jobs}, no_res={use_no_res}"
         )
 
-        rc, _ = _run_java_with_heartbeat(
+        rc, _ = run_java_with_heartbeat(
             cmd,
             log_callback=log_callback,
             label="Apktool",
             timeout_sec=1800,
-            heartbeat_sec=10,
+            heartbeat_sec=30,
         )
 
         if rc == 0:
             if use_cache:
-                _safe_save_cache(output_dir, apk_path, log_callback)
+                try:
+                    cache_save(
+                        output_dir,
+                        get_cache_dir(apk_path),
+                        log_callback,
+                    )
+                except Exception as e:
+                    log_callback(f"[i] [Cache] Save failed: {e}")
             return output_dir
+
+        _remove_dst(output_dir)
 
         if attempt == 0:
             use_no_res = True
         elif attempt == 1:
             current_jobs, current_mem = 1, "8192m"
 
-    raise RuntimeError(f"Decompile failed after {max_retries + 1} attempts")
-
-
-def _safe_save_cache(
-    output_dir: str, apk_path: str, log_callback
-) -> None:
-    """Lưu decompiled vào cache. Verify count — không silent partial."""
-    try:
-        cache_dir = get_cache_dir(apk_path)
-        _safe_copytree(
-            output_dir, cache_dir,
-            log_callback=log_callback,
-            label="Cache save",
-            heartbeat_sec=15,
-            mode="write",
-        )
-    except RuntimeError as e:
-        log_callback(f"[!] [Cache] Save aborted (partial fail): {e}")
-    except Exception as e:
-        log_callback(f"[i] [Cache] Disabled: {e}")
+    raise RuntimeError(
+        f"Decompile failed after {max_retries + 1} attempts"
+    )
 
 
 # ============================================================
-# RECOMPILE — verify + fallback
+# RECOMPILE
 # ============================================================
 def recompile_apk(
     decompiled_path: str,
@@ -425,12 +187,12 @@ def recompile_apk(
 
         log_callback(f"[*] [Apktool] Recompile attempt {attempt + 1}")
 
-        rc, _ = _run_java_with_heartbeat(
+        rc, _ = run_java_with_heartbeat(
             cmd,
             log_callback=log_callback,
             label="Apktool Recompile",
             timeout_sec=1800,
-            heartbeat_sec=10,
+            heartbeat_sec=30,
         )
 
         if rc == 0:
@@ -454,7 +216,6 @@ def _verify_recompiled_apk(
     log_callback,
     input_apk_for_delta: str | None = None,
 ) -> None:
-    """Verify APK output sau recompile (ZIP + manifest + dex + size delta)."""
     if not os.path.exists(apk_path):
         raise RuntimeError(f"Output APK không tồn tại: {apk_path}")
 
@@ -515,12 +276,12 @@ def sign_apk(
         cmd = _java_cmd("uber-apk-signer.jar")
         cmd += ["--apks", apk_path]
 
-        rc, _ = _run_java_with_heartbeat(
+        rc, _ = run_java_with_heartbeat(
             cmd,
             log_callback=log_callback,
             label="Signer",
             timeout_sec=600,
-            heartbeat_sec=10,
+            heartbeat_sec=30,
         )
         if rc != 0:
             raise RuntimeError(f"Signing failed (rc={rc})")
@@ -536,7 +297,6 @@ def sign_apk(
 
 
 def _verify_signed_apk(apk_path: str, log_callback) -> None:
-    """Verify APK có META-INF signature entries (v1)."""
     if not os.path.exists(apk_path):
         raise RuntimeError(f"Signed APK không tồn tại: {apk_path}")
 
@@ -554,8 +314,7 @@ def _verify_signed_apk(apk_path: str, log_callback) -> None:
 
     if not has_v1:
         log_callback(
-            "[!] [Verify] Không thấy v1 signature trong META-INF/ "
-            "(có thể chỉ có v2/v3 — vẫn OK)"
+            "[!] [Verify] Không thấy v1 signature trong META-INF/"
         )
     else:
         log_callback("[✔] [Verify] Signature present (v1 scheme)")
@@ -594,3 +353,19 @@ def merge_split_apks(input_dir: str, output_apk: str, log_callback=print) -> str
 
     log_callback(f"[*] Merged {len(apk_files)} split APKs → {output_apk}")
     return output_apk
+
+
+# ============================================================
+# RE-EXPORT (backward compat)
+# ============================================================
+__all__ = [
+    # Public API
+    "decompile_apk", "recompile_apk", "sign_apk", "merge_split_apks",
+    "get_tool_path", "get_apk_hash", "get_cache_dir",
+    # Private (tests import trực tiếp)
+    "_safe_copytree", "_find_7zip", "_archive_via_7z",
+    "_extract_via_7z", "_archive_via_python", "_extract_via_python",
+    "_cache_save", "_cache_load", "_decide_cache_format",
+    "_run_java_with_heartbeat", "_remove_dst", "_try_link",
+    "_is_link_to", "_robocopy_copy", "_find_robocopy",
+]

@@ -10,6 +10,8 @@ logger = logging.getLogger(__name__)
 _ROOT_KEYWORDS = (
     "root", "magisk", "supersu", "busybox",
     "isdevicerooted", "checkroot",
+    "xposed", "lsposed", "zygisk",     # ← thêm
+    "frida",                            # ← anti-debug
 )
 
 # FIX: Thêm cả slash variant vì class name trong DEX dùng '/' (Lcom/chelpu/...)

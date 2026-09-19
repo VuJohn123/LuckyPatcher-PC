@@ -10,12 +10,39 @@ v2 fixes:
   - --no-safety CLI flag
   - Windows console UTF-8 reconfigure (fix cp1252 UnicodeEncodeError)
   - Silence androguard (loguru) — giảm noise log
+
+v3 fixes:
+  - Log App name + Package name (dễ đọc hơn)
+  - Output folder theo package name (workspace/output/<pkg>/)
+  - Cảnh báo packer không patchable (PairIP, 360, Tencent, ...)
+
+v3.1 fixes (test regression):
+  - _sanitize_folder_name: type-check isinstance(str) — fix MagicMock
+  - summary.get() trả MagicMock trong test → coerce về str
+
+v3.2 fixes (adaptive integration):
+  - Resolve strategy từ workload_classes (fast/balanced/careful/paranoid)
+  - Stage-level metrics: decompile / patch / recompile / sign / install
+  - _StageTimer context manager
+
+v3.3 fixes (trace_id integration):
+  - Correlation ID xuyên pipeline qua contextvars
+  - `trace_context()` wrap toàn bộ run_pipeline
+  - Metrics + patch_history entries include `trace_id`
+  - Thread pool tasks propagate qua `submit_with_context`
+
+v3.4 fixes (output naming + cleanup):
+  - Rename final APK → {package}.{Patch1}.{Patch2}.apk
+  - Cleanup intermediate files (patched.apk, -aligned-debugSigned.apk)
+  - Progress bar cho apktool recompile (parse stdout)
 """
 from __future__ import annotations
 
 import argparse
 import gc
+import logging
 import os
+import re
 import shutil
 import sys
 import time
@@ -24,16 +51,20 @@ from pathlib import Path
 
 from core.pipeline_helpers import normalize_input, setup_logging
 from core.config import load_config
+from core.trace_context import (
+    get_trace_id,
+    trace_context,
+)
+from core.output_namer import build_output_filename
+
+logger = logging.getLogger(__name__)
 
 
 # =============================================================
 # UTILITIES: UTF-8 + LOG SILENCE
 # =============================================================
 def _ensure_utf8_console() -> None:
-    """
-    Windows cmd.exe mặc định cp1252 → crash khi log tiếng Việt.
-    Reconfigure stdout/stderr sang UTF-8 (Python 3.7+).
-    """
+    """Windows cmd.exe cp1252 → UTF-8."""
     if sys.platform != "win32":
         return
     for stream_name in ("stdout", "stderr"):
@@ -50,22 +81,12 @@ def _ensure_utf8_console() -> None:
 
 
 def _silence_androguard() -> None:
-    """
-    Silence androguard logs.
-
-    Androguard dùng **loguru** (không phải stdlib logging), nên
-    `logging.getLogger("androguard")` không ăn. Phải dùng loguru API.
-
-    Override: set LP_ANDROGUARD_LOG=1 để giữ log (debug).
-    """
-    import logging
-
+    """Silence androguard logs (loguru + stdlib fallback)."""
     if os.environ.get("LP_ANDROGUARD_LOG", "").strip().lower() in (
         "1", "true", "yes", "on"
     ):
         return
 
-    # ---- 1. Loguru (androguard 4.x) ----
     try:
         from loguru import logger as _loguru
         _loguru.disable("androguard")
@@ -74,7 +95,6 @@ def _silence_androguard() -> None:
     except Exception:
         pass
 
-    # ---- 2. Stdlib fallback (androguard version cũ, InterceptHandler) ----
     for name in list(logging.root.manager.loggerDict.keys()):
         if name == "androguard" or name.startswith("androguard."):
             lg = logging.getLogger(name)
@@ -82,15 +102,12 @@ def _silence_androguard() -> None:
             lg.propagate = False
             lg.disabled = True
 
-    # Đảm bảo logger chưa tồn tại cũng bị chặn
     _ag = logging.getLogger("androguard")
     _ag.setLevel(logging.CRITICAL)
     _ag.propagate = False
 
 
 def _silence_noisy_libs() -> None:
-    """Silence các lib ồn ào (stdlib logging)."""
-    import logging
     for noisy, level in (
         ("urllib3", logging.WARNING),
         ("requests", logging.WARNING),
@@ -102,19 +119,36 @@ def _silence_noisy_libs() -> None:
 
 
 def _setup_environment() -> None:
-    """Gọi 1 lần ở entry point — trước mọi print/import nặng."""
     _ensure_utf8_console()
     _silence_androguard()
     _silence_noisy_libs()
 
 
-# Gọi ở module level — belt-and-suspenders cho trường hợp bị import
 _setup_environment()
 
 
 # =============================================================
 # HELPERS
 # =============================================================
+_FOLDER_NAME_RE = re.compile(r"[^\w.\-]")
+
+
+def _sanitize_folder_name(s) -> str:
+    """
+    Sanitize tên folder. Chỉ chấp nhận str; các type khác (MagicMock
+    trong test, None, number) → fallback "unknown".
+    """
+    if not isinstance(s, str) or not s:
+        return "unknown"
+    cleaned = _FOLDER_NAME_RE.sub("_", s).strip("._")
+    return cleaned[:100] or "unknown"
+
+
+def _coerce_str(v) -> str:
+    """Coerce value về str, non-str → empty."""
+    return v if isinstance(v, str) else ""
+
+
 def _emit_step(signals, name: str, pct: int, log_callback) -> None:
     if signals:
         try:
@@ -122,6 +156,43 @@ def _emit_step(signals, name: str, pct: int, log_callback) -> None:
         except Exception:
             pass
     log_callback(f"[*] [{pct:3d}%] {name}")
+
+
+def _cleanup_intermediates(
+    output_dir: str,
+    keep: str,
+    log_callback=print,
+) -> None:
+    """
+    Xóa intermediate APK files sau khi sign + rename.
+
+    Intermediates thường gặp:
+      - patched.apk                      (apktool output)
+      - patched-aligned.apk              (zipalign output)
+      - patched-aligned-debugSigned.apk  (uber-apk-signer output)
+      - *.apk.tmp                        (partial writes)
+
+    Chỉ giữ lại file trong `keep` (final renamed APK).
+    """
+    try:
+        keep_abs = os.path.abspath(keep)
+        removed_count = 0
+        for name in os.listdir(output_dir):
+            if not (name.endswith(".apk") or name.endswith(".apk.tmp")):
+                continue
+            full = os.path.join(output_dir, name)
+            if os.path.abspath(full) == keep_abs:
+                continue
+            try:
+                os.remove(full)
+                log_callback(f"[i] [Cleanup] Đã xóa {name}")
+                removed_count += 1
+            except OSError as e:
+                logger.debug("Cleanup skip %s: %s", full, e)
+        if removed_count == 0:
+            logger.debug("Cleanup: no intermediates to remove")
+    except OSError as e:
+        logger.debug("Cleanup listdir failed: %s", e)
 
 
 def _record_metric(
@@ -132,6 +203,7 @@ def _record_metric(
     patches: int = 0,
     error: str = "",
 ) -> None:
+    """Record pipeline-level metric (toàn bộ lần chạy)."""
     try:
         from core.metrics import PatchMetrics, get_metrics
         get_metrics().record(PatchMetrics(
@@ -141,9 +213,121 @@ def _record_metric(
             duration_sec=duration,
             patches_applied=patches,
             error=error[:500],
+            stage="pipeline",
+            trace_id=get_trace_id(),
         ))
     except Exception:
         pass
+
+
+def _record_metric_stage(
+    apk_path: str,
+    mode: str,
+    stage: str,
+    duration: float,
+    success: bool = True,
+    error: str = "",
+) -> None:
+    """Record 1 stage timing vào metrics."""
+    try:
+        from core.metrics import get_metrics
+        get_metrics().record_stage(
+            apk_name=os.path.basename(apk_path) if apk_path else "",
+            mode=mode,
+            stage=stage,
+            duration_sec=duration,
+            success=success,
+            error=error[:500] if error else "",
+            trace_id=get_trace_id(),
+        )
+    except Exception:
+        pass
+
+
+class _StageTimer:
+    """
+    Context manager: đo thời gian 1 stage + auto record metric.
+    Không suppress exception — chỉ record rồi để nó propagate.
+    """
+
+    def __init__(self, apk_path: str, mode: str, stage: str,
+                 log_callback=None):
+        self.apk_path = apk_path
+        self.mode = mode
+        self.stage = stage
+        self.log = log_callback
+        self.t0 = 0.0
+
+    def __enter__(self):
+        self.t0 = time.monotonic()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        dt = time.monotonic() - self.t0
+        success = exc_type is None
+        err = str(exc_val) if exc_val else ""
+        _record_metric_stage(
+            self.apk_path, self.mode, self.stage, dt, success, err,
+        )
+        if self.log and not success:
+            self.log(
+                f"[!] [Stage:{self.stage}] failed after {dt:.1f}s: "
+                f"{err[:200]}"
+            )
+        return False  # không suppress
+
+
+# =============================================================
+# STRATEGY RESOLUTION
+# =============================================================
+_DEFAULT_STRATEGY_BY_SIZE = {
+    "tiny": "fast",
+    "small": "fast",
+    "medium": "balanced",
+    "large": "careful",
+    "huge": "careful",
+    "massive": "paranoid",
+}
+
+_SIZE_ORDER = ("tiny", "small", "medium", "large", "huge", "massive")
+
+
+def _resolve_strategy(config: dict, apk_path: str) -> tuple[str, str]:
+    """Resolve strategy dựa trên kích thước APK."""
+    try:
+        size_mb = os.path.getsize(apk_path) / 1024 / 1024
+    except OSError:
+        return "balanced", "unknown"
+
+    classes = (
+        config.get("auto_tune", {})
+        .get("workload_classes", {})
+    ) or {}
+
+    for name in _SIZE_ORDER:
+        cls = classes.get(name) or {}
+        max_mb = cls.get("max_size_mb", 99999)
+        if size_mb <= max_mb:
+            strategy = cls.get(
+                "strategy", _DEFAULT_STRATEGY_BY_SIZE.get(name, "balanced")
+            )
+            return strategy, name
+
+    return "balanced", "massive"
+
+
+def _apply_strategy(config: dict, apk_path: str, log_callback) -> str:
+    """Resolve strategy + set vào pipeline_executor. Return name."""
+    strategy, size_class = _resolve_strategy(config, apk_path)
+    try:
+        from core.pipeline_executor import set_strategy
+        set_strategy(strategy)
+    except Exception as e:
+        log_callback(f"[i] [Strategy] set_strategy failed: {e}")
+    log_callback(
+        f"[*] [Strategy] {strategy} (size_class={size_class})"
+    )
+    return strategy
 
 
 # =============================================================
@@ -278,17 +462,62 @@ def run_pipeline(
     config: dict | None = None,
     **kwargs,
 ) -> tuple[bool, str | None, dict]:
-    # Belt-and-suspenders: pipeline có thể gọi từ GUI/notebook
+    """
+    Pipeline chính. Wrap body trong trace_context để mọi log/metric/
+    history trong cùng 1 run có chung trace_id.
+    """
     _setup_environment()
 
     if config is None:
         config = load_config(apk_path=apk_path, mode=mode)
 
-    logger = setup_logging(config)
+    logger_inst = setup_logging(config)
     _log = log_callback
 
+    with trace_context() as trace_id:
+        return _run_pipeline_body(
+            apk_path=apk_path,
+            mode=mode,
+            _log=_log,
+            logger=logger_inst,
+            key_type=key_type,
+            forced_package_id=forced_package_id,
+            fast_mode=fast_mode,
+            use_gda=use_gda,
+            apktool_jobs=apktool_jobs,
+            apktool_memory=apktool_memory,
+            keep_workspace=keep_workspace,
+            clone_package=clone_package,
+            signals=signals,
+            force_reanalyze=force_reanalyze,
+            config=config,
+            trace_id=trace_id,
+        )
+
+
+def _run_pipeline_body(
+    *,
+    apk_path: str,
+    mode: str,
+    _log,
+    logger,
+    key_type: str,
+    forced_package_id: int | None,
+    fast_mode: bool | None,
+    use_gda: bool | None,
+    apktool_jobs: int | None,
+    apktool_memory: str | None,
+    keep_workspace: bool | None,
+    clone_package: str | None,
+    signals,
+    force_reanalyze: bool,
+    config: dict,
+    trace_id: str,
+) -> tuple[bool, str | None, dict]:
+    """Body thực sự của pipeline — chạy trong trace_context."""
     t0 = time.monotonic()
-    _log("[*] ========== LP-PC Suite — Pipeline Start ==========")
+
+    _log(f"[*] [tid:{trace_id}] ========== LP-PC Suite — Pipeline Start ==========")
     _log(f"[*] Input: {os.path.basename(apk_path)}")
 
     tune_info = config.get("_tune_result", {})
@@ -369,13 +598,57 @@ def run_pipeline(
     if keep_workspace is None:
         keep_workspace = pipe_cfg.get("keep_workspace", True)
 
-    # ---- Workspace ----
+    # ---- STRATEGY ----
+    strategy = _apply_strategy(config, apk_path, _log)
+
+    # ============================================================
+    # ANALYZE (trước workspace để lấy package name)
+    # ============================================================
+    _emit_step(signals, "Phân tích APK...", 10, _log)
+    app_name = ""
+    package_name = ""
+    with _StageTimer(apk_path, mode, "analyze", _log):
+        try:
+            from scanner.analyzer import AppDeepAnalyzer
+            analyzer = AppDeepAnalyzer(apk_path)
+            analyzer.analyze(force_reanalyze=force_reanalyze)
+            summary = analyzer.get_summary() or {}
+
+            app_name = _coerce_str(summary.get("app_name"))
+            package_name = _coerce_str(summary.get("package"))
+
+            if app_name:
+                _log(f"[*] App: {app_name}")
+            if package_name:
+                _log(f"[*] Package: {package_name}")
+            _log(f"[*] Analysis: {analyzer.get_colors()}")
+
+            # Cảnh báo packer không patchable
+            packer = getattr(analyzer, "packer_info", None)
+            if isinstance(packer, dict) and not packer.get("patchable", True):
+                _log(
+                    f"[!] Packer detected: {packer.get('name', '?')} "
+                    f"({packer.get('confidence', '?')} confidence) — "
+                    f"patch license/iap/ads có thể patch 0 files "
+                    f"(silent fail)"
+                )
+        except Exception as e:
+            _log(f"[i] Analysis failed (tiếp tục): {e}")
+            logger.warning("Analysis failed: %s", e)
+
+    # ============================================================
+    # WORKSPACE (package-based output folder)
+    # ============================================================
     base_dir = Path(__file__).resolve().parent.parent / "workspace"
     decompiled_dir = str(base_dir / "decompiled")
-    output_dir = str(base_dir / "output")
+    pkg_folder = _sanitize_folder_name(
+        package_name or Path(apk_path).stem
+    )
+    output_dir = str(base_dir / "output" / pkg_folder)
     base_dir.mkdir(parents=True, exist_ok=True)
     os.makedirs(decompiled_dir, exist_ok=True)
     os.makedirs(output_dir, exist_ok=True)
+    _log(f"[*] Output dir: {output_dir}")
 
     # ---- SafetyGuard ----
     guard = None
@@ -417,31 +690,20 @@ def run_pipeline(
         from core.patch_history import PatchHistory
         from patcher.watermarker import Watermarker
 
-        # ---- GDA ----
+        # ---- GDA (optional) ----
         if use_gda:
             _check_safety_abort(guard, _log)
             _emit_step(signals, "Phân tích GDA...", 5, _log)
-            try:
-                from scanner.gda_analyzer import GDAAnalyzer
-                GDAAnalyzer().analyze(apk_path)
-            except Exception as e:
-                _log(f"[i] [GDA] Bỏ qua: {e}")
-                logger.warning("GDA pre-analysis failed: %s", e)
-
-        # ---- Analyze ----
-        _check_safety_abort(guard, _log)
-        _emit_step(signals, "Phân tích APK...", 10, _log)
-        try:
-            from scanner.analyzer import AppDeepAnalyzer
-            analyzer = AppDeepAnalyzer(apk_path)
-            analyzer.analyze(force_reanalyze=force_reanalyze)
-            _log(f"[*] Analysis: {analyzer.get_colors()}")
-        except Exception as e:
-            _log(f"[i] Analysis failed (tiếp tục): {e}")
-            logger.warning("Analysis failed: %s", e)
+            with _StageTimer(apk_path, mode, "gda", _log):
+                try:
+                    from scanner.gda_analyzer import GDAAnalyzer
+                    GDAAnalyzer().analyze(apk_path)
+                except Exception as e:
+                    _log(f"[i] [GDA] Bỏ qua: {e}")
+                    logger.warning("GDA pre-analysis failed: %s", e)
 
         # ============================================================
-        # G2: Decompile + Recompile với auto-fallback
+        # Decompile
         # ============================================================
         needs_resources = any(
             m in mapped_modes for m in
@@ -462,15 +724,15 @@ def run_pipeline(
                 f"→ {effective_jobs}"
             )
 
-        # G1: force=False để dùng cache
-        decompile_apk(
-            apk_path, decompiled_dir,
-            force=False,
-            no_res=use_no_res,
-            jobs=effective_jobs,
-            max_memory=apktool_memory,
-            log_callback=_log,
-        )
+        with _StageTimer(apk_path, mode, "decompile", _log):
+            decompile_apk(
+                apk_path, decompiled_dir,
+                force=False,
+                no_res=use_no_res,
+                jobs=effective_jobs,
+                max_memory=apktool_memory,
+                log_callback=_log,
+            )
         _emit_step(signals, "Decompile xong", 40, _log)
 
         # ---- Patch ----
@@ -493,10 +755,12 @@ def run_pipeline(
             f"Đang vá {len(mapped_modes)} mode...",
             45, _log,
         )
-        patches_applied, patch_reports = execute_modes(
-            mapped_modes, decompiled_dir, ad_activities,
-            apk_path, _log, signals,
-        )
+        with _StageTimer(apk_path, mode, "patch", _log):
+            patches_applied, patch_reports = execute_modes(
+                mapped_modes, decompiled_dir, ad_activities,
+                apk_path, _log, signals,
+                strategy=strategy,
+            )
 
         _emit_step(signals, "Ghi thay đổi...", 65, _log)
         file_cache.flush(_log)
@@ -505,55 +769,23 @@ def run_pipeline(
         if patches_applied:
             _check_safety_abort(guard, _log)
             _emit_step(signals, "Thêm watermark...", 70, _log)
-            try:
-                Watermarker.add_watermark(
-                    decompiled_dir, patches_applied, apk_path
-                )
-            except Exception as e:
-                logger.warning("Watermark failed: %s", e)
+            with _StageTimer(apk_path, mode, "watermark", _log):
+                try:
+                    Watermarker.add_watermark(
+                        decompiled_dir, patches_applied, apk_path
+                    )
+                except Exception as e:
+                    logger.warning("Watermark failed: %s", e)
 
         # ============================================================
-        # G2: Recompile với fallback no_res=False khi fail
+        # Recompile với fallback no_res=False khi fail
         # ============================================================
         _check_safety_abort(guard, _log)
         _emit_step(signals, "Recompiling APK...", 75, _log)
         patched_apk = os.path.join(output_dir, "patched.apk")
 
-        try:
-            recompile_apk(
-                decompiled_dir, patched_apk,
-                forced_package_id=forced_package_id,
-                log_callback=_log,
-                verify=True,
-                input_apk_for_delta=apk_path,
-            )
-        except RuntimeError as recompile_err:
-            if use_no_res:
-                _log(
-                    f"[!] Recompile failed ({recompile_err}) — "
-                    f"retry với no_res=False"
-                )
-                _emit_step(
-                    signals, "Retry decompile với resources...",
-                    60, _log,
-                )
-                decompile_apk(
-                    apk_path, decompiled_dir,
-                    force=True,
-                    no_res=False,
-                    jobs=effective_jobs,
-                    max_memory=apktool_memory,
-                    log_callback=_log,
-                )
-                file_cache = FileContentCache(
-                    decompiled_dir, log_callback=_log
-                )
-                set_file_cache(file_cache)
-                patches_applied, patch_reports = execute_modes(
-                    mapped_modes, decompiled_dir, ad_activities,
-                    apk_path, _log, signals,
-                )
-                file_cache.flush(_log)
+        with _StageTimer(apk_path, mode, "recompile", _log):
+            try:
                 recompile_apk(
                     decompiled_dir, patched_apk,
                     forced_package_id=forced_package_id,
@@ -561,46 +793,112 @@ def run_pipeline(
                     verify=True,
                     input_apk_for_delta=apk_path,
                 )
-            else:
-                raise
+            except RuntimeError as recompile_err:
+                if use_no_res:
+                    _log(
+                        f"[!] Recompile failed ({recompile_err}) — "
+                        f"retry với no_res=False"
+                    )
+                    _emit_step(
+                        signals, "Retry decompile với resources...",
+                        60, _log,
+                    )
+                    with _StageTimer(
+                        apk_path, mode, "decompile-retry", _log
+                    ):
+                        decompile_apk(
+                            apk_path, decompiled_dir,
+                            force=True,
+                            no_res=False,
+                            jobs=effective_jobs,
+                            max_memory=apktool_memory,
+                            log_callback=_log,
+                        )
+                    file_cache = FileContentCache(
+                        decompiled_dir, log_callback=_log
+                    )
+                    set_file_cache(file_cache)
+                    patches_applied, patch_reports = execute_modes(
+                        mapped_modes, decompiled_dir, ad_activities,
+                        apk_path, _log, signals,
+                        strategy=strategy,
+                    )
+                    file_cache.flush(_log)
+                    recompile_apk(
+                        decompiled_dir, patched_apk,
+                        forced_package_id=forced_package_id,
+                        log_callback=_log,
+                        verify=True,
+                        input_apk_for_delta=apk_path,
+                    )
+                else:
+                    raise
 
         _emit_step(signals, "Recompile xong", 88, _log)
 
-        # ---- Sign ----
+        # ============================================================
+        # Sign → Rename → Cleanup intermediates
+        # ============================================================
         _emit_step(signals, "Đang ký APK...", 92, _log)
-        signed_apk = sign_apk(
-            patched_apk, key_type=key_type, log_callback=_log
+        with _StageTimer(apk_path, mode, "sign", _log):
+            signed_apk = sign_apk(
+                patched_apk, key_type=key_type, log_callback=_log
+            )
+
+        # ---- Rename → {package}.{Patch1}.{Patch2}.apk ----
+        new_filename = build_output_filename(
+            package_name=package_name,
+            mapped_modes=mapped_modes,
+            fallback_stem=Path(apk_path).stem,
         )
-        final_apk = os.path.join(output_dir, os.path.basename(signed_apk))
+        final_apk = os.path.join(output_dir, new_filename)
+        _log(f"[*] Renaming → {new_filename}")
+
         if os.path.abspath(signed_apk) != os.path.abspath(final_apk):
             if os.path.exists(final_apk):
-                os.remove(final_apk)
+                try:
+                    os.remove(final_apk)
+                except OSError:
+                    pass
             os.replace(signed_apk, final_apk)
+
+        # ---- Cleanup intermediates ----
+        _cleanup_intermediates(
+            output_dir=output_dir,
+            keep=final_apk,
+            log_callback=_log,
+        )
 
         # ---- ADB install ----
         _emit_step(signals, "Cài đặt qua ADB (optional)...", 96, _log)
-        try:
-            install_apk(final_apk)
-            _log("[✔] [ADB] Installed on device")
-        except Exception as e:
-            _log(f"[i] [ADB] Install skipped: {e}")
-            logger.info("ADB install skipped: %s", e)
+        with _StageTimer(apk_path, mode, "install", _log):
+            try:
+                install_apk(final_apk)
+                _log("[✔] [ADB] Installed on device")
+            except Exception as e:
+                _log(f"[i] [ADB] Install skipped: {e}")
+                logger.info("ADB install skipped: %s", e)
 
         # ---- History ----
         _emit_step(signals, "Lưu lịch sử...", 98, _log)
         try:
             PatchHistory().add_record(
-                apk_path, mode, True, final_apk, patches_applied
+                apk_path, mode, True, final_apk, patches_applied,
+                trace_id=trace_id,
             )
         except Exception as e:
             logger.warning("History save failed: %s", e)
 
         # ---- Tổng kết ----
         elapsed = time.monotonic() - t0
-        summary = (
-            ", ".join(patches_applied) if patches_applied
-            else "không có patch"
-        )
+        if patches_applied:
+            summary = (
+                f"{len(patches_applied)} mode(s) applied: "
+                f"{', '.join(patches_applied)}"
+            )
+        else:
+            summary = "không có patch"
+
         _emit_step(
             signals, f"Hoàn thành trong {elapsed:.1f}s", 100, _log
         )
@@ -630,7 +928,10 @@ def run_pipeline(
 
         try:
             from core.patch_history import PatchHistory
-            PatchHistory().add_record(apk_path, mode, False, "", [])
+            PatchHistory().add_record(
+                apk_path, mode, False, "", [],
+                trace_id=trace_id,
+            )
         except Exception:
             pass
 
@@ -652,7 +953,10 @@ def run_pipeline(
 
         try:
             from core.patch_history import PatchHistory
-            PatchHistory().add_record(apk_path, mode, False, "", [])
+            PatchHistory().add_record(
+                apk_path, mode, False, "", [],
+                trace_id=trace_id,
+            )
         except Exception:
             pass
 
@@ -721,6 +1025,10 @@ def main() -> int:
         "--no-safety", action="store_true",
         help="Tắt SafetyGuard (vẫn giữ auto_tune cho jobs/memory)",
     )
+    parser.add_argument(
+        "--trace-id",
+        help="Override trace_id (default: auto-gen 8-char hex)",
+    )
 
     args = parser.parse_args()
 
@@ -730,6 +1038,9 @@ def main() -> int:
 
     if args.custom_patch:
         os.environ["LP_CUSTOM_PATCH"] = args.custom_patch
+
+    if args.trace_id:
+        os.environ["LP_TRACE_ID"] = args.trace_id
 
     config = load_config(args.config, apk_path=args.apk, mode=args.mode)
 

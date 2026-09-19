@@ -1,53 +1,36 @@
 """Ad remover — xóa ad activities khỏi AndroidManifest."""
 from __future__ import annotations
-
-import logging
 import os
 import re
+from patcher.base import BasePatcher
 
-logger = logging.getLogger(__name__)
+class AdRemover(BasePatcher):
+    def __init__(self, decompiled_path, log_callback=print, file_cache=None):
+        super().__init__(decompiled_path, log_callback, file_cache)
+        self.manifest_path = os.path.join(
+            decompiled_path, "AndroidManifest.xml"
+        )
 
-
-class AdRemover:
-    def __init__(self, decompiled_path: str, file_cache=None):
-        self.manifest_path = os.path.join(decompiled_path, "AndroidManifest.xml")
-        self.file_cache = file_cache
-
-    def _read(self) -> str:
-        if self.file_cache:
-            return self.file_cache.read(self.manifest_path)
-        with open(self.manifest_path, "r", encoding="utf-8") as f:
-            return f.read()
-
-    def _write(self, content: str) -> None:
-        if self.file_cache:
-            self.file_cache.write(self.manifest_path, content)
-        else:
-            with open(self.manifest_path, "w", encoding="utf-8") as f:
-                f.write(content)
-
-    def remove_activities(self, ad_activities: list[str]) -> bool:
-        if not ad_activities:
+    def _remove_components(self, names, tag) -> bool:
+        try:
+            content = self._read(self.manifest_path)
+        except OSError:
             return False
-        content = self._read()
         original = content
-        for act in ad_activities:
-            pattern = r'<activity[^>]*android:name="' + re.escape(act) + r'"[^/]*/?>'
-            content = re.sub(pattern, "", content, flags=re.DOTALL)
+        for n in names:
+            pat = (rf'<{tag}[^>]*android:name="'
+                   + re.escape(n) + r'"[^/]*/?>')
+            content = re.sub(pat, "", content, flags=re.DOTALL)
         if content != original:
-            self._write(content)
+            self._write(self.manifest_path, content)
             return True
         return False
 
-    def remove_receivers(self, ad_receivers: list[str]) -> bool:
-        if not ad_receivers:
-            return False
-        content = self._read()
-        original = content
-        for recv in ad_receivers:
-            pattern = r'<receiver[^>]*android:name="' + re.escape(recv) + r'"[^/]*/?>'
-            content = re.sub(pattern, "", content, flags=re.DOTALL)
-        if content != original:
-            self._write(content)
-            return True
-        return False
+    def remove_activities(self, ad_activities) -> bool:
+        return self._remove_components(ad_activities, "activity")
+
+    def remove_receivers(self, ad_receivers) -> bool:
+        return self._remove_components(ad_receivers, "receiver")
+
+    def patch(self) -> int:
+        return 0

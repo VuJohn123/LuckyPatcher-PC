@@ -13,6 +13,7 @@ from patcher.watermarker import Watermarker
 from scanner.checks.license_check import check_license
 from scanner.checks.ads_check import check_ads
 from scanner.checks.iap_check import check_iap
+from scanner.checks.packer_check import check_packer_with_fallback
 from scanner.checks.security_check import (
     check_root_detection,
     check_lp_detection,
@@ -22,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 
 class AppDeepAnalyzer:
-    """Phân tích sâu APK — phát hiện license / ads / iap / root / LP."""
+    """Phân tích sâu APK — phát hiện license / ads / iap / root / LP / packer."""
 
     def __init__(self, apk_path: str, patches_dir: str | None = None):
         self.apk_path = apk_path
@@ -33,6 +34,7 @@ class AppDeepAnalyzer:
         self.findings: list[dict] = []
         self.available_patches: list[str] = []
         self._cache = APKCache()
+        self.packer_info: dict | None = None
 
     def analyze(self, force_reanalyze: bool = False) -> list[dict]:
         if not force_reanalyze:
@@ -45,6 +47,19 @@ class AppDeepAnalyzer:
                 return self.findings
 
         self._check_watermark()
+
+        # ---- Packer check TRƯỚC license/iap để báo user ----
+        # (PairIP license activity sẽ match _LICENSE_RE → false positive,
+        #  finding packer giúp user hiểu tại sao patch 0 files)
+        #
+        # Dùng wrapper `check_packer_with_fallback`:
+        #   - Tier 1-4: app_class / native_libs / assets / dex_prefixes
+        #   - Tier 5:   bytecode fallback (regex raw dex bytes + entropy)
+        self.packer_info = check_packer_with_fallback(
+            self.apk, self.apk_path, self._get_all_dex_bytes,
+            self.findings, self.available_patches,
+        )
+
         check_license(
             self.apk, self.apk_path, self._get_all_dex_bytes,
             self.findings, self.available_patches,

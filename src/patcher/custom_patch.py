@@ -1,5 +1,10 @@
 """
 Custom patch parser + applier — hỗ trợ .txt và .lpzip.
+
+v3 (LP parity):
+  - Hỗ trợ `**` mask operand — pattern survive qua app updates.
+    Ví dụ: `const/4 v0, **` → match mọi giá trị immediate.
+  - ReDoS-safe dùng core.regex_safe.
 """
 from __future__ import annotations
 
@@ -10,11 +15,38 @@ import shutil
 import tempfile
 import zipfile
 
+from core.regex_safe import safe_sub, is_safe_pattern
 from core.smali_utils import get_all_smali_files
 
 logger = logging.getLogger(__name__)
 
+_MAX_CONTENT_MB = 50
+_MAX_PATH_LEN = 250
 
+
+# ============================================================
+# MASK PARSER (** → regex wildcard)
+# ============================================================
+def _apply_mask(pattern: str) -> str:
+    """
+    Convert LP mask syntax sang regex:
+      - `**` → `\\S+` (một operand bất kỳ, không space)
+      - Literal đã escape để tránh regex injection từ user input.
+    """
+    # Escape phần literal, sau đó replace `\*\*` (escape của **)
+    escaped = re.escape(pattern)
+    # re.escape('**') → '\\*\\*'
+    escaped = escaped.replace(r"\*\*", r"\S+")
+    return escaped
+
+
+def _has_mask(pattern: str) -> bool:
+    return "**" in pattern
+
+
+# ============================================================
+# PARSER
+# ============================================================
 class CustomPatchParser:
     def __init__(self, patch_file_path: str):
         self.path = patch_file_path
@@ -52,18 +84,10 @@ class CustomPatchParser:
                 rest = line[line.index("]") + 1:].strip()
                 if "->" in rest:
                     pat, rep = rest.split("->", 1)
-                    current_ops.append({
-                        "type": "replace",
-                        "pattern": pat.strip(),
-                        "replacement": rep.strip(),
-                    })
+                    current_ops.append(self._make_op(pat, rep))
             elif "->" in line:
                 pat, rep = line.split("->", 1)
-                current_ops.append({
-                    "type": "replace",
-                    "pattern": pat.strip(),
-                    "replacement": rep.strip(),
-                })
+                current_ops.append(self._make_op(pat, rep))
 
         if current_target:
             instructions.append({
@@ -73,6 +97,16 @@ class CustomPatchParser:
 
         return instructions
 
+    def _make_op(self, pattern: str, replacement: str) -> dict:
+        pattern = pattern.strip()
+        replacement = replacement.strip()
+        return {
+            "type": "replace",
+            "pattern": pattern,
+            "replacement": replacement,
+            "masked": _has_mask(pattern),
+        }
+
     def _parse_lpzip(self) -> list[dict]:
         tmpdir = tempfile.mkdtemp()
         try:
@@ -80,7 +114,9 @@ class CustomPatchParser:
                 txts = [n for n in z.namelist() if n.endswith(".txt")]
                 if not txts:
                     return []
-                content = z.read(txts[0]).decode("utf-8", errors="ignore")
+                content = z.read(txts[0]).decode(
+                    "utf-8", errors="ignore"
+                )
             tmp_txt = os.path.join(tmpdir, "patch.txt")
             with open(tmp_txt, "w", encoding="utf-8") as f:
                 f.write(content)
@@ -93,8 +129,12 @@ class CustomPatchParser:
             shutil.rmtree(tmpdir, ignore_errors=True)
 
 
+# ============================================================
+# APPLIER
+# ============================================================
 class CustomPatchApplier:
-    def __init__(self, decompiled_path: str, log_callback=print, file_cache=None):
+    def __init__(self, decompiled_path: str, log_callback=print,
+                 file_cache=None):
         self.decompiled_path = decompiled_path
         self.log = log_callback
         self.file_cache = file_cache
@@ -114,6 +154,10 @@ class CustomPatchApplier:
 
     def apply(self, instructions: list[dict]) -> int:
         patched = 0
+        rejected = 0
+        masked_used = 0
+        max_bytes = _MAX_CONTENT_MB * 1024 * 1024
+
         for instr in instructions:
             target = instr.get("target_file", "")
             matched = self._find_files(target)
@@ -122,37 +166,77 @@ class CustomPatchApplier:
                 continue
 
             for path in matched:
+                try:
+                    size = os.path.getsize(path)
+                    if size > max_bytes:
+                        continue
+                except OSError:
+                    continue
+
                 content = self._read(path)
                 original = content
+
                 for op in instr.get("operations", []):
                     if op.get("type") != "replace":
                         continue
-                    try:
-                        content = re.sub(
-                            op["pattern"], op["replacement"],
-                            content, flags=re.DOTALL,
-                        )
-                    except re.error as e:
-                        logger.warning("Regex lỗi: %s", e)
+
+                    pattern = op.get("pattern", "")
+                    replacement = op.get("replacement", "")
+                    masked = op.get("masked", False)
+
+                    if not pattern:
+                        continue
+
+                    # Mask transform
+                    if masked:
+                        pattern = _apply_mask(pattern)
+                        masked_used += 1
+
+                    new_content, ok = safe_sub(
+                        pattern, replacement, content,
+                        flags=re.DOTALL,
+                        log_callback=self.log,
+                    )
+                    if not ok:
+                        rejected += 1
+                        continue
+                    content = new_content
+
                 if content != original:
                     self._write(path, content)
                     patched += 1
 
+        if rejected:
+            self.log(
+                f"[i] [CustomPatch] {rejected} pattern(s) rejected"
+            )
+        if masked_used:
+            self.log(
+                f"[i] [CustomPatch] Used ** mask in {masked_used} ops"
+            )
         return patched
 
     def _find_files(self, pattern: str) -> list[str]:
+        if not is_safe_pattern(pattern)[0]:
+            self.log(
+                f"[!] [CustomPatch] target pattern rejected"
+            )
+            return []
+
         matched = []
-        for filepath in get_all_smali_files(self.decompiled_path):
-            rel = os.path.relpath(filepath, self.decompiled_path)
-            try:
-                if re.search(pattern, rel):
+        try:
+            from core.regex_safe import safe_search
+            for filepath in get_all_smali_files(self.decompiled_path):
+                if len(filepath) > _MAX_PATH_LEN:
+                    continue
+                rel = os.path.relpath(filepath, self.decompiled_path)
+                if safe_search(pattern, rel):
                     matched.append(filepath)
-            except re.error:
-                continue
+        except Exception as e:
+            logger.warning("find_files failed: %s", e)
         return matched
 
     def patch(self) -> int:
-        """Interface tương thích lazy_loader."""
         patch_file = os.environ.get("LP_CUSTOM_PATCH")
         if not patch_file or not os.path.exists(patch_file):
             return 0

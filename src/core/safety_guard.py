@@ -2,19 +2,21 @@
 Safety guard — bảo vệ hệ thống khỏi bị treo do overcommit.
 
 Đo CPU **ngoại lai** (system - own process tree) bằng `cpu_times()` delta.
-Own process tree = Python process + descendants + external tool processes
-(apktool.jar, apksigner, ...) — kể cả khi chạy qua nailgun daemon.
+Own process tree = Python process + descendants + nailgun daemon tree
++ external tool processes (detected via cmdline keyword OR new-java heuristic).
 
 Violation counter = CONSECUTIVE. Chỉ reset sau `reset_after_ok_checks`
-lần check OK liên tiếp (mặc định 3) — chống counter reset do dao động
-ngắn của system load trên Windows.
+lần check OK liên tiếp.
 
-CLI mode (không có GUI): sau N vi phạm → fallback theo `cli_mode_action`:
-  - "mute"     : mute reason, dùng full resources (mặc định, tốt cho CLI)
-  - "continue" : nâng ngưỡng + reset counter
-  - "abort"    : dừng pipeline
+Grace: violation #1 KHÔNG throttle — tránh false positive do burst ngắn.
 
-GUI mode: emit prompt dialog như cũ.
+CLI mode: sau N vi phạm → fallback theo `cli_mode_action` (mute/continue/abort).
+
+v2 fixes (own_pct bug):
+  - Baseline PID tracking → detect NEW java processes spawned after start.
+  - Keyword matching case-insensitive, không yêu cầu `.jar` extension.
+  - Additional match by process name (java/javaw/apktool).
+  - Diagnostic logging khi used_pct cao nhưng own_pct thấp.
 """
 from __future__ import annotations
 
@@ -27,16 +29,29 @@ from typing import Callable
 
 logger = logging.getLogger(__name__)
 
-# Các keyword nhận diện external tool process (kể cả nailgun daemon).
+# Keyword để nhận diện external tool processes.
+# KHÔNG yêu cầu `.jar` — hỗ trợ java -jar, apktool.bat, ng client, v.v.
 _TOOL_KEYWORDS = (
-    "apktool.jar",
-    "apksigner.jar",
-    "uber-apk-signer.jar",
-    "baksmali.jar",
-    "smali.jar",
-    "bundletool.jar",
-    "GDA.exe",
+    "apktool",
+    "apksigner",
+    "uber-apk-signer",
+    "baksmali",
+    "smali",
+    "bundletool",
+    "gda.exe",
+    "gda ",
+    "nailgun",
+    "ng-server",
+    "ngserver",
+    "ng.exe",
 )
+
+# Process name heuristics (lowercase match)
+_JAVA_NAMES = frozenset({"java", "javaw", "java.exe", "javaw.exe"})
+
+# Diagnostic log threshold: log chi tiết khi own_pct < ngưỡng này
+_DIAG_OWN_PCT_LOW = 2.0
+_DIAG_CPU_HIGH = 85.0
 
 
 @dataclass
@@ -46,27 +61,15 @@ class GuardLimits:
     min_disk_free_pct: float = 10.0
     max_temp_celsius: float = 85.0
     check_interval_sec: float = 5.0
-    cpu_measurement: str = "external"   # "system" | "external"
+    cpu_measurement: str = "external"
 
-    # --- Mới ---
     enabled: bool = True
     reset_after_ok_checks: int = 3
-    cli_mode_action: str = "mute"       # "mute" | "continue" | "abort"
+    cli_mode_action: str = "mute"
 
 
 class SafetyGuard:
-    """
-    Monitor system, trigger callback khi vượt ngưỡng.
-
-    Lifecycle:
-        guard = SafetyGuard(limits, on_violation, on_prompt, on_mute, N)
-        guard.start()
-        ...
-        if guard.abort_flag:
-            raise RuntimeError("Pipeline aborted by user")
-        ...
-        guard.stop()
-    """
+    _GRACE_N = 2
 
     def __init__(
         self,
@@ -89,13 +92,10 @@ class SafetyGuard:
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
 
-        # Counter cho vi phạm LIÊN TIẾP
+        # Counters
         self._consecutive: dict[str, int] = {}
-        # Đếm số lần check OK liên tiếp (để reset counter)
         self._ok_streak: dict[str, int] = {}
-        # Đang chờ user prompt (tránh spam)
         self._prompting: set[str] = set()
-        # Reason đã được mute → bỏ qua hoàn toàn
         self._muted: set[str] = set()
 
         self.abort_flag = False
@@ -107,6 +107,14 @@ class SafetyGuard:
         self._cpu_count = 1
         self._last_cpu_time: float | None = None
         self._last_cpu_ts: float = 0.0
+
+        # v2: baseline PIDs (snapshot at start) — dùng để nhận diện
+        # java process MỚI sinh ra sau khi guard start.
+        self._baseline_pids: set[int] = set()
+        self._baseline_ready = False
+
+        # Diagnostic: tránh log spam
+        self._diag_logged = False
 
     # ============================================================
     # LIFECYCLE
@@ -148,6 +156,19 @@ class SafetyGuard:
         self._own_process = psutil.Process(self._own_pid)
         self._cpu_count = psutil.cpu_count() or 1
 
+        # v2: snapshot baseline PIDs
+        try:
+            self._baseline_pids = {
+                p.pid for p in psutil.process_iter(["pid"])
+                if p.pid != self._own_pid
+            }
+            self._baseline_ready = True
+            logger.debug(
+                "Baseline: %d processes at start", len(self._baseline_pids)
+            )
+        except Exception as e:
+            logger.debug("Baseline snapshot failed: %s", e)
+
         psutil.cpu_percent(interval=None)
         self._last_cpu_time = self._get_own_tree_cpu_time(psutil)
         self._last_cpu_ts = time.monotonic()
@@ -188,6 +209,13 @@ class SafetyGuard:
                     "system_pct": round(system_cpu, 1),
                     "own_pct": round(own_cpu, 1),
                 }
+
+                # v2: diagnostic khi hệ thống busy nhưng own tree không detect
+                if (system_cpu > _DIAG_CPU_HIGH
+                        and own_cpu < _DIAG_OWN_PCT_LOW
+                        and not self._diag_logged):
+                    self._log_diagnostic(psutil, system_cpu, own_cpu)
+                    self._diag_logged = True
             else:
                 measured = psutil.cpu_percent(interval=None)
                 extra = {}
@@ -238,11 +266,49 @@ class SafetyGuard:
         except (AttributeError, NotImplementedError):
             pass
 
+    def _log_diagnostic(self, psutil, system_cpu: float, own_cpu: float):
+        """Diagnostic: liệt kê java/tool processes để debug own_pct bug."""
+        try:
+            tool_procs: list[str] = []
+            for p in psutil.process_iter(["pid", "name", "cmdline"]):
+                try:
+                    name = (p.info.get("name") or "").lower()
+                    cmdline = " ".join(p.info.get("cmdline") or [])
+                    cl = cmdline.lower()
+                    if (name in _JAVA_NAMES
+                            or any(k in cl for k in _TOOL_KEYWORDS)
+                            or p.pid in self._baseline_pids):
+                        continue
+                    # Chỉ log process có thể là tool
+                    if "java" in name or "apktool" in cl or "nailgun" in cl:
+                        tool_procs.append(
+                            f"pid={p.pid} name={name} cmd={cmdline[:120]}"
+                        )
+                        if len(tool_procs) >= 10:
+                            break
+                except (psutil.NoSuchProcess, psutil.AccessDenied,
+                        ValueError, KeyError):
+                    continue
+            if tool_procs:
+                self.log(
+                    f"[i] [SafetyGuard] DIAG: system={system_cpu:.1f}% "
+                    f"own={own_cpu:.1f}% — candidate processes:"
+                )
+                for tp in tool_procs:
+                    self.log(f"[i] [SafetyGuard]   {tp}")
+            else:
+                self.log(
+                    f"[i] [SafetyGuard] DIAG: system={system_cpu:.1f}% "
+                    f"own={own_cpu:.1f}% — no java/tool process found "
+                    f"(baseline={len(self._baseline_pids)} pids)"
+                )
+        except Exception as e:
+            logger.debug("Diagnostic failed: %s", e)
+
     # ============================================================
-    # COUNTER — CONSECUTIVE OK / VIOLATION
+    # COUNTER
     # ============================================================
     def _record_ok(self, reason: str) -> None:
-        """OK check: tăng OK streak. Reset counter sau N OK liên tiếp."""
         streak = self._ok_streak.get(reason, 0) + 1
         self._ok_streak[reason] = streak
         if streak >= self.limits.reset_after_ok_checks:
@@ -254,15 +320,19 @@ class SafetyGuard:
             self._ok_streak[reason] = 0
 
     # ============================================================
-    # OWN TREE CPU — own + descendants + external tool processes
+    # OWN TREE CPU — v2 robust detection
     # ============================================================
     def _get_own_tree_cpu_time(self, psutil) -> float:
         """
         Tổng cpu_times (user+system) của:
-          - own process + descendants
-          - external tool processes (apktool/apksigner/...) không phải con
-            (do nailgun daemon, hoặc spawn qua shell)
-        Dedup theo PID để không double-count.
+          1. Own process + descendants (bao gồm apktool child)
+          2. Nailgun daemon + descendants (long-lived daemon)
+          3. External tool processes:
+             - cmdline keyword match (apktool, nailgun, ...)
+             - OR process name java/javaw AND pid not in baseline
+               (detached java spawned after guard start)
+             - OR pid not in baseline AND cmdline có "apktool"/"nailgun"
+        Dedup theo PID.
         """
         if self._own_process is None:
             return 0.0
@@ -270,38 +340,75 @@ class SafetyGuard:
         total = 0.0
         pids_seen: set[int] = set()
 
-        # --- Own tree ---
-        try:
-            procs = [self._own_process]
+        def _acc(p) -> None:
+            nonlocal total
             try:
-                procs.extend(self._own_process.children(recursive=True))
-            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                pid = p.pid
+                if pid in pids_seen:
+                    return
+                ct = p.cpu_times()
+                pids_seen.add(pid)
+                total += ct.user + ct.system
+            except (psutil.NoSuchProcess, psutil.AccessDenied, ValueError):
                 pass
-            for p in procs:
-                try:
-                    pids_seen.add(p.pid)
-                    ct = p.cpu_times()
-                    total += ct.user + ct.system
-                except (psutil.NoSuchProcess, psutil.AccessDenied,
-                        ValueError):
-                    pass
+
+        # ---- 1. Own process tree ----
+        try:
+            _acc(self._own_process)
+            try:
+                for child in self._own_process.children(recursive=True):
+                    _acc(child)
+            except Exception:
+                pass
         except Exception:
             pass
 
-        # --- External tool processes (nailgun, detached spawn) ---
+        # ---- 2 & 3. Scan all processes ----
         try:
-            for p in psutil.process_iter(["pid", "cmdline"]):
+            for p in psutil.process_iter(["pid", "name", "cmdline"]):
                 try:
-                    pid = p.info.get("pid")
-                    if pid is None or pid in pids_seen:
+                    pid = p.pid
+                    if pid in pids_seen:
                         continue
+
+                    name = (p.info.get("name") or "").lower()
                     cmdline = " ".join(p.info.get("cmdline") or [])
-                    if not cmdline:
-                        continue
-                    if any(k in cmdline for k in _TOOL_KEYWORDS):
-                        ct = p.cpu_times()
-                        total += ct.user + ct.system
-                        pids_seen.add(pid)
+                    cl = cmdline.lower()
+
+                    matched = False
+                    reason = ""
+
+                    # 2a. Nailgun daemon
+                    if ("nailgun" in cl or "ng-server" in cl
+                            or "ngserver" in cl):
+                        matched = True
+                        reason = "nailgun"
+
+                    # 2b. Tool keyword match (case-insensitive, no .jar req)
+                    elif any(k in cl for k in _TOOL_KEYWORDS):
+                        matched = True
+                        reason = "keyword"
+
+                    # 2c. NEW java process (không có trong baseline)
+                    elif (self._baseline_ready
+                          and pid not in self._baseline_pids
+                          and (name in _JAVA_NAMES
+                               or "java" in name)):
+                        matched = True
+                        reason = "new-java"
+
+                    if matched:
+                        _acc(p)
+                        # Include children
+                        try:
+                            for c in p.children(recursive=True):
+                                _acc(c)
+                        except Exception:
+                            pass
+                        logger.debug(
+                            "Safety own-tree match: pid=%d name=%s "
+                            "reason=%s", pid, name, reason
+                        )
                 except (psutil.NoSuchProcess, psutil.AccessDenied,
                         ValueError, KeyError):
                     continue
@@ -311,7 +418,6 @@ class SafetyGuard:
         return total
 
     def _measure_own_tree_cpu(self, psutil) -> float:
-        """CPU% của own tree từ cpu_times delta (normalize theo cpu_count)."""
         now = time.monotonic()
         current = self._get_own_tree_cpu_time(psutil)
 
@@ -341,19 +447,16 @@ class SafetyGuard:
         if reason in self._prompting:
             return
 
-        # Vừa vi phạm → reset OK streak
         self._ok_streak[reason] = 0
 
         count = self._consecutive.get(reason, 0) + 1
         self._consecutive[reason] = count
 
-        # Log gọn — không spam chi tiết
         if count == 1:
             self.log(f"[!] [SafetyGuard] {reason.upper()} #{count}: {details}")
         else:
             self.log(f"[!] [SafetyGuard] {reason.upper()} #{count}")
 
-        # ---------- Đã đủ N vi phạm liên tiếp ----------
         if count >= self.prompt_after_n:
             if self.on_prompt is not None:
                 self._prompt_gui(reason, details, count)
@@ -361,8 +464,8 @@ class SafetyGuard:
                 self._cli_fallback(reason, details, count)
             return
 
-        # ---------- Chưa đủ N → throttle (chỉ callback lần đầu để tránh spam) ----------
-        if self.on_violation and count == 1:
+        # Grace: violation #1 không throttle
+        if self.on_violation and count == self._GRACE_N:
             try:
                 self.on_violation(reason, details)
             except Exception as e:
@@ -431,7 +534,6 @@ class SafetyGuard:
                 f"→ {self._get_threshold(reason):.1f}%"
             )
         else:
-            # Unknown action → mute as safe default
             self._muted.add(reason)
             self.log(
                 f"[!] [SafetyGuard] cli_mode_action='{action}' không "

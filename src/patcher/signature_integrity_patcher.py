@@ -1,62 +1,59 @@
-"""Loại bỏ integrity check (MessageDigest, Signature hash)."""
+"""
+Loại bỏ integrity check.
+
+v3 (2026):
+  - Mở rộng keywords: hash algorithms, checksum, tamper detection.
+  - Thêm path_hints để giảm scan.
+"""
 from __future__ import annotations
 
-import os
+from core.smali_utils import REGEX_INTEGRITY_METHOD
+from patcher.base import BasePatcher
 
-from core.smali_utils import REGEX_INTEGRITY_METHOD, get_all_smali_files
 
+class SignatureIntegrityPatcher(BasePatcher):
+    # Expanded: hash algorithms + integrity + tamper detection
+    KEYWORDS = (
+        "MessageDigest", "Signature", "SHA", "MD5", "SHA-1", "SHA-256",
+        "CRC32", "Adler32", "checksum", "integrity",
+        "tamper", "anti-tamper",
+    )
 
-class SignatureIntegrityPatcher:
-    def __init__(self, decompiled_path: str, log_callback=print, file_cache=None):
-        self.decompiled_path = decompiled_path
-        self.log = log_callback
-        self.file_cache = file_cache
-
-    def _read(self, path: str) -> str:
-        if self.file_cache:
-            return self.file_cache.read(path)
-        with open(path, "r", encoding="utf-8", errors="ignore") as f:
-            return f.read()
-
-    def _write(self, path: str, content: str) -> None:
-        if self.file_cache:
-            self.file_cache.write(path, content)
-        else:
-            with open(path, "w", encoding="utf-8") as f:
-                f.write(content)
+    _PATH_HINTS = (
+        "integrity", "signature", "security", "hash",
+        "checksum", "verify", "tamper", "anti",
+    )
 
     def patch(self) -> int:
-        self.log("[*] [SigIntegrity] Removing integrity checks...")
-        patched = 0
-        keywords = ("MessageDigest", "Signature")
+        self.log("[*] [SigIntegrity] Removing integrity checks")
 
-        for filepath in get_all_smali_files(self.decompiled_path):
-            if len(filepath) > 250:
-                continue
-            content = self._read(filepath)
-            if not any(kw in content for kw in keywords):
-                continue
-
+        def _transform(content, filepath):
             original = content
             for match in REGEX_INTEGRITY_METHOD.finditer(content):
                 full = match.group(0)
-                name = match.group(1).split("(")[0]
-                if not any(kw in name.lower() for kw in
-                           ("integrity", "verify", "check", "hash", "digest")):
+                name = match.group(1).split("(")[0].lower()
+                if not any(
+                    k.lower() in name
+                    for k in (
+                        "integrity", "verify", "check", "hash",
+                        "digest", "checksum", "tamper",
+                        "validate", "crc",
+                    )
+                ):
+                    continue
+                if ".annotation" in full:
                     continue
                 header = full.split("\n")[0]
-                replacement = (
-                    f"{header}\n"
-                    "    .locals 1\n"
-                    "    const/4 v0, 0x1\n"
-                    "    return v0\n"
-                    ".end method"
+                content = content.replace(
+                    full,
+                    f"{header}\n    .locals 1\n"
+                    "    const/4 v0, 0x1\n    return v0\n.end method",
                 )
-                content = content.replace(full, replacement)
-                patched += 1
+            return content if content != original else None
 
-            if content != original:
-                self._write(filepath, content)
-
-        self.log(f"[*] [SigIntegrity] Patched {patched} files")
-        return patched
+        return self.patch_files(
+            _transform,
+            prefilter_keywords=self.KEYWORDS,
+            path_hints=self._PATH_HINTS,
+            label="SigIntegrity",
+        )

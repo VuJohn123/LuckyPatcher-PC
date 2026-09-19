@@ -1,0 +1,13 @@
+# User-editable blocklist — sẽ được MERGE với AdsBlockList.txt.
+# Format giống hệt. Chỉ thêm pattern bạn muốn block.
+
+[HTTP]
+# Thêm custom URL patterns ở đây
+# Ví dụ:
+# my-traffic-tracker.com
+# analytics.private.io
+
+[ALL_STRINGS]
+# Thêm custom strings ở đây
+# Ví dụ:
+# "my_analytics_key"

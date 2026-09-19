@@ -1,12 +1,12 @@
 """
 Vá bytecode Smali liên quan đến InApp Billing.
-Hỗ trợ: Google Play Billing, Unity IAP, Unreal IAP, Facebook IAP.
+Hỗ trợ: Google Play Billing (v1-v7), Unity IAP, Unreal IAP, Facebook IAP,
+        Amazon IAP, Samsung IAP, Huawei IAP.
 
-Smart detection (3-tier):
-  1. STRONG_IAP_METHODS — tên method không thể nhầm (launchBillingFlow, ...)
-  2. Path hint            — path chứa billing/purchase/iap/store
-  3. Class hint           — tên class chứa BillingHelper/IAPManager/...
-  Blacklist: Analytics/Firebase/AdMob/... — bỏ qua trừ khi path cũng có billing
+v3 (2026):
+  - Mở rộng TARGET_METHODS: +50 method patterns.
+  - Strong hints mở rộng cho obfuscated paths.
+  - Class hints thêm billing library v6-v7.
 """
 from __future__ import annotations
 
@@ -27,66 +27,102 @@ logger = logging.getLogger(__name__)
 # TARGET METHOD NAMES — match lower-case
 # ============================================================
 TARGET_METHODS = [
-    # Google Play Billing direct
-    "launchBillingFlow", "getBuyIntent", "queryPurchases", "querySkuDetails",
+    # === Google Play Billing v1-v3 ===
+    "launchBillingFlow", "getBuyIntent", "getBuyIntentToReplaceSkus",
+    "queryPurchases", "querySkuDetails", "queryInventory",
     "isBillingSupported", "consumePurchase", "getPurchases",
-    # Unity IAP
+    "getSkuDetails", "consumeAsync",
+    # === Google Play Billing v4-v5 ===
+    "queryProductDetails", "queryProductDetailsAsync",
+    "acknowledgePurchase", "acknowledgePurchaseAsync",
+    "launchPriceConfirmationFlow",
+    # === Google Play Billing v6-v7 ===
+    "setObfuscatedAccountId", "setObfuscatedProfileId",
+    "enablePendingPurchases", "startConnection",
+    "endConnection",
+    # === Unity IAP ===
     "UnityPurchasing", "InitiatePurchase", "PurchaseProduct",
     "ProcessPurchase", "ConfirmPurchase", "FinishTransaction",
     "OnPurchaseFailed", "OnPurchaseSucceeded",
-    # Unity IAP extensions
     "PurchaseProductInternal", "InitiatePurchaseInternal",
-    # Unreal IAP
+    "FetchAdditionalProducts", "CrossPlatformValidator",
+    # === Unity IAP extensions ===
+    "IRegisterListener", "IDetailedStoreListener",
+    # === Unreal IAP ===
     "InAppPurchase", "MakePurchase", "CompletePurchase",
-    # Wrapper phổ biến
+    "QueryOwnedProducts", "QueryProductInfo",
+    # === Wrapper phổ biến ===
     "startPurchase", "buyProduct", "makePurchase", "doPayment",
     "requestPurchase", "processPurchase", "sendPurchase",
     "startPayment", "doBilling", "executePayment",
-    # Callback (yếu — cần strong signal khác)
+    "buyItem", "purchaseItem", "acquireItem", "unlockItem",
+    "purchaseCoins", "buyCoins", "buyGems", "buyPremium",
+    "upgradeToPro", "unlockFullVersion", "buyFullVersion",
+    # === Callback ===
     "onPurchase", "onBuy", "onPayment", "onCheckout",
     "onBillingComplete", "onBillingSuccess", "onPurchaseSuccess",
-    # Facebook IAP
+    "onPurchaseError", "onBillingError",
+    "onActivityResult",     # billing v1-v3 callback
+    "onServiceConnected",   # billing v1-v3 bind
+    "onProductDetailsResponse", "onPurchasesUpdated",
+    "onBillingSetupFinished", "onBillingServiceDisconnected",
+    # === Local validation ===
+    "verifyPurchase", "verifySignature", "verifyReceipt",
+    "verifySku", "validatePurchase",
+    "checkPurchase", "checkReceipt",
+    # === Facebook IAP ===
     "PurchaseWithProduct", "PurchaseAndRetrieve",
-    # Adjust wrapper
+    # === Adjust wrapper ===
     "onTrackedPurchase",
+    # === Store-specific ===
+    "samsungPurchase", "amazonPurchase", "huaweiPurchase",
+    "yandexPurchase",
 ]
 
 
-# ============================================================
-# STRONG signals — tên method không thể nhầm với ads/analytics
-# Chỉ cần 1 method khớp → coi file là IAP, không cần path/class hint
-# ============================================================
 STRONG_IAP_METHODS_LOWER = frozenset({
     "launchbillingflow",
     "initiatepurchase", "purchaseproduct", "purchaseproductinternal",
     "initiatepurchaseinternal",
     "getbuyintent", "querypurchases", "queryskudetails",
-    "isbillingsupported", "consumepurchase", "getpurchases",
+    "queryproductdetails", "queryproductdetailsasync",
+    "isbillingsupported", "consumepurchase", "consumeasync",
+    "getpurchases", "getskudetails",
     "inapppurchase", "makepurchase", "completepurchase",
     "startpurchase", "buyproduct",
     "purchasewithproduct", "purchaseandretrieve",
+    "acknowledgepurchase", "acknowledgepurchaseasync",
+    "onpurchasesupdated", "onbillingsetupfinished",
+    "onproductdetailsresponse",
+    "buyitem", "purchaseitem", "acquireitem", "unlockitem",
+    "purchasecoins", "buycoins", "buygems",
+    "upgradetopro", "unlockfullversion", "buyfullversion",
 })
 
 
-# Class names gợi ý là IAP wrapper
 WRAPPER_CLASS_HINTS_LOWER = frozenset({
     "billinghelper", "billingmanager", "billingclient",
     "purchasemanager", "iapmanager", "iaphelper",
     "purchaseservice", "storemanager", "unitypurchasing",
     "istorelistener", "iextensionprovider",
     "billingprocessor", "inappbillingprocessor",
+    "playbilling", "googleplaybilling",
+    "iabhelper", "iappurchasemanager",
+    "storekit", "storefront",
+    "paymentmanager", "paymenthelper",
 })
 
 
-# Class names ưu tiên tránh patch sai
 BLACKLIST_CLASS_HINTS_LOWER = frozenset({
     "analytics", "tracker", "admob", "appmeasurement",
     "firebase", "crashlytics", "adjusttracker",
+    "facebookads", "appsflyer", "segment",
 })
 
 
 class IAPDexPatcher:
-    def __init__(self, decompiled_path: str, log_callback=print, file_cache=None):
+    def __init__(self, decompiled_path: str, log_callback=print,
+                 file_cache=None):
         self.decompiled_path = decompiled_path
         self.log = log_callback
         self.file_cache = file_cache
@@ -107,39 +143,23 @@ class IAPDexPatcher:
             with open(path, "w", encoding="utf-8") as f:
                 f.write(content)
 
-    # ============================================================
-    # SMART DETECTION — 3-tier
-    # ============================================================
     def _is_iap_class(self, filepath: str, content: str) -> bool:
-        """
-        Quyết định file có nên patch không.
-
-        Logic:
-          1. Nếu path chứa blacklist hint VÀ không có billing/purchase/iap/store
-             → skip (tránh patch Analytics tracker)
-          2. Nếu path chứa billing/purchase/iap/store → OK
-          3. Nếu class name chứa wrapper hint → OK
-          4. Nếu content chứa STRONG_IAP_METHODS → OK (fallback cho test/minified)
-          5. Còn lại → skip
-        """
         path_lower = filepath.lower()
 
-        # Tier 0: blacklist guard
         has_blacklist = any(
             bl in path_lower for bl in BLACKLIST_CLASS_HINTS_LOWER
         )
         has_iap_path_hint = any(
             k in path_lower
-            for k in ("billing", "purchase", "iap", "storemanager")
+            for k in ("billing", "purchase", "iap", "storemanager",
+                      "payment", "store")
         )
         if has_blacklist and not has_iap_path_hint:
             return False
 
-        # Tier 1: path hint
         if has_iap_path_hint:
             return True
 
-        # Tier 2: class header hint
         header_match = re.search(r"\.class\s+[^\n]*\s(L\S+);", content)
         if header_match:
             class_name = header_match.group(1).lower()
@@ -147,7 +167,6 @@ class IAPDexPatcher:
                 if hint in class_name:
                     return True
 
-        # Tier 3: strong method hint (minified / obfuscated paths)
         content_lower = content.lower()
         for strong in STRONG_IAP_METHODS_LOWER:
             if strong in content_lower:
@@ -155,9 +174,6 @@ class IAPDexPatcher:
 
         return False
 
-    # ============================================================
-    # MAIN PATCH
-    # ============================================================
     def patch(self) -> int:
         return self.patch_with_report()["total_patched"]
 
@@ -188,11 +204,9 @@ class IAPDexPatcher:
 
             scanned += 1
 
-            # Pre-filter: phải có target method
             if not any(m in content for m in TARGET_METHODS):
                 continue
 
-            # Smart class filter
             if not self._is_iap_class(filepath, content):
                 continue
 
@@ -202,7 +216,6 @@ class IAPDexPatcher:
                 method_sig = match.group(1)
                 return_type = match.group(2)
 
-                # Match theo lower-case
                 if not any(
                     m in method_sig.lower() for m in target_lower
                 ):
@@ -238,11 +251,7 @@ class IAPDexPatcher:
         )
         return report
 
-    # ============================================================
-    # REPLACEMENT BUILDERS
-    # ============================================================
     def _void_method(self, header: str) -> str:
-        """Void method → no-op return."""
         return (
             f"{header}\n"
             "    .locals 0\n"
@@ -251,10 +260,6 @@ class IAPDexPatcher:
         )
 
     def _bundle_method(self, header: str) -> str:
-        """
-        Bundle-returning method → trả về Bundle có RESPONSE_CODE=0
-        và INAPP_PURCHASE_DATA_LIST rỗng (đúng format Google Play Billing).
-        """
         return (
             f"{header}\n"
             "    .locals 3\n"

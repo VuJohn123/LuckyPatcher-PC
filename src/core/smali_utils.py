@@ -2,14 +2,27 @@
 Tiện ích xử lý Smali — regex + file cache + APK cache.
 Tối ưu: re2 > re, orjson > json, memory-mapped files.
 
-FileContentCache dùng LRU cho reads (maxsize) + buffer cho writes.
-Tránh OOM khi patch match 30,000+ file smali.
+FileContentCache:
+  - LRU cho reads (maxsize) + buffer cho writes.
+  - THREAD-SAFE (RLock) — pipeline chạy 2+ patcher song song.
+  - Tránh OOM khi patch match 30,000+ file smali.
+
+v2 fixes:
+  - Thread-safety: RLock cho read/write/flush/get_stats.
+  - Flush không clear _read_cache (tránh invalidate trong thread khác).
+  - flush() trả về (count, error_count) thay vì log cứng.
+
+v3 fixes:
+  - ParallelFileProcessor dùng logger.warning thay print() cho
+    consistent logging (audit_quality compliant).
 """
 from __future__ import annotations
 
 import hashlib
+import logging
 import mmap
 import os
+import threading
 import time
 from collections import OrderedDict
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -40,6 +53,9 @@ except ImportError:
 
     def json_dumps(obj) -> str:
         return _json.dumps(obj)
+
+
+logger = logging.getLogger(__name__)
 
 
 # ============================================================
@@ -121,7 +137,7 @@ def get_all_smali_files(decompiled_path: str) -> list[str]:
 
 
 # ============================================================
-# FILE CONTENT CACHE — LRU read + buffered write
+# FILE CONTENT CACHE — THREAD-SAFE
 # ============================================================
 class FileContentCache:
     """
@@ -131,6 +147,10 @@ class FileContentCache:
           Miss → load from disk (mmap nếu > 1MB) → evict LRU.
     WRITE: Dict unbounded nhưng flush theo threshold để tránh OOM.
           Auto-flush khi buffer vượt `write_flush_threshold` file.
+
+    THREAD-SAFE: dùng RLock cho mọi operation. Pipeline có thể chạy
+    2+ patcher song song (ThreadPoolExecutor workers=2), nên cache
+    phải chịu được concurrent read/write/flush.
     """
 
     DEFAULT_READ_CACHE_SIZE = 2000
@@ -157,27 +177,33 @@ class FileContentCache:
         self._read_misses = 0
         self._write_count = 0
 
+        # Thread-safety: RLock cho phép reentrant (write gọi flush khi
+        # vượt threshold, cùng thread).
+        self._lock = threading.RLock()
+
     # ---------------- READ ----------------
     def read(self, filepath: str) -> str:
-        # Modified buffer wins
-        if filepath in self._modified:
-            return self._modified[filepath]
+        with self._lock:
+            # Modified buffer wins
+            if filepath in self._modified:
+                return self._modified[filepath]
 
-        # LRU cache hit
-        if filepath in self._read_cache:
-            self._read_cache.move_to_end(filepath)
-            self._read_hits += 1
-            return self._read_cache[filepath]
+            # LRU cache hit
+            if filepath in self._read_cache:
+                self._read_cache.move_to_end(filepath)
+                self._read_hits += 1
+                return self._read_cache[filepath]
 
-        # Cache miss → load from disk
-        self._read_misses += 1
+            # Cache miss → load from disk
+            self._read_misses += 1
+
+        # Load ngoài lock (I/O chậm, không block thread khác)
         content = self._load_from_disk(filepath)
-        self._read_cache[filepath] = content
 
-        # Evict oldest if over capacity
-        while len(self._read_cache) > self.max_read_cache:
-            self._read_cache.popitem(last=False)
-
+        with self._lock:
+            self._read_cache[filepath] = content
+            while len(self._read_cache) > self.max_read_cache:
+                self._read_cache.popitem(last=False)
         return content
 
     def _load_from_disk(self, filepath: str) -> str:
@@ -187,30 +213,48 @@ class FileContentCache:
                 with open(filepath, "r+b") as f:
                     with mmap.mmap(f.fileno(), 0) as mm:
                         return mm.read().decode("utf-8", errors="ignore")
-            else:
-                with open(filepath, "r", encoding="utf-8",
-                          errors="ignore") as f:
-                    return f.read()
+            with open(filepath, "r", encoding="utf-8",
+                      errors="ignore") as f:
+                return f.read()
         except (OSError, IOError, ValueError):
             return ""
 
     # ---------------- WRITE ----------------
     def write(self, filepath: str, content: str) -> None:
-        self._modified[filepath] = content
-        self._write_count += 1
+        needs_flush = False
+        with self._lock:
+            self._modified[filepath] = content
+            self._write_count += 1
+            if len(self._modified) >= self.write_flush_threshold:
+                needs_flush = True
+                buf_size = len(self._modified)
 
-        # Auto-flush if buffer grows too large (tránh OOM)
-        if len(self._modified) >= self.write_flush_threshold:
+        if needs_flush:
             self._log(
-                f"[i] [FileCache] Buffer {len(self._modified)} file "
-                f"→ auto-flush"
+                f"[i] [FileCache] Buffer {buf_size} file → auto-flush"
             )
             self.flush(self._log)
 
-    def flush(self, log_callback=print) -> None:
-        """Ghi tất cả file modified xuống disk."""
+    def flush(self, log_callback=print) -> tuple[int, int]:
+        """
+        Ghi tất cả file modified xuống disk.
+
+        Return (count_ok, count_error). Atomic swap buffer dưới lock,
+        write disk ngoài lock (I/O chậm) để không block reader.
+        """
+        with self._lock:
+            if not self._modified:
+                log_callback("[*] [FileCache] Không có thay đổi để ghi")
+                return 0, 0
+
+            # Atomic swap — copy ref rồi clear. Thread khác ghi vào
+            # buffer mới, không bị mất.
+            pending = self._modified
+            self._modified = {}
+
         count = 0
-        for filepath, content in self._modified.items():
+        errors = 0
+        for filepath, content in pending.items():
             try:
                 os.makedirs(os.path.dirname(filepath), exist_ok=True)
                 with open(filepath, "w", encoding="utf-8",
@@ -218,31 +262,47 @@ class FileContentCache:
                     f.write(content)
                 count += 1
             except (OSError, IOError, ValueError, TypeError) as e:
+                errors += 1
                 log_callback(f"[!] [FileCache] {filepath}: {e}")
-        log_callback(f"[*] [FileCache] Đã ghi {count} file")
-        self._modified.clear()
-        # Read cache clear để tránh stale data
-        self._read_cache.clear()
+
+        if errors:
+            log_callback(
+                f"[*] [FileCache] Đã ghi {count} file "
+                f"({errors} lỗi)"
+            )
+        else:
+            log_callback(f"[*] [FileCache] Đã ghi {count} file")
+
+        # NOTE: KHÔNG clear _read_cache ở đây.
+        # Lý do: thread khác có thể đang giữ content từ cache và sắp
+        # dùng nó để so sánh. Clear sẽ khiến nó re-read từ disk (chưa
+        # chắc đã flush xong). Modified buffer đã thắng trong read(),
+        # nên read sau flush vẫn trả đúng data.
+
+        return count, errors
 
     # ---------------- INTROSPECTION ----------------
     def get_modified_files(self) -> list[str]:
-        return list(self._modified.keys())
+        with self._lock:
+            return list(self._modified.keys())
 
     def is_modified(self, filepath: str) -> bool:
-        return filepath in self._modified
+        with self._lock:
+            return filepath in self._modified
 
     def get_stats(self) -> dict:
-        return {
-            "read_hits": self._read_hits,
-            "read_misses": self._read_misses,
-            "read_cache_size": len(self._read_cache),
-            "modified_buffer_size": len(self._modified),
-            "write_count": self._write_count,
-        }
+        with self._lock:
+            return {
+                "read_hits": self._read_hits,
+                "read_misses": self._read_misses,
+                "read_cache_size": len(self._read_cache),
+                "modified_buffer_size": len(self._modified),
+                "write_count": self._write_count,
+            }
 
 
 # ============================================================
-# PARALLEL PROCESSOR (unchanged)
+# PARALLEL PROCESSOR
 # ============================================================
 class ParallelFileProcessor:
     def __init__(self, max_workers: int | None = None):
@@ -262,12 +322,14 @@ class ParallelFileProcessor:
                         1 if result else 0
                     )
                 except Exception as e:
-                    print(f"[!] [Parallel] {futures[future]}: {e}")
+                    logger.warning(
+                        "[Parallel] %s: %s", futures[future], e,
+                    )
         return total
 
 
 # ============================================================
-# APK CACHE (with TTL enforcement — G1 helper)
+# APK CACHE
 # ============================================================
 class APKCache:
     def __init__(self, cache_dir: str | None = None):
@@ -312,7 +374,6 @@ class APKCache:
             pass
 
     def is_expired(self, apk_path: str, ttl_days: int = 30) -> bool:
-        """Check nếu cache entry quá cũ → force re-analyze."""
         cache_path = self.get_cache_path(apk_path)
         if not os.path.exists(cache_path):
             return True

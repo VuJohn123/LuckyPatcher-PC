@@ -106,6 +106,10 @@ class APKDownloader:
                 "Chrome/120.0.0.0 Safari/537.36"
             )
         })
+        # Set redirect limit tại session level (không phải kwarg)
+        # — requests.Session.get() không accept max_redirects kwarg.
+        self.session.max_redirects = MAX_REDIRECTS
+
         retry = Retry(
             total=net_cfg.get("max_retries", 3),
             backoff_factor=net_cfg.get("backoff_factor", 1.5),
@@ -211,7 +215,7 @@ class APKDownloader:
         try:
             resp = self.session.get(
                 url, stream=True, timeout=self.timeout,
-                allow_redirects=True, max_redirects=MAX_REDIRECTS,
+                allow_redirects=True,
             )
             resp.raise_for_status()
 
@@ -282,17 +286,32 @@ class APKDownloader:
         )
 
     def _filename(self, url: str, resp) -> str:
+        """
+        Parse filename theo thứ tự ưu tiên:
+          1. RFC 5987: filename*=UTF-8''name.ext
+          2. RFC 6266: filename="name.ext"
+          3. URL path basename
+          4. Fallback: "downloaded.apk"
+        """
         cd = resp.headers.get("Content-Disposition", "")
-        if "filename=" in cd:
-            if "filename*=" in cd:
-                m = re.search(r"filename\*=UTF-8''(.+)", cd)
-                if m:
-                    name = unquote(m.group(1))
-                    return self._sanitize_filename(name)
-            m = re.search(r'filename="?(.+?)"?$', cd)
-            if m:
-                return self._sanitize_filename(m.group(1).strip('"'))
 
+        # RFC 5987 — phải check TRƯỚC "filename=" (vì "filename*=..." 
+        # cũng chứa substring nhưng khác pattern)
+        if "filename*=" in cd:
+            m = re.search(r"filename\*=UTF-8''([^;]+)", cd)
+            if m:
+                name = unquote(m.group(1).strip().strip('"'))
+                return self._sanitize_filename(name)
+
+        # RFC 6266 legacy
+        if "filename=" in cd:
+            m = re.search(r'filename="?([^";]+)"?', cd)
+            if m:
+                return self._sanitize_filename(
+                    m.group(1).strip().strip('"')
+                )
+
+        # URL path
         path = urlparse(url).path
         name = os.path.basename(path)
         if name and "." in name:

@@ -11,10 +11,12 @@ except ImportError:  # pragma: no cover
 
 logger = logging.getLogger(__name__)
 
+# Thay AD_PATTERNS bằng version mở rộng:
 AD_PATTERNS = [
     re.compile(r"com\.google\.android\.gms\.ads\..*"),
     re.compile(r"com\.facebook\.ads\..*"),
     re.compile(r"com\.unity3d\.ads\..*"),
+    re.compile(r"com\.unity3d\.services\.core\..*ad.*", re.IGNORECASE),
     re.compile(r"com\.applovin\..*"),
     re.compile(r"com\.ironsource\..*"),
     re.compile(r"com\.mopub\..*"),
@@ -23,6 +25,10 @@ AD_PATTERNS = [
     re.compile(r"com\.chartboost\..*"),
     re.compile(r"com\.adcolony\..*"),
     re.compile(r"com\.startapp\..*"),
+    re.compile(r"com\.mintegral\..*"),
+    re.compile(r"com\.bytedance\.sdk\..*"),
+    re.compile(r"com\.fyber\.inneractive\..*"),
+    re.compile(r"com\.bidmachine\..*"),
     re.compile(r".*\.AdActivity$"),
     re.compile(r".*\.InterstitialAd.*"),
     re.compile(r".*\.RewardedVideo.*"),

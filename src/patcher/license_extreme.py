@@ -1,97 +1,169 @@
 """
-License Extreme — 5 chế độ license bypass.
+License Extreme — bytecode pattern matching (LP parity).
+
+v3 (2026):
+  - Mở rộng invoke-removal: Google LVL + Amazon DRM + Samsung IAP +
+    Huawei IAP + Play Billing v3-v7 (getBuyIntent, launchBillingFlow).
+  - Thêm pattern detection cho binding-based license check.
+  - Market-specific mở rộng (Amazon/Samsung/Huawei/Yandex).
 """
 from __future__ import annotations
 
 import logging
+import re
 
 from core.smali_utils import (
     REGEX_BOOLEAN_METHOD,
     REGEX_INVOKE_LICENSE,
     REGEX_INVOKE_ILICENSING,
-    get_all_smali_files,
 )
+from patcher.base import BasePatcher
 
 logger = logging.getLogger(__name__)
 
-LICENSE_KEYWORDS = {
-    "allow", "dontAllow", "checkLicense", "isLicensed", "verifyLicense",
-}
+LICENSE_KEYWORDS = frozenset({
+    "allow", "dontallow", "checklicense", "islicensed",
+    "verifylicense", "ispurchased", "haspurchased",
+    "ispro", "isproversion", "ispremiumuser", "ispaiduser",
+    "isfullversion", "isunlocked",
+})
+
+# Thêm invoke patterns cho các market khác
+_EXTRA_INVOKE_PATTERNS = (
+    # Google Play Billing license-in-purchase
+    re.compile(r".*invoke.*getBuyIntent.*\n"),
+    re.compile(r".*invoke.*launchBillingFlow.*\n"),
+    re.compile(r".*invoke.*queryPurchases.*\n"),
+    # Amazon DRM
+    re.compile(r".*invoke.*amazon.*verify.*\n", re.IGNORECASE),
+    re.compile(r".*invoke.*com/amazon/venezia.*\n"),
+    # Samsung IAP
+    re.compile(r".*invoke.*com/sec/android/iap.*\n"),
+    # Huawei IAP
+    re.compile(r".*invoke.*com/huawei/hms/iap.*\n"),
+)
 
 
-class LicenseExtremePatcher:
-    def __init__(self, decompiled_path: str, log_callback=print, file_cache=None):
-        self.decompiled_path = decompiled_path
-        self.log = log_callback
-        self.file_cache = file_cache
+class LicenseExtremePatcher(BasePatcher):
+    def patch(self) -> int:
+        return self.patch_extreme()
 
-    def _read(self, path: str) -> str:
-        if self.file_cache:
-            return self.file_cache.read(path)
-        with open(path, "r", encoding="utf-8", errors="ignore") as f:
-            return f.read()
-
-    def _write(self, path: str, content: str) -> None:
-        if self.file_cache:
-            self.file_cache.write(path, content)
-        else:
-            with open(path, "w", encoding="utf-8") as f:
-                f.write(content)
-
+    # ============================================================
+    # EXTREME — remove invoke patterns
+    # ============================================================
     def patch_extreme(self) -> int:
-        """Xóa mọi invoke liên quan LicenseChecker/ILicensingService."""
-        self.log("[*] [LicenseExtreme] Extreme mode...")
-        patched = 0
-        for filepath in get_all_smali_files(self.decompiled_path):
-            if len(filepath) > 250:
-                continue
-            content = self._read(filepath)
+        self.log("[*] [LicenseExtreme] Extreme mode (invoke removal)")
 
-            if not ("LicenseChecker" in content
-                    or "ILicensingService" in content
-                    or "checkLicense" in content):
-                continue
+        def _transform(content: str, filepath: str) -> str | None:
+            # Quick prefilter
+            if not any(k in content for k in (
+                "LicenseChecker", "ILicensingService", "checkLicense",
+                "getBuyIntent", "launchBillingFlow", "queryPurchases",
+                "com/amazon/venezia", "com/sec/android/iap",
+                "com/huawei/hms/iap",
+            )):
+                return None
 
             original = content
-            content = REGEX_INVOKE_LICENSE.sub("", content)
-            content = REGEX_INVOKE_ILICENSING.sub("", content)
+            content = REGEX_INVOKE_LICENSE.sub(
+                "# invoke-removed by LicenseExtreme\n", content,
+            )
+            content = REGEX_INVOKE_ILICENSING.sub(
+                "# invoke-removed by LicenseExtreme\n", content,
+            )
+            for pat in _EXTRA_INVOKE_PATTERNS:
+                content = pat.sub(
+                    "# invoke-removed by LicenseExtreme\n", content,
+                )
+            return content if content != original else None
 
-            if content != original:
-                self._write(filepath, content)
-                patched += 1
+        return self.patch_files(
+            _transform,
+            prefilter_keywords=(
+                "LicenseChecker", "ILicensingService", "checkLicense",
+                "getBuyIntent", "launchBillingFlow",
+                "com/amazon/venezia", "com/sec/android/iap",
+            ),
+            path_hints=(
+                "license", "licensing", "lvl",
+                "billing", "purchase", "iap", "store",
+            ),
+            label="LicenseExtreme",
+        )
 
-        self.log(f"[*] [LicenseExtreme] Patched {patched} files")
-        return patched
+    # ============================================================
+    # PATTERN — bindService-based LVL
+    # ============================================================
+    def patch_pattern(self) -> int:
+        self.log("[*] [LicenseExtreme] Bytecode pattern mode")
 
+        from core.regex_safe import safe_search
+
+        LVL_BIND_PATTERN = (
+            r"\.method\s+(?:(?:public|private|protected|static|final)"
+            r"\s+)+(\S+)\s*\([^)]*\)Z\s+"
+            r"\.registers\s+\d+\s+"
+            r".{0,3000}?"
+            r"invoke-virtual\s+\{[^}]*\},\s+"
+            r"Landroid/content/Context;->bindService"
+            r".{0,3000}?"
+            r"\.end\s+method"
+        )
+
+        def _transform(content: str, filepath: str) -> str | None:
+            if "bindService" not in content:
+                return None
+            m = safe_search(
+                LVL_BIND_PATTERN, content,
+                flags=re.DOTALL,
+            )
+            if not m:
+                return None
+            full = m.group(0)
+            header = full.split("\n")[0]
+            replacement = (
+                f"{header}\n"
+                "    .locals 1\n"
+                "    const/4 v0, 0x1\n"
+                "    return v0\n"
+                ".end method"
+            )
+            return content.replace(full, replacement)
+
+        return self.patch_files(
+            _transform,
+            prefilter_keywords=("bindService",),
+            label="LicenseExtreme-Pattern",
+        )
+
+    # ============================================================
+    # MARKET-SPECIFIC
+    # ============================================================
     def patch_reverse_auto(self) -> int:
         return self.patch_extreme()
 
     def patch_amazon_market(self) -> int:
-        self.log("[*] [LicenseExtreme] Amazon mode...")
         return self._patch_by_keyword(
-            ("amazon", "appstore"),
-            "Amazon",
+            ("amazon", "appstore", "venezia"), "Amazon",
         )
 
     def patch_samsung_apps(self) -> int:
-        self.log("[*] [LicenseExtreme] Samsung mode...")
         return self._patch_by_keyword(
-            ("samsung", "galaxy"),
-            "Samsung",
+            ("samsung", "galaxy", "com/sec/android/iap"), "Samsung",
         )
 
-    def _patch_by_keyword(self, keywords: tuple[str, ...], label: str) -> int:
-        patched = 0
-        for filepath in get_all_smali_files(self.decompiled_path):
-            if len(filepath) > 250:
-                continue
-            content = self._read(filepath)
-            if not any(kw in content.lower() for kw in keywords):
-                continue
+    def _patch_by_keyword(
+        self, keywords: tuple[str, ...], label: str,
+    ) -> int:
+        self.log(f"[*] [LicenseExtreme] {label} mode")
 
+        def _transform(content: str, filepath: str) -> str | None:
+            c_lower = content.lower()
+            if not any(kw in c_lower for kw in keywords):
+                return None
             original = content
             for match in REGEX_BOOLEAN_METHOD.finditer(content):
-                name = match.group(1).split("(")[0]
+                name = match.group(1).split("(")[0].lower()
                 if name not in LICENSE_KEYWORDS:
                     continue
                 header = match.group(0).split("\n")[0]
@@ -103,14 +175,10 @@ class LicenseExtremePatcher:
                     ".end method"
                 )
                 content = content.replace(match.group(0), replacement)
-                patched += 1
-                break
+            return content if content != original else None
 
-            if content != original:
-                self._write(filepath, content)
-
-        self.log(f"[*] [LicenseExtreme] {label} patched {patched} files")
-        return patched
-
-    def patch(self) -> int:
-        return self.patch_extreme()
+        return self.patch_files(
+            _transform,
+            prefilter_keywords=keywords,
+            label=f"LicenseExtreme-{label}",
+        )

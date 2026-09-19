@@ -1,6 +1,10 @@
 """
 GDA integration — phân tích APK bằng GDA.exe (nếu có).
 Graceful: không crash nếu GDA không tồn tại.
+
+Security note:
+  Dùng `tempfile.mkstemp()` thay vì `tempfile.mktemp()` — tránh TOCTOU
+  race condition (mktemp deprecated từ Python 2.3 vì lỗ hổng bảo mật).
 """
 from __future__ import annotations
 
@@ -30,7 +34,14 @@ class GDAAnalyzer:
             logger.debug("GDA không tìm thấy: %s", self.gda_exe)
             return findings
 
-        report = tempfile.mktemp(suffix=".txt")
+        # --- Safe tempfile: mkstemp tạo unique + fd đã open (atomic) ---
+        # fd phải được close trước khi pass path cho external tool, nếu
+        # không Windows sẽ lock file và GDA không ghi được.
+        fd, report = tempfile.mkstemp(
+            suffix=".txt", prefix="gda_", text=True,
+        )
+        os.close(fd)
+
         try:
             proc = subprocess.run(
                 [self.gda_exe, "-a", apk_path, "-o", report],
@@ -43,7 +54,8 @@ class GDAAnalyzer:
             if not os.path.exists(report):
                 return findings
 
-            with open(report, "r", encoding="utf-8", errors="ignore") as f:
+            with open(report, "r", encoding="utf-8",
+                      errors="ignore") as f:
                 content = f.read()
 
             findings["license_classes"] = re.findall(

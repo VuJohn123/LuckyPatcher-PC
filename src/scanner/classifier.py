@@ -1,4 +1,8 @@
-"""Phân loại nhanh APK — trả về danh sách màu."""
+"""Phân loại nhanh APK — trả về danh sách màu.
+
+v2: thêm Unity IAP + packer detection.
+Giữ nguyên: _has_license, _has_ads, _is_system, _get_dex_bytes.
+"""
 from __future__ import annotations
 
 import re
@@ -6,6 +10,23 @@ import zipfile
 
 from androguard.core.apk import APK
 from androguard.core.dex import DEX
+
+_IAP_HINTS = (
+    "com/android/billingclient",
+    "IInAppBillingService",
+    "com/unity3d/purchasing",
+    "com/unity/purchasing",
+    "IStoreListener",
+)
+
+_PACKER_LIBS = frozenset({
+    "libpairipcore.so",   # PairIP
+    "libjiagu.so",        # 360
+    "libjiagu_art.so",
+    "libshell.so",        # Tencent
+    "libsecexe.so",       # Bangcle
+    "libmobisec.so",      # Alibaba
+})
 
 
 class AppClassifier:
@@ -21,12 +42,20 @@ class AppClassifier:
         colors = []
         if self._has_license():
             colors.append("green")
+        if self._has_iap():
+            if "green" not in colors:
+                colors.append("green")
         if self._has_ads():
             colors.append("blue")
         if self._is_system():
             colors.append("purple")
+        if self._has_packer():
+            colors.append("red")
         return colors if colors else ["white"]
 
+    # ============================================================
+    # ORIGINAL METHODS (kept for backward compat + tests)
+    # ============================================================
     def _has_license(self) -> bool:
         try:
             dex_bytes = self._get_dex_bytes()
@@ -76,3 +105,32 @@ class AppClassifier:
         except Exception:
             pass
         return None
+
+    # ============================================================
+    # NEW METHODS
+    # ============================================================
+    def _has_iap(self) -> bool:
+        try:
+            dex_bytes = self._get_dex_bytes()
+            if not dex_bytes:
+                return False
+            dex = DEX(dex_bytes)
+            for cls in dex.get_classes():
+                cname = cls.get_name()
+                if any(h in cname for h in _IAP_HINTS):
+                    return True
+        except Exception:
+            pass
+        return False
+
+    def _has_packer(self) -> bool:
+        try:
+            with zipfile.ZipFile(self.apk_path, "r") as z:
+                for name in z.namelist():
+                    if name.startswith("lib/") and name.endswith(".so"):
+                        base = name.rsplit("/", 1)[-1]
+                        if base in _PACKER_LIBS:
+                            return True
+        except Exception:
+            pass
+        return False

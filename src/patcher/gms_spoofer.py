@@ -1,13 +1,11 @@
-"""
-Giả mạo Google Play Services — thêm stub + patch check.
-"""
+"""Giả mạo Google Play Services — thêm stub + patch check."""
 from __future__ import annotations
 
 import logging
 import os
 import re
 
-from core.smali_utils import get_all_smali_files, _METHOD_MODS
+from core.smali_utils import _METHOD_MODS, get_all_smali_files
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +41,8 @@ GMS_STUB = """.class public Lcom/google/android/gms/common/GoogleApiAvailability
 
 
 class GMSSpoofer:
-    def __init__(self, decompiled_path: str, log_callback=print, file_cache=None):
+    def __init__(self, decompiled_path: str, log_callback=print,
+                 file_cache=None):
         self.decompiled_path = decompiled_path
         self.log = log_callback
         self.file_cache = file_cache
@@ -87,7 +86,6 @@ class GMSSpoofer:
             count += 1
             self.log("[+] Added GoogleApiAvailability stub")
 
-        # Multi-modifier aware (public static, protected final, ...)
         pattern_avail = re.compile(
             r"\.method\s+" + _METHOD_MODS +
             r"(\S+)\s*\(.*?\)\s*I\s*"

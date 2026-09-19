@@ -1,38 +1,15 @@
 # ============================================================
 # LP-PC Suite — .gitignore
 # ============================================================
-# Ignore patterns:
-#   - Python cache & bytecode
-#   - Virtual environments
-#   - Test coverage artifacts
-#   - IDE / editor metadata
-#   - OS-specific files
-#   - Runtime workspace (decompiled, cache, output)
-#   - Logs
-#   - Large binary tools (JARs downloaded separately)
-#   - APK test samples
-#   - Secrets (keys handled separately in tools/keys/README)
+# Rule: anchor top-level dirs with leading "/" to avoid
+#       accidentally ignoring same-named dirs at deeper levels.
+# Rule: whitelist must follow its own ignore rule.
 # ============================================================
 
 # ==================== PYTHON ====================
 __pycache__/
 *.py[cod]
 *$py.class
-*.so
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-share/python-wheels/
 *.egg-info/
 .installed.cfg
 *.egg
@@ -40,36 +17,10 @@ MANIFEST
 
 # PyInstaller
 *.manifest
-*.spec
-pyinstaller/
+/build/
+/dist/
 
-# Unit test / coverage
-htmlcov/
-.tox/
-.nox/
-.coverage
-.coverage.*
-.cache
-nosetests.xml
-coverage.xml
-*.cover
-*.py,cover
-.hypothesis/
-.pytest_cache/
-cover/
-
-# Jupyter
-.ipynb_checkpoints
-
-# IPython
-profile_default/
-ipython_config.py
-
-# PEP 582
-__pypackages__/
-
-# Environments
-.env
+# ==================== VIRTUAL ENV ====================
 .venv/
 venv/
 ENV/
@@ -77,82 +28,69 @@ env/
 .venv.bak/
 pythonenv*
 
-# ==================== VIRTUALENV (UV) ====================
-# uv creates .venv (already ignored above)
-# uv lockfile — keep uv.lock committed for reproducibility
-# uv.lock  (COMMENT OUT if you want lock file committed)
-
+# ==================== TEST / COVERAGE ====================
+.pytest_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+.tox/
+.nox/
+.hypothesis/
+*.lcov
+.ruff_cache/
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.black-cache/
 
 # ==================== RUNTIME WORKSPACE ====================
-# Everything inside workspace/ is generated at runtime
-workspace/cache/
-workspace/decompiled/
-workspace/output/
-workspace/history/
-workspace/backups/
-workspace/metrics.json
-workspace/*.tmp
-workspace/*.log
+# Ignore toàn bộ — git không track empty dirs nên không cần .gitkeep.
+workspace/
 
-# Keep the workspace dir but ignore contents
-workspace/**/*.apk
-workspace/**/*.xapk
-workspace/**/*.apks
-workspace/**/*.dex
-workspace/**/*.smali
-
-# Old bad path (from earlier bug) — ignore if exists
+# Legacy paths
 src/workspace/
 src/src/workspace/
 
 # ==================== LOGS ====================
 logs/
-logs/*.log
-logs/*.log.*
-logs/crash_*.log
-logs/crash_*.txt
 *.log
+*_log.txt
+e2e*.txt
+e2e*.log
 !logs/.gitkeep
 
-# ==================== PYTEST ====================
-.pytest_cache/
-.pytest_cache/v/cache/lastfailed
-.pytest_cache/v/cache/nodeids
-.pytest_cache/v/cache/stepwise
-
 # ==================== TOOLS — LARGE BINARIES ====================
-# JARs are ~5-30MB each → download via setup script instead of committing
-# Uncomment if you want to commit them (not recommended)
+# JARs ~5-30MB → download via tools/scripts/setup.ps1
 tools/bin/*.jar
 tools/*.jar
-tools/bin/GDA/*.exe
-tools/bin/GDA/*.dll
-tools/GDA.exe
-tools/GDA/*.exe
-tools/GDA/*.dll
-
-# bundletool multi-part zip (large, extracted on setup)
-tools/bundletool.zip
-tools/bundletool.z01
-tools/bundletool.z02
-tools/bundletool.z03
 tools/*.zip
+tools/*.z01
+tools/*.z02
+tools/*.z03
 tools/_bundletool_combined.zip
 
-# Keep small files
+# GDA (large Windows binary)
+tools/GDA.exe
+tools/GDA/
+tools/bin/GDA/
+
+# Keep tool scripts (setup + audit + e2e)
+!tools/scripts/
+!tools/scripts/*.py
+!tools/scripts/*.ps1
+
+# Keep README + reorganize helper
 !tools/README.md
 !tools/reorganize.py
-!tools/scripts/*.py
-!tools/keys/*.pk8
-!tools/keys/*.pem
+
+# Proxy smali (small, tracked as source)
 !tools/proxy_service/smali/**/*.smali
 
-# Keys — DO NOT commit production signing keys
-# Only testkey is OK to commit (public knowledge)
-tools/keys/*.keystore
-tools/keys/*.jks
-tools/keys/production_*
-tools/keys/*.p12
+# ==================== KEYS ====================
+tools/keys/*
+!tools/keys/.gitkeep
+!tools/keys/README.md
 !tools/keys/testkey.pk8
 !tools/keys/testkey.x509.pem
 !tools/keys/platform.pk8
@@ -162,43 +100,71 @@ tools/keys/*.p12
 !tools/keys/shared.pk8
 !tools/keys/shared.x509.pem
 
-# ==================== APK TEST SAMPLES ====================
-# Don't commit APK samples — user downloads separately
+# Production keys — NEVER commit
+tools/keys/production_*
+tools/keys/*.keystore
+tools/keys/*.jks
+tools/keys/*.p12
+
+# ==================== APK SAMPLES ====================
+# Root-level test samples (ZT.apk, etc.)
+/ZT.apk
+/sample.apk
+/*.apk
+/*.xapk
+/*.apks
+/*.aab
+
+# Everywhere else (exclude fixtures)
 *.apk
 *.xapk
 *.apks
 *.aab
-!src/tests/fixtures/*.apk  # Exception: small test fixtures
+!src/tests/fixtures/*.apk
 !src/tests/fixtures/*.xapk
 
+# ==================== CUSTOM PATCHES / PLUGINS ====================
+patches/*
+!patches/.gitkeep
+
+plugins/*
+!plugins/__init__.py
+!plugins/.gitkeep
+
+# ==================== USER CONFIG ====================
+config/user.yaml
+config/local.yaml
+config/*.local.yaml
+!config/default.yaml
+
+# ==================== SECRETS ====================
+.env
+.env.*
+!.env.example
+*.secret
+secrets.json
+credentials.json
+!credentials.json.example
+
 # ==================== IDE / EDITOR ====================
-# VSCode
 .vscode/
 !.vscode/settings.json.example
 !.vscode/launch.json.example
 !.vscode/extensions.json.example
 
-# PyCharm / IntelliJ
 .idea/
 *.iml
 *.iws
 *.ipr
-out/
 
-# Vim
 *.swp
 *.swo
 *~
-.*.sw?
-
-# Emacs
-*~
 \#*\#
 .\#*
-
-# Sublime Text
 *.sublime-workspace
 *.sublime-project
+.ipynb_checkpoints/
 
 # ==================== OS ====================
 # Windows
@@ -220,87 +186,24 @@ $RECYCLE.BIN/
 .TemporaryItems
 
 # Linux
-*~
 .fuse_hidden*
 .directory
 .Trash-*
 .nfs*
 
-# ==================== TEMP / RUNTIME ====================
+# ==================== TEMP / BACKUP ====================
 *.tmp
 *.temp
 *.bak
-*.swp
 *.orig
 *.rej
+/tmp/
+/temp/
+/.tmp/
+/.temp/
 
-# Temp dirs
-tmp/
-temp/
-.tmp/
-.temp/
-
-# ==================== SECRETS ====================
-# Never commit secrets
-.env
-.env.*
-!.env.example
-*.secret
-secrets.json
-credentials.json
-!credentials.json.example
-
-# ==================== CUSTOM / USER CONFIG ====================
-# User-specific config overrides (keep default.yaml tracked)
-config/user.yaml
-config/local.yaml
-config/*.local.yaml
-!config/default.yaml
-
-# ==================== PLUGINS (user-installed) ====================
-# User-installed plugins go in plugins/, keep only __init__.py
-plugins/*
-!plugins/__init__.py
-!plugins/.gitkeep
-
-# ==================== PATCHES (custom user patches) ====================
-patches/*
-!patches/.gitkeep
-
-# ==================== DOCS BUILD ====================
-docs/_build/
-docs/build/
-site/
-
-# ==================== MISC ====================
-# Jupyter checkpoints (redundant but explicit)
-.ipynb_checkpoints
-
-# Dependencies lockfiles (keep or ignore depending on policy)
-# package-lock.json  (N/A)
-# poetry.lock       (using uv, so N/A)
-# uv.lock           (KEEP — uncomment next line to ignore)
-# uv.lock
-
-# Coverage
-.coverage
-.coverage.*
-coverage.xml
-*.lcov
-
-# MyPy
-.mypy_cache/
-.dmypy.json
-dmypy.json
-
-# Ruff
-.ruff_cache/
-
-# Black
-.black-cache/
-
-# ==================== PROJECT-SPECIFIC ====================
-# Cached decompiled results — from tests/dev
+# ==================== PROJECT-SPECIFIC CACHE ====================
+# Signed/patched outputs accidentally left in root
 *_signed.apk
 *_patched.apk
 *-aligned-debugSigned.apk
@@ -309,15 +212,11 @@ cloned.apk
 merged.apk
 patched.apk
 
-# Cache artifacts
-*.rej
-*.orig
-
-# Local history file (backup of patch_history.json)
+# History backups
 patch_history.json.bak
 patch_history.json.old
 
-# Metrics export
+# Metrics exports
 metrics.csv
 metrics_export.json
 
@@ -326,8 +225,17 @@ debug_dump_*.txt
 debug_dump_*.json
 crash_dump_*.txt
 
-# ==================== CI / CD ====================
-# GitHub Actions cache (shouldn't be committed anyway)
+# ==================== DOCS BUILD ====================
+docs/_build/
+docs/build/
+site/
+
+# ==================== CI (local overrides) ====================
 .github/workflows/*.local.yml
 
-# ==================== END ====================
+# ============================================================
+# KEEP COMMITTED (do NOT ignore):
+#   pyproject.toml, uv.lock, requirements.txt (if kept)
+#   Makefile, pytest.ini (if kept), .gitignore, README.md
+#   src/**, tools/scripts/**, config/default.yaml, assets/**
+# ============================================================

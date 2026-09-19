@@ -1,27 +1,42 @@
+# ============================================================
+# LP-PC Suite — Adaptive Configuration
+# ============================================================
+# Giá trị "auto" được điều chỉnh bởi 4 tầng:
+#   - env_probe: static hardware spec
+#   - workload_profiler: classify APK being processed
+#   - adaptive_tuner: runtime state (RAM, CPU, thermal)
+#   - telemetry: learn from history
+#
+# Precedence (cao → thấp):
+#   1. CLI args
+#   2. Env vars (LP_<SECTION>_<KEY>)
+#   3. Preset (LP_PRESET env)
+#   4. User config file
+#   5. default.yaml (this file)
+#   6. Runtime auto-tune (cho field "auto")
+# ============================================================
+
 # ==================== AUTO-TUNE ENGINE ====================
 auto_tune:
   enabled: true
+
+  # Mode: auto | daily | gaming | stress | background | power_saver
   mode: auto
 
+  # ---- Safety margins ----
   safety:
     # === MASTER SWITCH ===
     # false = TẮT hoàn toàn SafetyGuard (không check CPU/RAM/disk/temp)
-    # Hữu ích khi đang debug hoặc đã có Defender exclusion.
+    # Hữu ích khi debug hoặc đã có Defender exclusion.
     enabled: true
 
-    # ---- Safety margins ----
     reserve_cpu_cores: 1
     reserve_ram_pct: 25
     reserve_ram_min_mb: 1024
     reserve_disk_pct: 10
     reserve_disk_min_mb: 2048
-
-    # Ngưỡng riêng cho cache READ (link/copy từ cache → workspace).
-    # Thấp hơn write vì chỉ cần đọc + (thường) link = 0 disk.
     reserve_disk_pct_cache_read: 3
 
-    # ---- Throttle thresholds ----
-    # 98% cho Windows+Defender. Hạ xuống 90 sẽ false positive liên tục.
     throttle_ram_pct: 85
     throttle_cpu_pct: 98
     throttle_disk_pct: 90
@@ -30,31 +45,211 @@ auto_tune:
     backoff_factor: 0.5
     backoff_min_workers: 1
 
-    # ---- CPU measurement ----
-    # "external" = system - own_tree (own_tree giờ include descendants
-    #              + external tool processes apktool/apksigner/...)
-    # "system"   = raw psutil.cpu_percent()
     cpu_measurement: external
 
-    # ---- Prompt / reset semantics ----
-    # Số vi phạm LIÊN TIẾP để trigger hành động (prompt/CLI fallback).
     prompt_after_n_violations: 5
-
-    # Reset counter sau N lần check OK LIÊN TIẾP (chống reset do
-    # dao động ngắn trên Windows). Counter không reset ngay lập tức.
     reset_after_ok_checks: 3
-
-    # Timeout chờ user prompt (GUI). Hết timeout → auto-continue.
     prompt_timeout_sec: 60
-
-    # Nâng ngưỡng bao nhiêu % khi user chọn Continue / cli action=continue.
     threshold_raise_pct: 5
-
-    # Interval check (5s — smooth hơn 3s).
     check_interval_sec: 5
 
-    # ---- CLI mode behavior (không có GUI) ----
-    # "mute":     auto-mute reason, dùng full resources (RECOMMENDED cho CLI)
-    # "continue": nâng ngưỡng + reset counter
-    # "abort":    dừng pipeline
     cli_mode_action: mute
+
+  # ---- Workload classification ----
+  workload_classes:
+    tiny:    {max_size_mb: 10,    strategy: fast}
+    small:   {max_size_mb: 50,    strategy: fast}
+    medium:  {max_size_mb: 200,   strategy: balanced}
+    large:   {max_size_mb: 500,   strategy: careful}
+    huge:    {max_size_mb: 2048,  strategy: careful}
+    massive: {max_size_mb: 99999, strategy: paranoid}
+
+  # ---- Learning from history ----
+  telemetry:
+    enabled: true
+    history_size: 100
+    reuse_learned_config: true
+    min_samples_for_trust: 3
+
+  # ---- Concurrent instances ----
+  concurrency:
+    allow_multi_instance: false
+    share_resources: true
+    lock_file: auto
+
+
+# ==================== PIPELINE ====================
+pipeline:
+  apktool_jobs: auto
+  apktool_memory: auto
+  keep_workspace: true
+  fast_mode: auto
+  use_gda: auto
+  gc_control: true
+  max_decompile_retries: auto
+  max_recompile_retries: 1
+
+
+# ==================== CONVERSION ====================
+conversion:
+  auto_convert_xapk: true
+  auto_convert_apks: true
+  allow_split_apk: true
+  cleanup_temp: true
+
+
+# ==================== SIGNING ====================
+signing:
+  key_type: testkey
+  forced_package_id: null
+  skip_adb_if_missing: true
+
+
+# ==================== LOGGING ====================
+logging:
+  level: auto
+  file: auto
+  max_bytes: 10485760
+  backup_count: 5
+  json_format: false
+  rotation: size
+  suppress_noisy_libs: true
+  silence_androguard: true
+
+
+# ==================== CACHE ====================
+cache:
+  enabled: auto
+  dir: auto
+  apk_analysis_ttl_days: 30
+  decompiled_ttl_days: auto
+  max_size_mb: auto
+  compress_decompiled: auto
+
+
+# ==================== NETWORK ====================
+network:
+  connect_timeout: auto
+  read_timeout: 60
+  max_retries: 3
+  backoff_factor: 1.5
+  retry_status_codes: [429, 500, 502, 503, 504]
+  max_download_size_mb: 500
+  pool_connections: auto
+  pool_maxsize: auto
+  user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+  block_private_ips: true
+  block_localhost: true
+  block_metadata_endpoints: true
+  allowed_schemes: [http, https]
+
+
+# ==================== PERFORMANCE ====================
+performance:
+  worker_processes: auto
+  regex_engine: auto
+  json_engine: auto
+  file_cache_buffer_kb: auto
+  mmap_threshold_bytes: 1048576
+  prefilter_enabled: true
+
+  batch:
+    flush_batch_size: auto
+    flush_on_memory_mb: auto
+    parallel_chunk_size: auto
+
+
+# ==================== SECURITY ====================
+security:
+  zip_slip_guard: true
+  validate_input_paths: true
+  max_path_length: auto
+  sanitize_download_filenames: true
+  forbid_eval_in_patches: true
+
+
+# ==================== UI ====================
+ui:
+  theme: dark
+  font_family: null
+  font_size: 13
+  window_width: 1280
+  window_height: 820
+  log_visible: auto
+  log_max_height: auto
+  log_expanded_height: 400
+  log_auto_scroll: auto
+  log_max_blocks: auto
+  animations_enabled: auto
+
+
+# ==================== UPDATER ====================
+updater:
+  check_on_startup: auto
+  update_url: "https://raw.githubusercontent.com/Freezdy413485/LP-PC-Suite/main/version.json"
+  timeout: 8.0
+  cache_check_hours: 24
+
+# ---- Tools auto-updater ----
+# NOTE: Tất cả regex `pattern` PHẢI dùng SINGLE-QUOTE.
+# YAML double-quote không hiểu `\.` → parse error.
+tools:
+  enabled: true
+  check_cache_hours: 24
+  auto_download: false
+  sources:
+    apktool:
+      repo: "iBotPeaches/Apktool"
+      pattern: '^apktool_[0-9.]+\.jar$'
+      target: "apktool.jar"
+      version_from_tag: true
+    uber-apk-signer:
+      repo: "patrickfav/uber-apk-signer"
+      pattern: '^uber-apk-signer-[0-9.]+\.jar$'
+      target: "uber-apk-signer.jar"
+    bundletool:
+      repo: "google/bundletool"
+      pattern: '^bundletool-all-[0-9.]+\.jar$'
+      target: "bundletool.jar"
+    smali:
+      repo: "google/smali"
+      pattern: '^smali-[0-9.]+(-[a-f0-9]+)?\.jar$'
+      target: "smali.jar"
+    baksmali:
+      repo: "google/smali"
+      pattern: '^baksmali-[0-9.]+(-[a-f0-9]+)?\.jar$'
+      target: "baksmali.jar"
+
+
+# ==================== PRESETS ====================
+presets:
+  daily:
+    auto_tune: {mode: daily}
+    pipeline: {fast_mode: false, use_gda: false}
+    ui: {log_visible: true, animations_enabled: true}
+
+  gaming:
+    auto_tune: {mode: gaming}
+    pipeline: {fast_mode: true, use_gda: false}
+    performance: {worker_processes: auto}
+    ui: {log_visible: true, animations_enabled: false}
+
+  stress:
+    auto_tune:
+      mode: stress
+      safety: {reserve_ram_pct: 15}
+    pipeline: {fast_mode: true, use_gda: false, gc_control: true}
+    cache: {compress_decompiled: false}
+    ui: {log_visible: false, log_auto_scroll: false}
+    logging: {level: WARNING}
+
+  background:
+    auto_tune: {mode: background}
+    pipeline: {apktool_jobs: 1, apktool_memory: 2048m}
+    ui: {animations_enabled: false}
+
+  power_saver:
+    auto_tune: {mode: power_saver}
+    pipeline: {apktool_jobs: 2, apktool_memory: 2048m}
+    performance: {worker_processes: 1}
+    ui: {animations_enabled: false}

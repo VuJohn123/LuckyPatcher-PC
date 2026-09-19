@@ -1,75 +1,57 @@
-"""Base class cho các patcher dùng pattern cấu trúc."""
+"""
+Smart pattern patcher — base class cho patcher dùng pattern cấu trúc.
+
+v2: ReDoS-safe dùng core.regex_safe.
+    Giữ `get_all_smali_files` import ở module level để test có thể mock.
+"""
 from __future__ import annotations
 
 import logging
-import os
-import re
 
-from core.smali_utils import get_all_smali_files
+from core.regex_safe import safe_sub
+from core.smali_utils import get_all_smali_files  # noqa: F401  (test mock target)
+from patcher.base import BasePatcher
 
 logger = logging.getLogger(__name__)
 
 
-class SmartPatternPatcher:
-    def __init__(self, decompiled_path: str, log_callback=print, file_cache=None):
-        self.decompiled_path = decompiled_path
-        self.log = log_callback
-        self.file_cache = file_cache
+class SmartPatternPatcher(BasePatcher):
+    def apply_patterns(
+        self,
+        patterns: list[dict],
+        target_methods: list[str] | None = None,
+    ) -> int:
+        """
+        patterns: [{"search": <regex>, "replace": <str|callable>}]
+        """
+        if not patterns:
+            return 0
 
-    def _read(self, path: str) -> str:
-        if self.file_cache:
-            return self.file_cache.read(path)
-        with open(path, "r", encoding="utf-8", errors="ignore") as f:
-            return f.read()
+        prefilter = tuple(target_methods) if target_methods else ()
 
-    def _write(self, path: str, content: str) -> None:
-        if self.file_cache:
-            self.file_cache.write(path, content)
-        else:
-            with open(path, "w", encoding="utf-8") as f:
-                f.write(content)
+        import re as _re
 
-    def apply_patterns(self, patterns: list[dict],
-                       target_methods: list[str] | None = None) -> int:
-        total = 0
-        for filepath in get_all_smali_files(self.decompiled_path):
-            if len(filepath) > 250:
-                continue
-            try:
-                content = self._read(filepath)
-            except OSError:
-                continue
-
-            if target_methods and not any(m in content for m in target_methods):
-                continue
-
+        def _transform(content: str, filepath: str) -> str | None:
             original = content
             for p in patterns:
                 search = p.get("search")
                 replace = p.get("replace")
                 if not search:
                     continue
-                try:
-                    if callable(replace):
-                        new_content = re.sub(search, replace, content,
-                                             flags=re.DOTALL)
-                        if new_content != content:
-                            total += 1
-                            content = new_content
-                    else:
-                        new_content, n = re.subn(search, replace, content,
-                                                  flags=re.DOTALL)
-                        if n > 0:
-                            content = new_content
-                            total += n
-                except re.error as e:
-                    logger.warning("Pattern error in %s: %s", filepath, e)
+                new, ok = safe_sub(
+                    search, replace, content,
+                    flags=_re.DOTALL,
+                    log_callback=self.log,
+                )
+                if ok:
+                    content = new
+            return content if content != original else None
 
-            if content != original:
-                try:
-                    self._write(filepath, content)
-                except OSError as e:
-                    logger.warning("Write failed %s: %s", filepath, e)
+        return self.patch_files(
+            _transform,
+            prefilter_keywords=prefilter,
+            label="SmartPattern",
+        )
 
-        self.log(f"[*] [SmartPattern] Total replacements: {total}")
-        return total
+    def patch(self) -> int:
+        return 0

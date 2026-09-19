@@ -1,0 +1,79 @@
+[project]
+name = "lp-pc-suite"
+version = "1.0.0"
+description = "Lucky Patcher PC — static APK patcher"
+requires-python = ">=3.11,<3.13"
+readme = "README.md"
+
+dependencies = [
+    "PyQt6>=6.7.0",
+    "PyQt6-Qt6>=6.7.0",
+    "PyQt6-sip>=13.8.0",
+    "androguard>=4.1.0",
+    "tqdm>=4.66.0",
+    "regex>=2023.12.25",
+    "orjson>=3.10.0",
+    "requests>=2.32.0",
+    "urllib3>=2.2.0",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=8.3.0",
+    "pytest-cov>=6.0.0",
+    "pytest-timeout>=2.4.0",
+    "pytest-qt>=4.4.0",
+]
+dev = [
+    "black>=24.0.0",
+    "ruff>=0.5.0",
+    "mypy>=1.10.0",
+]
+
+[project.scripts]
+lp-pc = "src.main:main"
+
+# ============================================================
+# UV: NON-PACKAGE MODE — chỉ quản lý deps, không build wheel
+# Lý do: project layout là `src/` (không có `src/lp_pc_suite/`),
+# nên hatchling không tìm được package match tên project.
+# ============================================================
+[tool.uv]
+package = false
+
+# ============================================================
+# RUFF
+# ============================================================
+[tool.ruff]
+target-version = "py311"
+line-length = 88
+exclude = [".venv", "workspace", "tools", "scripts"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B", "C4", "SIM"]
+ignore = ["E501"]
+
+# ============================================================
+# MYPY
+# ============================================================
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+warn_unused_ignores = false
+exclude = ["workspace", "tools", "\\.venv", "scripts"]
+
+# ============================================================
+# PYTEST — single source of truth
+# ============================================================
+[tool.pytest.ini_options]
+testpaths = ["src/tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+addopts = "-v --tb=short --strict-markers -p no:cacheprovider"
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore::UserWarning",
+]
