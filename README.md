@@ -2,7 +2,7 @@
 
 An unofficial, native PC adaptation of Lucky Patcher. No Android emulators needed.
 
-> ⚡ Vibe-coded in 4 conversations(so far) using **DeepSeek 4.0 Pro** & **4.1 Flash**. <
+> ⚡ Vibe-coded in 4 conversations(so far) using **DeepSeek 4.0 Pro** & **4.1 Flash**. 
 
 ## Features
 * **Native Desktop Patching:** Analyze and modify PC binaries directly.
