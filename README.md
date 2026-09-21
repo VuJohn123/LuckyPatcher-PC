@@ -1,4 +1,4 @@
-# LP-PC
+# LuckyPatcher-PC
 
 An unofficial, native PC adaptation of Lucky Patcher. No Android emulators needed.
 
