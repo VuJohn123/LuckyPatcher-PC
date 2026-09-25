@@ -18,6 +18,10 @@ với các kỹ thuật bytecode-level:
 Used as additive fallback in `packer_check.py`. Không import từ module đó
 để tránh circular dependency — nhận `signatures` dict qua tham số.
 
+v3 (2026) — 6 packer hiếm ngoài TQ:
+  Nagain, Promon Shield, AppSealing (Inka), Baidu Protect, ChaosVM,
+  NQ Shield.
+
 References:
   - APKiD bytecode rules (RedNaga)
   - MobSF packer detection patterns
@@ -203,6 +207,100 @@ _BYTECODE_SIGNATURES: dict[str, dict] = {
         "confidence": "medium",
         "patchable": True,
         "notes": "Arxan — native code protection (không shell dex)",
+    },
+    # ============================================================
+    # v3 additions — packer hiếm / ngoài TQ (LP parity + APKiD ref)
+    # ============================================================
+    "Nagain (Korean)": {
+        "stub_classes": [
+            re.compile(r"Lcom/nagain/"),
+            re.compile(r"Lcom/nagacore/"),
+            re.compile(r"Lcom/nagain/core/"),
+        ],
+        "invocations": [
+            re.compile(r"Lcom/nagain/NagainApplication;->"),
+            re.compile(r"Lcom/nagain/core/NagainCore;->"),
+        ],
+        "encrypted_dex": True,
+        "native_mass": None,
+        "stub_app_min": None,
+        "confidence": "high",
+        "patchable": False,
+        "notes": "Nagain — Korean shell, native dex decrypt",
+    },
+    "Promon Shield": {
+        "stub_classes": [
+            re.compile(r"Lcom/promon/shield/"),
+            re.compile(r"Lcom/promon/"),
+        ],
+        "invocations": [
+            re.compile(r"Lcom/promon/shield/PromonShield;->"),
+        ],
+        "encrypted_dex": False,
+        "native_mass": 3,
+        "stub_app_min": None,
+        "confidence": "high",
+        "patchable": False,
+        "notes": "Promon Shield — RASP, native VM (không shell dex)",
+    },
+    "AppSealing (Inka)": {
+        "stub_classes": [
+            re.compile(r"Lcom/inka/"),
+            re.compile(r"Lcom/appsealing/"),
+            re.compile(r"Lcom/inka/AppSealing;"),
+        ],
+        "invocations": [
+            re.compile(r"Lcom/inka/AppSealing;->"),
+            re.compile(r"Lcom/inka/InkaApplication;->"),
+        ],
+        "encrypted_dex": True,
+        "native_mass": None,
+        "stub_app_min": None,
+        "confidence": "high",
+        "patchable": False,
+        "notes": "AppSealing (Inka) — Korean shell, native VM",
+    },
+    "Baidu Protect": {
+        "stub_classes": [
+            re.compile(r"Lcom/baidu/protect/"),
+        ],
+        "invocations": [
+            re.compile(r"Lcom/baidu/protect/ProtectApplication;->"),
+        ],
+        "encrypted_dex": True,
+        "native_mass": None,
+        "stub_app_min": None,
+        "confidence": "medium",
+        "patchable": False,
+        "notes": "Baidu Protect — Chinese shell (Baidu Security)",
+    },
+    "ChaosVM": {
+        "stub_classes": [
+            re.compile(r"Lcom/chaosvm/"),
+        ],
+        "invocations": [
+            re.compile(r"Lcom/chaosvm/ChaosVM;->"),
+        ],
+        "encrypted_dex": True,
+        "native_mass": None,
+        "stub_app_min": None,
+        "confidence": "medium",
+        "patchable": False,
+        "notes": "ChaosVM — VM-based dex protection",
+    },
+    "NQ Shield": {
+        "stub_classes": [
+            re.compile(r"Lcom/nqshield/"),
+        ],
+        "invocations": [
+            re.compile(r"Lcom/nqshield/NQShieldApplication;->"),
+        ],
+        "encrypted_dex": True,
+        "native_mass": None,
+        "stub_app_min": None,
+        "confidence": "medium",
+        "patchable": False,
+        "notes": "NQ Shield (NQ Mobile) — Korean/Chinese shell",
     },
 }
 

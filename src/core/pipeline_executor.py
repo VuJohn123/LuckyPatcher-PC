@@ -1,13 +1,15 @@
 """
 Pipeline executor — ThreadPool (I/O bound, không cần spawn).
 
+v3 (2026) — trace_id propagation:
+  - `submit_with_context` cho ThreadPool → worker thread kế thừa
+    trace_id từ main thread (contextvars.copy_context).
+  - Log header emit `[tid:xxx]` prefix.
+  - Per-mode timing giữ nguyên.
+
 v2 fixes:
-  - Adaptive strategy (fast/balanced/careful/paranoid):
-      fast      → bỏ FULL fallback, tối ưu tốc độ
-      balanced  → default
-      careful   → luôn FULL scan cho IAPSmali
-      paranoid  → như careful + log nhiều hơn
-  - Bổ sung per-mode timing metric.
+  - Adaptive strategy (fast/balanced/careful/paranoid).
+  - Per-mode timing metric.
 """
 from __future__ import annotations
 
@@ -18,6 +20,11 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from core.mode_registry import get_mode_group
 from core.lazy_loader import get_patcher_class
+from core.trace_context import (
+    get_trace_id,
+    prefix_with_trace,
+    submit_with_context,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -124,7 +131,9 @@ def process_mode(mode_name, decompiled_dir, ad_activities,
                 if isinstance(cnt, int) else mode_name
             )
     except Exception as e:
-        log_callback(f"[!] [{mode_name}] Error: {e}")
+        log_callback(prefix_with_trace(
+            f"[!] [{mode_name}] Error: {e}"
+        ))
         logger.exception("process_mode failed")
     finally:
         result['duration'] = time.monotonic() - t0
@@ -139,6 +148,9 @@ def execute_modes(mapped_modes, decompiled_dir, ad_activities,
                   strategy: str | None = None):
     """
     Run all modes. strategy optional — nếu None dùng _strategy global.
+
+    v3: parallel worker threads propagate trace_id qua
+    `submit_with_context` → log từ patcher có prefix [tid:xxx].
     """
     if strategy is not None:
         set_strategy(strategy)
@@ -152,13 +164,17 @@ def execute_modes(mapped_modes, decompiled_dir, ad_activities,
 
     if parallel_modes:
         max_workers = min(os.cpu_count() or 4, len(parallel_modes))
-        log_callback(
+        log_callback(prefix_with_trace(
             f"[*] [Executor] Parallel modes: {parallel_modes} "
-            f"(workers={max_workers}, strategy={_strategy})"
-        )
+            f"(workers={max_workers}, strategy={_strategy}, "
+            f"trace={get_trace_id()})"
+        ))
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # submit_with_context copy contextvars từ caller thread
+            # → worker kế thừa trace_id.
             futures = {
-                executor.submit(
+                submit_with_context(
+                    executor,
                     process_mode, m, decompiled_dir, ad_activities,
                     apk_path, log_callback,
                 ): m
@@ -172,16 +188,18 @@ def execute_modes(mapped_modes, decompiled_dir, ad_activities,
                         patches_applied.append(result['label'])
                     if result.get('report'):
                         patch_reports[mode_name] = result['report']
-                    log_callback(
+                    log_callback(prefix_with_trace(
                         f"[i] [Executor] {mode_name} done "
                         f"({result['duration']:.1f}s)"
-                    )
+                    ))
                     completed += 1
                     if signals:
                         signals.progress.emit(completed, total_modes)
                         signals.status.emit(f"Done: {mode_name}")
                 except Exception as e:
-                    log_callback(f"[!] [{mode_name}] Failed: {e}")
+                    log_callback(prefix_with_trace(
+                        f"[!] [{mode_name}] Failed: {e}"
+                    ))
                     completed += 1
 
     for m in sequential_modes:
@@ -193,15 +211,17 @@ def execute_modes(mapped_modes, decompiled_dir, ad_activities,
                 patches_applied.append(result['label'])
             if result.get('report'):
                 patch_reports[m] = result['report']
-            log_callback(
+            log_callback(prefix_with_trace(
                 f"[i] [Executor] {m} done ({result['duration']:.1f}s)"
-            )
+            ))
             completed += 1
             if signals:
                 signals.progress.emit(completed, total_modes)
                 signals.status.emit(f"Done: {m}")
         except Exception as e:
-            log_callback(f"[!] [{m}] Failed: {e}")
+            log_callback(prefix_with_trace(
+                f"[!] [{m}] Failed: {e}"
+            ))
             completed += 1
 
     return patches_applied, patch_reports

@@ -389,3 +389,98 @@ class TestErrorHandling:
         result = detect_packer_via_bytecode(str(apk))
         assert result is not None
         assert "PairIP" in result.name
+
+
+# ============================================================
+# v3 — rare packer detection (new signatures)
+# ============================================================
+class TestRarePackers:
+    def test_nagain_detected(self, tmp_path):
+        dex = _fake_dex(strings=["Lcom/nagain/NagainApplication;"])
+        apk = _make_apk(tmp_path, "nagain.apk", {"classes.dex": dex})
+        result = detect_packer_via_bytecode(apk)
+        assert result is not None
+        assert "Nagain" in result.name
+        assert result.patchable is False
+        assert result.confidence == "high"
+
+    def test_promon_detected(self, tmp_path):
+        dex = _fake_dex(
+            strings=["Lcom/promon/shield/PromonShield;"],
+            native_count=5,   # thỏa native_mass=3
+        )
+        apk = _make_apk(tmp_path, "promon.apk", {"classes.dex": dex})
+        result = detect_packer_via_bytecode(apk)
+        assert result is not None
+        assert "Promon" in result.name
+        assert result.patchable is False
+
+    def test_appsealing_detected(self, tmp_path):
+        dex = _fake_dex(strings=["Lcom/inka/AppSealing;"])
+        apk = _make_apk(tmp_path, "sealing.apk", {"classes.dex": dex})
+        result = detect_packer_via_bytecode(apk)
+        assert result is not None
+        assert "AppSealing" in result.name
+        assert result.patchable is False
+
+    def test_baidu_protect_detected(self, tmp_path):
+        dex = _fake_dex(
+            strings=["Lcom/baidu/protect/ProtectApplication;"],
+        )
+        apk = _make_apk(tmp_path, "baidu.apk", {"classes.dex": dex})
+        result = detect_packer_via_bytecode(apk)
+        assert result is not None
+        assert "Baidu" in result.name
+        assert result.patchable is False
+
+    def test_chaosvm_detected(self, tmp_path):
+        dex = _fake_dex(strings=["Lcom/chaosvm/ChaosVM;"])
+        apk = _make_apk(tmp_path, "chaos.apk", {"classes.dex": dex})
+        result = detect_packer_via_bytecode(apk)
+        assert result is not None
+        assert "ChaosVM" in result.name
+
+    def test_nqshield_detected(self, tmp_path):
+        dex = _fake_dex(
+            strings=["Lcom/nqshield/NQShieldApplication;"],
+        )
+        apk = _make_apk(tmp_path, "nq.apk", {"classes.dex": dex})
+        result = detect_packer_via_bytecode(apk)
+        assert result is not None
+        assert "NQ Shield" in result.name
+
+    def test_chaosvm_not_triggered_by_generic_chaos(self, tmp_path):
+        """Regression: 'Lcom/chaos/' generic KHÔNG match ChaosVM."""
+        dex = _fake_dex(strings=["Lcom/chaos/engine/Foo;"])
+        apk = _make_apk(tmp_path, "false.apk", {"classes.dex": dex})
+        result = detect_packer_via_bytecode(apk)
+        # Không có signature nào match → None
+        assert result is None or "ChaosVM" not in result.name
+
+    def test_new_signatures_all_have_required_keys(self):
+        """Contract: mọi entry mới phải đủ 8 keys + confidence hợp lệ."""
+        required = {
+            "stub_classes", "invocations", "encrypted_dex",
+            "native_mass", "stub_app_min", "confidence",
+            "patchable", "notes",
+        }
+        valid_conf = {"high", "medium", "low"}
+        new_names = [
+            "Nagain (Korean)", "Promon Shield", "AppSealing (Inka)",
+            "Baidu Protect", "ChaosVM", "NQ Shield",
+        ]
+        for name in new_names:
+            assert name in _BYTECODE_SIGNATURES, f"missing {name}"
+            sig = _BYTECODE_SIGNATURES[name]
+            assert required.issubset(sig.keys()), f"{name} missing keys"
+            assert sig["confidence"] in valid_conf
+            assert isinstance(sig["patchable"], bool)
+
+    def test_new_stub_classes_are_compiled_patterns(self):
+        import re as _re
+        for name in [
+            "Nagain (Korean)", "Promon Shield", "AppSealing (Inka)",
+            "Baidu Protect", "ChaosVM", "NQ Shield",
+        ]:
+            for pat in _BYTECODE_SIGNATURES[name]["stub_classes"]:
+                assert isinstance(pat, _re.Pattern), f"{name}: {pat}"

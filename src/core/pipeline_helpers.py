@@ -5,9 +5,16 @@ import logging
 import os
 from logging.handlers import RotatingFileHandler
 
+from core.trace_context import TraceFilter
+
 
 def setup_logging(config: dict) -> logging.Logger:
-    """Cấu hình logging — idempotent."""
+    """
+    Cấu hình logging — idempotent.
+
+    v2: thêm `[%(trace_id)s]` vào formatter + TraceFilter để
+    log file có correlation ID giúp grep theo pipeline run.
+    """
     logger = logging.getLogger("lp_pc_suite")
     if logger.handlers:
         return logger
@@ -27,9 +34,12 @@ def setup_logging(config: dict) -> logging.Logger:
             encoding="utf-8",
         )
         handler.setFormatter(logging.Formatter(
-            "%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
+            "%(asctime)s | %(levelname)-8s | [%(trace_id)s] | "
+            "%(name)s | %(message)s",
             datefmt="%Y-%m-%d %H:%M:%S",
         ))
+        # TraceFilter inject record.trace_id trước khi format.
+        handler.addFilter(TraceFilter())
         logger.addHandler(handler)
     except OSError:
         logging.basicConfig(level=level)

@@ -7,6 +7,15 @@ v3 (2026) — LP parity + backward-compat:
   - Backward-compat: `_INNER_CLASS_TEMPLATES` giữ alias cho test cũ.
   - Default hook = "iap" khi config.hooks rỗng.
 
+v4 (2026) — signature spoof + label + register fix:
+  - `after_signature_spoof` template: hook `PackageManager.getPackageInfo`
+    → clear `PackageInfo.signatures`.
+  - FIX: `_HOOK_BODY_TEMPLATE` hard-code `:try_start_0`/`:try_end_0`
+    → templated `__IDX__` (smali.jar compile được multi-target).
+  - FIX: mọi constructor template `.registers 0` → `.registers 1`.
+  - FIX: `initZygote` `.registers 1` → `.registers 2` (đủ p0 + p1).
+    Catch bởi `test_xposed_generator_compile_real.py`.
+
 Output structure:
     <output_dir>/xposed_module/
         ├── AndroidManifest.xml
@@ -41,11 +50,13 @@ _HOOK_CLASS_NAMES: dict[str, str] = {
 # LP parity hook targets:
 #   (target_class, method_name, hook_type)
 # hook_type: "before" | "after" | "return_true" | "return_zero"
+#            | "after_signature_spoof"
 _HOOK_TARGETS: dict[str, list[tuple[str, str, str]]] = {
     "signature": [
         ("android.content.pm.PackageManager", "checkSignatures",
          "return_zero"),
-        ("android.content.pm.PackageManager", "getPackageInfo", "after"),
+        ("android.content.pm.PackageManager", "getPackageInfo",
+         "after_signature_spoof"),
         ("android.content.pm.SigningDetails", "checkCapability",
          "return_true"),
         ("android.content.pm.SigningDetails", "hasAncestorOrSelf",
@@ -125,7 +136,7 @@ _XPOSED_ENTRY_SMALI = r""".class public Lcom/lppc/xposed/hooks/XposedEntry;
 
 
 .method public constructor <init>()V
-    .registers 0
+    .registers 1
     invoke-direct {p0}, Ljava/lang/Object;-><init>()V
     return-void
 .end method
@@ -143,7 +154,7 @@ _XPOSED_ENTRY_SMALI = r""".class public Lcom/lppc/xposed/hooks/XposedEntry;
 
 
 .method public initZygote(Lde/robv/android/xposed/IXposedHookZygoteInit$StartupParam;)V
-    .registers 1
+    .registers 2
     return-void
 .end method
 """
@@ -157,7 +168,7 @@ _HOOK_HEADER_TEMPLATE = r""".class public Lcom/lppc/xposed/hooks/__CLASS__;
 
 
 .method public constructor <init>()V
-    .registers 0
+    .registers 1
     invoke-direct {p0}, Ljava/lang/Object;-><init>()V
     return-void
 .end method
@@ -171,7 +182,7 @@ __BODY__
 """
 
 _HOOK_BODY_TEMPLATE = r"""
-    :try_start_0
+    :try_start___IDX__
     const-string v0, "__TARGET__"
     invoke-static {v0, p0}, Lde/robv/android/xposed/XposedHelpers;->findClass(Ljava/lang/String;Ljava/lang/ClassLoader;)Ljava/lang/Class;
     move-result-object v0
@@ -184,8 +195,8 @@ _HOOK_BODY_TEMPLATE = r"""
     invoke-static {v0, v1, v2}, Lde/robv/android/xposed/XposedBridge;->hookAllMethods(Ljava/lang/Class;Ljava/lang/String;Lde/robv/android/xposed/XC_MethodHook;)Ljava/util/Set;
 
     :cond_done___IDX__
-    :try_end_0
-    .catch Ljava/lang/Throwable; {:try_start_0 .. :try_end_0} :catch___IDX__
+    :try_end___IDX__
+    .catch Ljava/lang/Throwable; {:try_start___IDX__ .. :try_end___IDX__} :catch___IDX__
 
     goto :goto_done___IDX__
 
@@ -197,13 +208,14 @@ _HOOK_BODY_TEMPLATE = r"""
 
 
 # --- Inner class templates by hook_type ---
+# NOTE: `.registers 1` cho constructor (chứa p0 cho invoke-direct).
 _INNER_BEFORE_TEMPLATE = r""".class public Lcom/lppc/xposed/hooks/__CLASS__$__IDX__;
 .super Lde/robv/android/xposed/XC_MethodHook;
 .source "__CLASS__.java"
 
 
 .method public constructor <init>()V
-    .registers 0
+    .registers 1
     invoke-direct {p0}, Lde/robv/android/xposed/XC_MethodHook;-><init>()V
     return-void
 .end method
@@ -235,7 +247,7 @@ _INNER_AFTER_TEMPLATE = r""".class public Lcom/lppc/xposed/hooks/__CLASS__$__IDX
 
 
 .method public constructor <init>()V
-    .registers 0
+    .registers 1
     invoke-direct {p0}, Lde/robv/android/xposed/XC_MethodHook;-><init>()V
     return-void
 .end method
@@ -258,7 +270,7 @@ _INNER_RETURN_TRUE_TEMPLATE = r""".class public Lcom/lppc/xposed/hooks/__CLASS__
 
 
 .method public constructor <init>()V
-    .registers 0
+    .registers 1
     invoke-direct {p0}, Lde/robv/android/xposed/XC_MethodHook;-><init>()V
     return-void
 .end method
@@ -282,7 +294,7 @@ _INNER_RETURN_ZERO_TEMPLATE = r""".class public Lcom/lppc/xposed/hooks/__CLASS__
 
 
 .method public constructor <init>()V
-    .registers 0
+    .registers 1
     invoke-direct {p0}, Lde/robv/android/xposed/XC_MethodHook;-><init>()V
     return-void
 .end method
@@ -301,18 +313,54 @@ _INNER_RETURN_ZERO_TEMPLATE = r""".class public Lcom/lppc/xposed/hooks/__CLASS__
 """
 
 
+# ============================================================
+# v4 — signature spoof (LP parity)
+# ============================================================
+_INNER_AFTER_SIGNATURE_SPOOF_TEMPLATE = r""".class public Lcom/lppc/xposed/hooks/__CLASS__$__IDX__;
+.super Lde/robv/android/xposed/XC_MethodHook;
+.source "__CLASS__.java"
+
+
+.method public constructor <init>()V
+    .registers 1
+    invoke-direct {p0}, Lde/robv/android/xposed/XC_MethodHook;-><init>()V
+    return-void
+.end method
+
+
+.method protected afterHookedMethod(Lde/robv/android/xposed/XC_MethodHook$MethodHookParam;)V
+    .registers 4
+
+    invoke-virtual {p1}, Lde/robv/android/xposed/XC_MethodHook$MethodHookParam;->getResult()Ljava/lang/Object;
+    move-result-object v0
+
+    if-eqz v0, :cond_done
+
+    instance-of v1, v0, Landroid/content/pm/PackageInfo;
+    if-eqz v1, :cond_done
+
+    check-cast v0, Landroid/content/pm/PackageInfo;
+
+    const/4 v1, 0x0
+    iput-object v1, v0, Landroid/content/pm/PackageInfo;->signatures:[Landroid/content/pm/Signature;
+
+    :cond_done
+    return-void
+.end method
+"""
+
+
 _INNER_TEMPLATES: dict[str, str] = {
     "before": _INNER_BEFORE_TEMPLATE,
     "after": _INNER_AFTER_TEMPLATE,
     "return_true": _INNER_RETURN_TRUE_TEMPLATE,
     "return_zero": _INNER_RETURN_ZERO_TEMPLATE,
+    "after_signature_spoof": _INNER_AFTER_SIGNATURE_SPOOF_TEMPLATE,
 }
 
 
 # ============================================================
 # BACKWARD-COMPAT alias — test cũ import `_INNER_CLASS_TEMPLATES`
-# Map hook key → representative inner template (không phải template
-# cho từng target, chỉ là alias để test import OK).
 # ============================================================
 _IAP_HOOK_INNER_SMALI = _INNER_AFTER_TEMPLATE
 _LICENSE_HOOK_INNER_SMALI = _INNER_BEFORE_TEMPLATE
@@ -374,7 +422,7 @@ __INNER_CLASSES_LIST__
 ## Cài đặt
 
 1. Compile smali → DEX:
-   `java -jar tools/bin/smali.jar assemble xposed_module/smali -o classes.dex`
+   `java -jar tools/bin/smali.jar assemble -a 24 -o classes.dex xposed_module/smali`
 
 2. Zip: `classes.dex` + `AndroidManifest.xml` + `assets/xposed_init`
    + `res/values/arrays.xml` → `module.zip`

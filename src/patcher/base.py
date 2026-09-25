@@ -1,5 +1,9 @@
 """
 Base class cho mọi patcher.
+
+v2 (2026) — trace_id prefix:
+  - `_trace_prefix()` helper trả `[tid:xxxx] ` khi có trace context.
+  - `patch_files()` log dùng prefix để correlation ID xuyên pipeline.
 """
 from __future__ import annotations
 
@@ -27,6 +31,30 @@ class BasePatcher(ABC):
         self.decompiled_path = decompiled_path
         self.log = log_callback
         self.file_cache = file_cache
+
+    # ============================================================
+    # TRACE HELPERS
+    # ============================================================
+    def _trace_prefix(self) -> str:
+        """
+        Return '[tid:xxxxxxxx] ' nếu đang trong trace_context,
+        ngược lại trả ''.
+        """
+        try:
+            from core.trace_context import get_trace_id
+            tid = get_trace_id()
+            if tid and tid != "-":
+                return f"[tid:{tid}] "
+        except Exception:
+            pass
+        return ""
+
+    def _log_traced(self, message: str) -> None:
+        """Log kèm trace prefix — wrap self.log."""
+        try:
+            self.log(self._trace_prefix() + message)
+        except Exception:
+            pass
 
     # ============================================================
     # READ/WRITE
@@ -72,7 +100,9 @@ class BasePatcher(ABC):
         try:
             all_files = list(get_all_smali_files(self.decompiled_path))
         except Exception as e:
-            self.log(f"[!] [{label}] Get smali files failed: {e}")
+            self._log_traced(
+                f"[!] [{label}] Get smali files failed: {e}"
+            )
             return 0
 
         total_all = len(all_files)
@@ -88,20 +118,20 @@ class BasePatcher(ABC):
             ]
             if filt:
                 candidates = filt
-                self.log(
+                self._log_traced(
                     f"[*] [{label}] Path prefilter: "
                     f"{len(candidates)}/{total_all} files "
                     f"(hints={path_hints[:3]}...)"
                 )
             else:
-                self.log(
+                self._log_traced(
                     f"[i] [{label}] Path prefilter 0 match — "
                     f"FULL scan {total_all} files"
                 )
 
         total = len(candidates)
         if not path_hints:
-            self.log(f"[*] [{label}] Scanning {total} files...")
+            self._log_traced(f"[*] [{label}] Scanning {total} files...")
 
         prog = (
             Progress(total, label=label, log_callback=self.log,
@@ -153,7 +183,7 @@ class BasePatcher(ABC):
             prog.close()
 
         elapsed = time.monotonic() - start
-        self.log(
+        self._log_traced(
             f"[✔] [{label}] Patched {patched}/{scanned} files "
             f"({elapsed:.1f}s)"
         )

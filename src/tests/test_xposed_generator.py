@@ -373,3 +373,65 @@ class TestConstants:
         """Regression: 'iap'.capitalize() == 'Iap' (sai)."""
         assert "iap".capitalize() == "Iap"
         assert _HOOK_CLASS_NAMES["iap"] != "iap".capitalize() + "Hook"
+
+
+# ============================================================
+# v1.4 — signature spoof inner template (LP parity)
+# ============================================================
+class TestSignatureSpoof:
+    """Verify `after_signature_spoof` template clears PackageInfo.signatures."""
+
+    def test_signature_hook_uses_spoof_for_getpackageinfo(self, tmp_path):
+        """getPackageInfo = target index 1 → SignatureHook$1 dùng spoof template."""
+        gen = XposedModuleGenerator(log_callback=lambda *a: None)
+        cfg = XposedModuleConfig(hooks=["signature"])
+        gen.generate(cfg, str(tmp_path / "out"))
+
+        inner = (
+            tmp_path / "out" / "smali" / "com" / "lppc"
+            / "xposed" / "hooks" / "SignatureHook$1.smali"
+        ).read_text()
+        assert "afterHookedMethod" in inner
+        assert "PackageInfo" in inner
+        assert "signatures" in inner
+        # Phải KHÁC generic after template (không log "hooked")
+        assert "__METHOD__ hooked" not in inner
+
+    def test_signature_spoof_clears_signatures_field(self, tmp_path):
+        gen = XposedModuleGenerator(log_callback=lambda *a: None)
+        cfg = XposedModuleConfig(hooks=["signature"])
+        gen.generate(cfg, str(tmp_path / "out"))
+
+        inner = (
+            tmp_path / "out" / "smali" / "com" / "lppc"
+            / "xposed" / "hooks" / "SignatureHook$1.smali"
+        ).read_text()
+        # iput-object null → PackageInfo.signatures
+        assert "iput-object" in inner
+        assert "Landroid/content/pm/PackageInfo;->signatures:" in inner
+
+    def test_after_signature_spoof_template_registered(self):
+        from core.xposed_generator import _INNER_TEMPLATES
+        assert "after_signature_spoof" in _INNER_TEMPLATES
+
+    def test_generic_after_template_still_works(self, tmp_path):
+        """Regression: install hook $0 vẫn dùng generic `after` template."""
+        gen = XposedModuleGenerator(log_callback=lambda *a: None)
+        cfg = XposedModuleConfig(hooks=["install"])
+        gen.generate(cfg, str(tmp_path / "out"))
+
+        inner = (
+            tmp_path / "out" / "smali" / "com" / "lppc"
+            / "xposed" / "hooks" / "InstallHook$0.smali"
+        ).read_text()
+        assert "afterHookedMethod" in inner
+        assert "LP-PC-InstallHook" in inner
+
+    def test_signature_spoof_does_not_break_other_hooks(self, tmp_path):
+        gen = XposedModuleGenerator(log_callback=lambda *a: None)
+        cfg = XposedModuleConfig(hooks=["signature", "iap", "license"])
+        result = gen.generate(cfg, str(tmp_path / "out"))
+        assert result.is_valid is True
+        assert "signature" in result.hooks_generated
+        assert "iap" in result.hooks_generated
+        assert "license" in result.hooks_generated
