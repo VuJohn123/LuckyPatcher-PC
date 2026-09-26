@@ -1,7 +1,11 @@
 """Phân tích sâu APK — trả về findings chi tiết.
 
-v8 (2026):
-  - Cache version-aware.
+v9 (2026):
+  - FIX: cache restore path không set `self.packer_info`.
+    → Reconstruct từ findings[type=='packer'] (không đổi API cache).
+  - Cache version-aware (v9 bump invalidate cache cũ).
+
+v8:
   - FAST path: ASCII regex cho security/license/iap/packer scan
     (~0.3s/dex) thay vì androguard DEX() (~5-8s/dex).
   - Shared `dex_names` cho root + LP.
@@ -45,7 +49,8 @@ logger = logging.getLogger(__name__)
 #   v6 — fast path strings + share dex_names
 #   v7 — ASCII regex fast path cho security_check
 #   v8 — ASCII regex cho license/iap/packer (final perf fix)
-_ANALYZER_CACHE_VERSION = 8
+#   v9 — fix cache path restore packer_info (reconstruct từ findings)
+_ANALYZER_CACHE_VERSION = 9
 
 
 class AppDeepAnalyzer:
@@ -78,6 +83,12 @@ class AppDeepAnalyzer:
                     f["action"] for f in self.findings
                     if f.get("action")
                 ]
+                # FIX v9: restore packer_info từ findings (cache không
+                # lưu attribute riêng). Nếu không có finding 'packer'
+                # → None (khớp với full scan path khi clean).
+                self.packer_info = self._reconstruct_packer_info(
+                    self.findings
+                )
                 return self.findings
 
         t0 = time.monotonic()
@@ -169,6 +180,63 @@ class AppDeepAnalyzer:
             logger.debug("Cache save failed: %s", e)
 
         return self.findings
+
+    # ============================================================
+    # INTERNAL — cache packer reconstruction
+    # ============================================================
+    @staticmethod
+    def _reconstruct_packer_info(
+        findings: list[dict],
+    ) -> dict | None:
+        """
+        Rebuild `packer_info` dict từ finding type=='packer'.
+
+        Dùng cho cache restore path — cache lưu findings (đủ data),
+        nhưng không lưu attribute `packer_info` riêng.
+
+        Shape khớp với `check_packer_with_fallback` trả về:
+            {name, confidence, patchable, evidence}
+
+        Return None nếu không có finding 'packer' (APK clean).
+        """
+        for f in findings:
+            if f.get("type") != "packer":
+                continue
+
+            title = f.get("title", "") or ""
+            # check_packer format: "Packed: <name>"
+            name = title
+            if name.startswith("Packed: "):
+                name = name[len("Packed: "):].strip()
+
+            details = f.get("details", []) or []
+            confidence = "unknown"
+            evidence: list[str] = []
+            for d in details:
+                if isinstance(d, str) and d.startswith("Confidence: "):
+                    confidence = d.split(": ", 1)[1].strip()
+                elif isinstance(d, str) and d.startswith(
+                    "Source: "
+                ):
+                    # Bytecode fallback marker — không phải evidence
+                    continue
+                else:
+                    evidence.append(d)
+
+            # Color mapping khớp với packer_check.py:
+            #   yellow → patchable=True (obfuscator)
+            #   red    → patchable=False (hard packer)
+            patchable = f.get("color") == "yellow"
+
+            return {
+                "name": name,
+                "confidence": confidence,
+                "patchable": patchable,
+                "evidence": evidence,
+            }
+
+        # Không có finding 'packer' → APK clean (khớp full scan path)
+        return None
 
     # ============================================================
     # PUBLIC — summary / colors

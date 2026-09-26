@@ -1,13 +1,13 @@
 {
   "main_window": {
-    "title": "LP-PC Suite v4 – Công cụ Modding chuyên nghiệp"
+    "title": "LP-PC Suite v5 – Công cụ Modding chuyên nghiệp"
   },
   "sidebar": {
     "logo": "🛠 LP-PC Suite",
     "apps": "📱  Ứng dụng đã cài",
     "detail": "🔍  Chi tiết APK",
     "tools": "⚙️  Công cụ",
-    "version": "v4.0.0"
+    "version": "v5.0.0"
   },
   "toolbar": {
     "search_placeholder": "🔍  Tìm ứng dụng...",
@@ -62,11 +62,65 @@
     "off": "TẮT"
   },
   "dialog": {
-    "warning_title": "⚠️ Cảnh báo an toàn",
-    "continue": "Tiếp tục",
-    "stop": "Dừng",
-    "cancel": "Hủy",
-    "ok": "OK",
-    "close": "Đóng"
+    "common": {
+      "ok": "OK",
+      "cancel": "Hủy",
+      "close": "Đóng",
+      "error": "Lỗi",
+      "warning_title": "⚠️ Cảnh báo an toàn",
+      "continue": "Tiếp tục",
+      "stop": "Dừng"
+    },
+    "resign": {
+      "title": "Ký lại APK",
+      "header": "Chọn loại chữ ký và cấu hình",
+      "key_group": "Loại chữ ký",
+      "pkg_group": "Forced Package ID",
+      "pkg_label": "ID (127 = auto):",
+      "btn_ok": "Ký lại",
+      "key": {
+        "testkey": "testkey",
+        "platform": "platform",
+        "media": "media",
+        "shared": "shared"
+      },
+      "desc": {
+        "testkey": "Key test mặc định — dùng cho hầu hết app",
+        "platform": "Key platform — app hệ thống Android",
+        "media": "Key media — app media hệ thống",
+        "shared": "Key shared — library dùng chung"
+      }
+    },
+    "clone": {
+      "title": "Clone App",
+      "header": "Clone: {name}",
+      "orig_pkg": "Package gốc:",
+      "new_pkg": "Package mới:",
+      "new_name": "Tên mới:",
+      "hint": "💡 App clone sẽ chạy song song với app gốc. Cần có chữ ký khác (dùng testkey để tự ký).",
+      "btn_ok": "Clone",
+      "suffix_pkg": ".clone",
+      "suffix_name": " (Clone)",
+      "warn_empty_pkg": "Package không hợp lệ",
+      "warn_regex_pkg": "Package phải bắt đầu bằng chữ cái và chỉ chứa chữ, số, dấu chấm.",
+      "warn_same_pkg": "Package mới phải khác package gốc."
+    },
+    "patch_config": {
+      "title": "Cấu hình {name}",
+      "btn_ok": "OK",
+      "btn_cancel": "Hủy"
+    },
+    "wizard": {
+      "title": "LP-PC Suite Wizard",
+      "header": "Bạn muốn làm gì?",
+      "btn_ok": "Bắt đầu",
+      "btn_cancel": "Thoát",
+      "opt": {
+        "iap_dex": "🎮 Chơi game miễn phí (IAP bypass)",
+        "ads_full_offline": "🚫 Xóa quảng cáo",
+        "license_extreme": "🔑 Dùng app trả phí miễn phí",
+        "multi_full": "⭐ Full patch (tất cả)"
+      }
+    }
   }
 }

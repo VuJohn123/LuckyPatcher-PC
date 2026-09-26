@@ -1,13 +1,13 @@
 {
   "main_window": {
-    "title": "LP-PC Suite v4 – Professional Modding Tool"
+    "title": "LP-PC Suite v5 – Professional Modding Tool"
   },
   "sidebar": {
     "logo": "🛠 LP-PC Suite",
     "apps": "📱  Installed Apps",
     "detail": "🔍  APK Detail",
     "tools": "⚙️  Tools",
-    "version": "v4.0.0"
+    "version": "v5.0.0"
   },
   "toolbar": {
     "search_placeholder": "🔍  Search apps...",
@@ -40,15 +40,13 @@
     "rebuild_btn": "🔨 Create Modified APK (Rebuild)",
     "menu_btn": "📋 Menu of Patches",
     "features_title": "🔍 Detected Features",
-    "quick_actions": "🛠 Quick Actions"
-  },
-  "dialog": {
-    "warning_title": "⚠️ Safety warning",
-    "continue": "Continue",
-    "stop": "Stop",
-    "cancel": "Cancel",
-    "ok": "OK",
-    "close": "Close"
+    "quick_actions": "🛠 Quick Actions",
+    "action_remove_license": "🔑 Remove License Verification",
+    "action_remove_ads": "🚫 Remove Google Ads",
+    "action_iap": "💳 IAP Emulation (Rebuild)",
+    "action_custom": "📄 Custom Patch",
+    "action_perms": "⚙️ Change Permissions",
+    "action_resign": "✍️ Resign APK"
   },
   "switches": {
     "billing": "💰 Billing",
@@ -59,6 +57,70 @@
     "billing_tip": "Toggle Google Billing emulation",
     "proxy_tip": "Toggle local IAP proxy",
     "autorepeat_tip": "Auto-replay saved IAP transactions",
-    "save_tip": "Save IAP transactions for later restore"
+    "save_tip": "Save IAP transactions for later restore",
+    "on": "ON",
+    "off": "OFF"
+  },
+  "dialog": {
+    "common": {
+      "ok": "OK",
+      "cancel": "Cancel",
+      "close": "Close",
+      "error": "Error",
+      "warning_title": "⚠️ Safety warning",
+      "continue": "Continue",
+      "stop": "Stop"
+    },
+    "resign": {
+      "title": "Resign APK",
+      "header": "Choose signature type and options",
+      "key_group": "Signature type",
+      "pkg_group": "Forced Package ID",
+      "pkg_label": "ID (127 = auto):",
+      "btn_ok": "Resign",
+      "key": {
+        "testkey": "testkey",
+        "platform": "platform",
+        "media": "media",
+        "shared": "shared"
+      },
+      "desc": {
+        "testkey": "Default test key — for most apps",
+        "platform": "Platform key — Android system apps",
+        "media": "Media key — system media apps",
+        "shared": "Shared key — common libraries"
+      }
+    },
+    "clone": {
+      "title": "Clone App",
+      "header": "Clone: {name}",
+      "orig_pkg": "Original package:",
+      "new_pkg": "New package:",
+      "new_name": "New name:",
+      "hint": "💡 The clone will run alongside the original app. A different signature is required (use testkey to self-sign).",
+      "btn_ok": "Clone",
+      "suffix_pkg": ".clone",
+      "suffix_name": " (Clone)",
+      "warn_empty_pkg": "Invalid package",
+      "warn_regex_pkg": "Package must start with a letter and contain only letters, digits, and dots.",
+      "warn_same_pkg": "New package must differ from the original."
+    },
+    "patch_config": {
+      "title": "Configure {name}",
+      "btn_ok": "OK",
+      "btn_cancel": "Cancel"
+    },
+    "wizard": {
+      "title": "LP-PC Suite Wizard",
+      "header": "What do you want to do?",
+      "btn_ok": "Start",
+      "btn_cancel": "Exit",
+      "opt": {
+        "iap_dex": "🎮 Play games for free (IAP bypass)",
+        "ads_full_offline": "🚫 Remove ads",
+        "license_extreme": "🔑 Use paid apps for free",
+        "multi_full": "⭐ Full patch (all)"
+      }
+    }
   }
 }

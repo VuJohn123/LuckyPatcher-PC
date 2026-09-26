@@ -6,12 +6,16 @@ from PyQt6.QtWidgets import (
     QButtonGroup, QHBoxLayout, QLabel,
 )
 
+from core.i18n import t
+
 
 class PatchConfigDialog(QDialog):
     def __init__(self, patch_name: str, options: dict[str, str],
                  current_mode: str | None = None, parent=None):
         super().__init__(parent)
-        self.setWindowTitle(f"Cấu hình {patch_name}")
+        self.setWindowTitle(
+            t("dialog.patch_config.title", name=patch_name)
+        )
         self.setMinimumSize(400, 300)
         self._selected = current_mode or next(iter(options), "")
 
@@ -22,14 +26,16 @@ class PatchConfigDialog(QDialog):
         for key, desc in options.items():
             rb = QRadioButton(f"{key}: {desc}")
             rb.setChecked(key == self._selected)
-            rb.toggled.connect(lambda on, k=key: self._select(k) if on else None)
+            rb.toggled.connect(
+                lambda on, k=key: self._select(k) if on else None
+            )
             self._group.addButton(rb)
             layout.addWidget(rb)
 
         btns = QHBoxLayout()
-        ok = QPushButton("OK")
+        ok = QPushButton(t("dialog.patch_config.btn_ok"))
         ok.clicked.connect(self.accept)
-        cancel = QPushButton("Hủy")
+        cancel = QPushButton(t("dialog.patch_config.btn_cancel"))
         cancel.clicked.connect(self.reject)
         btns.addStretch()
         btns.addWidget(cancel)
