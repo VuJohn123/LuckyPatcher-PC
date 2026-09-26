@@ -50,7 +50,8 @@ logger = logging.getLogger(__name__)
 #   v7 — ASCII regex fast path cho security_check
 #   v8 — ASCII regex cho license/iap/packer (final perf fix)
 #   v9 — fix cache path restore packer_info (reconstruct từ findings)
-_ANALYZER_CACHE_VERSION = 9
+# Dòng ~50
+_ANALYZER_CACHE_VERSION = 10   # was 9
 
 
 class AppDeepAnalyzer:

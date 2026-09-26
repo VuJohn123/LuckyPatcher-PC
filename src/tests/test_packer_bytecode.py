@@ -484,3 +484,233 @@ class TestRarePackers:
         ]:
             for pat in _BYTECODE_SIGNATURES[name]["stub_classes"]:
                 assert isinstance(pat, _re.Pattern), f"{name}: {pat}"
+
+# ============================================================
+# v4 — window entropy analysis
+# ============================================================
+class TestEntropyWindowAnalysis:
+    def test_empty_bytes_returns_zero(self):
+        from scanner.checks.packer_bytecode import (
+            entropy_window_analysis,
+        )
+        r = entropy_window_analysis(b"")
+        assert r.total_windows == 0
+        assert r.max_entropy == 0.0
+        assert r.high_entropy_count == 0
+
+    def test_uniform_random_high_entropy(self):
+        from scanner.checks.packer_bytecode import (
+            entropy_window_analysis,
+        )
+        data = os.urandom(64 * 1024)
+        r = entropy_window_analysis(data)
+        assert r.max_entropy > 7.5
+        assert r.high_pct >= 90  # hầu hết windows random
+
+    def test_all_zeros_low_entropy(self):
+        from scanner.checks.packer_bytecode import (
+            entropy_window_analysis,
+        )
+        data = b"\x00" * (64 * 1024)
+        r = entropy_window_analysis(data)
+        assert r.max_entropy == 0.0
+        assert r.high_entropy_count == 0
+        assert not r.has_encrypted_region
+
+    def test_partial_encryption_detected(self):
+        """
+        Dex-like: 3 windows zero + 2 windows random → 
+        has_encrypted_region phải phát hiện.
+        """
+        from scanner.checks.packer_bytecode import (
+            entropy_window_analysis,
+        )
+        # 3 windows thấp (16KB mỗi cái) + 2 windows random = 80KB
+        low = b"\x00" * (3 * 16384)
+        high = os.urandom(2 * 16384)
+        data = low + high
+        r = entropy_window_analysis(data)
+        # 5 windows total, 2 high → 40%
+        assert r.total_windows == 5
+        assert r.high_entropy_count == 2
+        assert r.has_encrypted_region is True
+        assert r.max_entropy > 7.5
+
+    def test_mixed_30_pct_not_flagged(self):
+        """<20% high windows không trigger."""
+        from scanner.checks.packer_bytecode import (
+            entropy_window_analysis,
+        )
+        # 9 windows low + 1 window high = 10% → KHÔNG flag
+        low = b"\x00" * (9 * 16384)
+        high = os.urandom(16384)
+        data = low + high
+        r = entropy_window_analysis(data)
+        assert r.total_windows == 10
+        assert r.high_entropy_count == 1
+        assert r.has_encrypted_region is False
+
+    def test_small_dex_fallback(self):
+        """Dex < window_size dùng single-window fallback."""
+        from scanner.checks.packer_bytecode import (
+            entropy_window_analysis,
+        )
+        data = os.urandom(4096)
+        r = entropy_window_analysis(data)
+        assert r.total_windows == 1
+        assert r.max_entropy > 7.5
+
+    def test_custom_window_size(self):
+        from scanner.checks.packer_bytecode import (
+            entropy_window_analysis,
+        )
+        data = os.urandom(4 * 8192)
+        r = entropy_window_analysis(data, window_size=8192)
+        assert r.window_size == 8192
+        assert r.total_windows == 4
+
+    def test_tail_handled(self):
+        """Tail nhỏ < window_size được sample riêng."""
+        from scanner.checks.packer_bytecode import (
+            entropy_window_analysis,
+        )
+        # 2 full windows + 8KB tail (>= 512 threshold)
+        data = os.urandom(2 * 16384) + os.urandom(8192)
+        r = entropy_window_analysis(data)
+        assert r.total_windows == 3  # 2 full + 1 tail
+
+
+class TestWindowEntropyResultDataclass:
+    def test_high_pct_zero_when_no_windows(self):
+        from scanner.checks.packer_bytecode import (
+            WindowEntropyResult,
+        )
+        r = WindowEntropyResult()
+        assert r.high_pct == 0.0
+        assert r.has_encrypted_region is False
+
+    def test_high_pct_calculation(self):
+        from scanner.checks.packer_bytecode import (
+            WindowEntropyResult,
+        )
+        r = WindowEntropyResult(
+            total_windows=10, high_entropy_count=3,
+        )
+        assert r.high_pct == 30.0
+
+    def test_has_encrypted_region_threshold(self):
+        from scanner.checks.packer_bytecode import (
+            WindowEntropyResult,
+        )
+        # 20% exact → True
+        r = WindowEntropyResult(
+            total_windows=10, high_entropy_count=2,
+        )
+        assert r.has_encrypted_region is True
+        # 19% → False
+        r2 = WindowEntropyResult(
+            total_windows=100, high_entropy_count=19,
+        )
+        assert r2.has_encrypted_region is False
+
+
+class TestBytecodeDetectionWindowFields:
+    def test_detection_has_window_fields(self):
+        from scanner.checks.packer_bytecode import (
+            BytecodeDetection,
+        )
+        d = BytecodeDetection(
+            name="x", confidence="high", patchable=False,
+        )
+        assert hasattr(d, "max_window_entropy")
+        assert hasattr(d, "high_entropy_windows")
+        assert d.max_window_entropy == 0.0
+        assert d.high_entropy_windows == 0
+
+    def test_detect_populates_window_fields(self, tmp_path):
+        """
+        Dex với region encrypted → detection có window fields.
+        """
+        from scanner.checks.packer_bytecode import (
+            detect_packer_via_bytecode,
+        )
+        # PairIP stub + 1 region encrypted (16KB random)
+        stub = b"Lcom/pairip/VMRunner;\x00"
+        low = b"\x00" * (4 * 16384)  # 4 windows thấp
+        high = os.urandom(2 * 16384)  # 2 windows cao
+        payload = stub + low + high
+        apk = _make_apk(
+            tmp_path, "region.apk", {"classes.dex": payload},
+        )
+        result = detect_packer_via_bytecode(apk)
+        assert result is not None
+        assert result.max_window_entropy > 7.0
+        assert result.high_entropy_windows >= 2
+
+    def test_region_encryption_evidence_emitted(self, tmp_path):
+        """
+        Global entropy thấp nhưng region encrypted → evidence
+        `encrypted_region:` trong output.
+        """
+        from scanner.checks.packer_bytecode import (
+            detect_packer_via_bytecode,
+        )
+        # PairIP stub + mostly zeros + small encrypted tail
+        stub = b"Lcom/pairip/VMRunner;\x00"
+        low = b"\x00" * (5 * 16384)   # 5 windows zero
+        high = os.urandom(3 * 16384)  # 3 windows random (37.5%)
+        payload = stub + low + high
+        apk = _make_apk(
+            tmp_path, "region2.apk", {"classes.dex": payload},
+        )
+        result = detect_packer_via_bytecode(apk)
+        assert result is not None
+        # Có evidence encrypted_region (không phải encrypted_dex)
+        has_region = any(
+            "encrypted_region" in e for e in result.evidence
+        )
+        has_global = any(
+            "encrypted_dex" in e for e in result.evidence
+        )
+        assert has_region or has_global
+
+
+class TestAugmentWindowPropagation:
+    def test_augment_propagates_window_fields(self, tmp_path):
+        from scanner.checks.packer_bytecode import (
+            augment_packer_result,
+        )
+        # PairIP stub + high-entropy region
+        payload = (
+            b"Lcom/pairip/VMRunner;\x00" + os.urandom(32 * 1024)
+        )
+        apk = _make_apk(
+            tmp_path, "p.apk", {"classes.dex": payload},
+        )
+        result = augment_packer_result(apk, None)
+        assert result is not None
+        assert "max_window_entropy" in result
+        assert "high_entropy_windows" in result
+        assert result["max_window_entropy"] > 7.0
+
+
+# ============================================================
+# v4 — _fast_entropy helper
+# ============================================================
+class TestFastEntropy:
+    def test_matches_shannon(self):
+        from scanner.checks.packer_bytecode import (
+            _fast_entropy, shannon_entropy,
+        )
+        data = os.urandom(4096)
+        assert abs(_fast_entropy(data) - shannon_entropy(data)) < 1e-9
+
+    def test_empty_returns_zero(self):
+        from scanner.checks.packer_bytecode import _fast_entropy
+        assert _fast_entropy(b"") == 0.0
+
+    def test_uniform_max(self):
+        from scanner.checks.packer_bytecode import _fast_entropy
+        data = bytes(range(256))
+        e = _fast_entropy(data)
+        assert abs(e - 8.0) < 0.01
