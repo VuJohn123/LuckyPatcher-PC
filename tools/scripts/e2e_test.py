@@ -9,10 +9,11 @@ import os
 import sys
 import time
 
-# Add src/ vào path
-_SRC = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src"
+# Add src/ vào path (tools/scripts/ -> root -> src/)
+_ROOT = os.path.dirname(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 )
+_SRC = os.path.join(_ROOT, "src")
 if _SRC not in sys.path:
     sys.path.insert(0, _SRC)
 
