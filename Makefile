@@ -15,8 +15,7 @@ help:
 
 setup:
 	uv venv --python 3.11 --seed
-	uv pip sync requirements.txt
-	uv pip install pytest pytest-cov pytest-timeout pytest-qt
+	uv pip install -r requirements.txt
 
 test:
 	pytest src/tests -v
@@ -33,13 +32,13 @@ fmt:
 	ruff check --fix src
 
 e2e:
-	python -u src/main.py sample.apk --mode "iap:dex,license:auto" --verbose
+	python -u tools/scripts/e2e_test.py Test.apk --mode "iap:dex,license:auto"
 
 quality:
-	python scripts/audit_quality.py
+	python tools/scripts/audit_quality.py
 
 security:
-	python scripts/audit_security.py
+	python tools/scripts/audit_security.py
 
 audit: quality security
 
