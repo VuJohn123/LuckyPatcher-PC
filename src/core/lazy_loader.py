@@ -27,6 +27,9 @@ PATCHER_MAP: dict[str, str] = {
     "gms_spoof": "patcher.gms_spoofer",
     "event_logger": "patcher.event_logger",
     "aidl_proxy": "patcher.aidl_proxy_patcher",
+    "fake_pkg": "patcher.fake_package_patcher",
+    "install_dir": "patcher.install_dir_patcher",
+    "hosts_block": "patcher.hosts_blocker",
 }
 
 CLASS_NAME_MAP: dict[str, str] = {
@@ -50,6 +53,9 @@ CLASS_NAME_MAP: dict[str, str] = {
     "gms_spoof": "GMSSpoofer",
     "event_logger": "EventLogger",
     "aidl_proxy": "AIDLProxyPatcher",
+    "fake_pkg": "FakePackagePatcher",
+    "install_dir": "InstallDirPatcher",
+    "hosts_block": "HostsBlocker",
 }
 
 _cache: dict[str, type | None] = {}

@@ -47,6 +47,10 @@ MODE_MAP: dict[str, str] = {
     "iap_update": "iap_update",
     "gms_spoof": "gms_spoof",
     "event_logger": "event_logger",
+    "fake_pkg": "fake_pkg",
+    "install_dir": "install_dir",
+    "hosts_block": "hosts_block",
+    "modded_play": "modded_play",
 }
 
 PARALLEL_GROUPS: dict[str, list[str]] = {

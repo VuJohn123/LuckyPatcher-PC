@@ -12,10 +12,9 @@ Sources: luckypatchers.com feature/docs pages, tutorial methods #1-5 (IAP/LVL/ad
 ## Our coverage (39 modes)
 License (7) + Ads (5) + IAP (4) + Signature (4+3) + Resign (7) + clone/backup/save_purchase/auto_repeat/cloud_patch/gms_spoof/event_logger/perms — all present with patchers + UI dialogs + tests.
 
-## Remaining gaps
-- `fake_pkg` and `install_dir` modes: no patcher yet — removed from plan (they mutate package name/install path beyond resigned clone; low value vs rebuild risk).
-- Play Store modded-patch (requires root, impossible on PC) — N/A by design; PC uses static rebuild + proxy instead.
-- Hosts global block: present via `toolbox_menu` system-tool hook (device-side), not PC-side.
+## Gaps closed
+- `fake_pkg` (`patcher/fake_package_patcher.py`), `install_dir` (`install_dir_patcher.py`), `hosts_block` (`hosts_blocker.py`) — implemented + tested, wired via `lazy_loader` + `mode_registry`.
+- Play Store modded-patch: N/A on PC (needs root) — executor degrades gracefully with guidance to `iap:dex`/`iap:proxy`, never crashes.
 
 ## Verdict
 Static-PC parity achieved for license/ads/IAP/signature/resign/clone. No further code gaps worth adding without diluting stability.

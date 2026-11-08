@@ -102,6 +102,18 @@ def process_mode(mode_name, decompiled_dir, ad_activities,
                 )
                 result['patched'] = True
                 result['label'] = "Backup created"
+            elif mode_name in ('modded_play', 'fake_pkg', 'install_dir', 'hosts_block'):
+                # fake_pkg/install_dir/hosts_block load via lazy_loader; modded_play is N/A on PC (needs root) — degrade gracefully, never crash
+                if mode_name == 'modded_play':
+                    try:
+                        log_callback("[i] [modded_play] Modded Play Store requires root — N/A on PC; use iap:dex/proxy instead")
+                    except Exception:
+                        pass
+                    result['patched'] = False
+                    result['label'] = "Modded Play N/A on PC (use iap:dex)"
+                else:
+                    result['patched'] = False
+                    result['label'] = f"Mode {mode_name} not loaded"
             result['duration'] = time.monotonic() - t0
             return result
 
