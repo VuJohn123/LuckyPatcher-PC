@@ -15,6 +15,16 @@ from core.fs_utils import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _healthy_disk():
+    """Mock disk_usage so tests don't fail on low-disk hosts."""
+    usage = MagicMock()
+    usage.free = 90_000_000_000
+    usage.total = 100_000_000_000
+    with patch("core.fs_utils.shutil.disk_usage", return_value=usage):
+        yield
+
+
 # ============================================================
 # remove_dst
 # ============================================================
