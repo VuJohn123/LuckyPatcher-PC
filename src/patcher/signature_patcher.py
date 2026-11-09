@@ -46,6 +46,16 @@ logger = logging.getLogger(__name__)
 _FLAG_INSTALL_ALLOW_DOWNGRADE = 0x80
 _FLAG_GET_SIGNING_CERTIFICATES = 0x08000000
 
+# `const/4` encodes a 4-bit destination (v0–v15 only). High v registers and
+# all p aliases may exceed that, so widen to `const/16` (8-bit destination).
+_CONST4_SAFE_REG_RE = re.compile(r"v(?:[0-9]|1[0-5])$")
+
+
+def _bool_const(reg: str, value: int) -> str:
+    if _CONST4_SAFE_REG_RE.fullmatch(reg):
+        return f"const/4 {reg}, 0x{value:x}"
+    return f"const/16 {reg}, 0x{value:x}"
+
 
 # ============================================================
 # KEYWORDS — method names for Pass 1 (regex method body match)
@@ -107,13 +117,21 @@ _COMPARE_SIG_CALL_RE = re.compile(
     re.MULTILINE,
 )
 
-_GET_PKG_INFO_RE = re.compile(
-    r"const/(?:4|16)\s+(v\d+|p\d+),\s*(0x[0-9a-fA-F]+|\d+)\s*\n"
-    r"(.*?)"
-    r"invoke-virtual\s+\{[^}]*\},\s+"
-    r"Landroid/content/pm/PackageManager;->getPackageInfo\("
-    r"[^)]*\)Landroid/content/pm/PackageInfo;",
-    re.DOTALL,
+# Call-site line: keep the original register list untouched (never re-emit it).
+_PKG_INFO_INVOKE_RE = re.compile(
+    r"^(?P<indent>[ \t]*)invoke-(?P<op>virtual|interface)(?P<range>/range)?"
+    r"\s+\{(?P<regs>[^}]*)\},\s*"
+    r"Landroid/content/pm/PackageManager;->getPackageInfo"
+    r"\([^)]*\)Landroid/content/pm/PackageInfo;"
+)
+
+# Immediate flag assignment. Matched only in the straight-line block that
+# directly precedes the getPackageInfo call (blank lines / `.line` / comments
+# are allowed between them).
+_CONST_ASSIGN_RE = re.compile(
+    r"^(?P<indent>[ \t]*)const(?:/(?P<kind>4|16|high16))?\s+"
+    r"(?P<reg>[vp]\d+)\s*,\s*(?P<lit>-?(?:0x[0-9a-fA-F]+|\d+))"
+    r"\s*(?:#.*)?$"
 )
 
 
@@ -167,8 +185,6 @@ def _build_framework_regex(
     class_desc: str, method_name: str,
 ) -> re.Pattern:
     """Match method header + body cho class/method cụ thể."""
-    # Escape class descriptor for regex
-    cls = re.escape(class_desc)
     meth = re.escape(method_name)
     # Match .method ... name(...)RET ... .end method
     return re.compile(
@@ -260,7 +276,7 @@ class SignatureVerifyPatcher(BasePatcher):
         def _replace(m: re.Match) -> str:
             invoke = m.group(1).split("\n")[0]
             dest_reg = m.group(2)
-            return f"{invoke}\n    const/4 {dest_reg}, 0x0"
+            return f"{invoke}\n    {_bool_const(dest_reg, 0x0)}"
 
         content = _CHECK_SIG_CALL_RE.sub(_replace, content)
         content = _COMPARE_SIG_CALL_RE.sub(_replace, content)
@@ -269,36 +285,98 @@ class SignatureVerifyPatcher(BasePatcher):
     # ============================================================
     # PASS 3 — getPackageInfo flag injection
     # ============================================================
+    @staticmethod
+    def _flag_register(regs: str, is_range: bool) -> str | None:
+        """Return the register holding the `flags` int argument."""
+        if is_range:
+            m = re.fullmatch(
+                r"\s*([vp])(\d+)\s*\.\.\s*([vp])(\d+)\s*", regs,
+            )
+            if not m or m.group(1) != m.group(3):
+                return None
+            start, end = int(m.group(2)), int(m.group(4))
+            if end - start + 1 < 3:
+                return None
+            return f"{m.group(1)}{start + 2}"
+        parts = [p.strip() for p in regs.split(",")]
+        if len(parts) < 3:
+            return None
+        return parts[2]
+
+    @staticmethod
+    def _const_line(
+        indent: str, reg: str, value: int,
+    ) -> str:
+        """Emit the narrowest *valid* const form for `value`."""
+        if -0x8000 <= value <= 0x7FFF:
+            return f"{indent}const/16 {reg}, 0x{value:x}"
+        if value >= 0 and value & 0xFFFF == 0:
+            # smali expects the full 32-bit literal here, not the high word.
+            return f"{indent}const/high16 {reg}, 0x{value:x}"
+        return f"{indent}const {reg}, 0x{value:x}"
+
     def _patch_get_package_info(self, content: str) -> str:
+        """OR GET_SIGNING_CERTIFICATES into the `flags` literal.
+
+        The old regex used DOTALL `(.*?)` and could bind a `const` from a
+        completely different method (e.g. an array size), producing corrupt
+        smali. It also re-emitted the call as `invoke-virtual {...}`.
+        This implementation only rewrites a const that is adjacent to the
+        call and feeds the exact register used as the `flags` argument;
+        the invoke line itself is never modified.
+        """
         if "getPackageInfo" not in content:
             return content
 
-        def _replace(m: re.Match) -> str:
-            reg = m.group(1)
-            old_val_str = m.group(2)
-            middle = m.group(3)
+        lines = content.split("\n")
+        for i, line in enumerate(lines):
+            call = _PKG_INFO_INVOKE_RE.match(line)
+            if not call:
+                continue
+
+            flag_reg = self._flag_register(
+                call.group("regs"), bool(call.group("range")),
+            )
+            if flag_reg is None:
+                continue
+
+            # Walk back over trivia only — never cross an instruction or a
+            # method boundary.
+            j = i - 1
+            while j >= 0:
+                stripped = lines[j].strip()
+                if (
+                    not stripped
+                    or stripped.startswith(".line")
+                    or stripped.startswith("#")
+                ):
+                    j -= 1
+                    continue
+                break
+            if j < 0:
+                continue
+
+            const = _CONST_ASSIGN_RE.match(lines[j])
+            if not const or const.group("reg") != flag_reg:
+                continue
+
+            lit = const.group("lit")
             try:
-                old_val = (
-                    int(old_val_str, 16)
-                    if old_val_str.startswith("0x")
-                    else int(old_val_str)
-                )
+                old_val = int(lit, 16) if "0x" in lit.lower() else int(lit)
             except ValueError:
-                return m.group(0)
+                continue
+            if old_val < 0:
+                continue
 
             new_val = old_val | _FLAG_GET_SIGNING_CERTIFICATES
             if new_val == old_val:
-                return m.group(0)
+                continue
 
-            return (
-                f"const/16 {reg}, 0x{new_val:x}\n"
-                f"{middle}"
-                f"invoke-virtual {{...}}, "
-                f"Landroid/content/pm/PackageManager;->getPackageInfo"
-                f"(Ljava/lang/String;I)Landroid/content/pm/PackageInfo;"
+            lines[j] = self._const_line(
+                const.group("indent"), flag_reg, new_val,
             )
 
-        return _GET_PKG_INFO_RE.sub(_replace, content)
+        return "\n".join(lines)
 
     # ============================================================
     # PASS 4 — FrameworkPatcherV2 exact methods
@@ -309,7 +387,7 @@ class SignatureVerifyPatcher(BasePatcher):
         Đây là edge case (custom ROM apps bundle framework-like classes),
         nhưng vẫn hữu ích để đảm bảo comprehensive coverage.
         """
-        for (cls_desc, meth_name), (regex, kind) in (
+        for (cls_desc, _meth_name), (regex, kind) in (
             _FRAMEWORK_REGEXES.items()
         ):
             # Class descriptor in smali uses `Lfoo/bar;` — check presence
@@ -377,6 +455,6 @@ class SignatureVerifyPatcher(BasePatcher):
         def _replace(m: re.Match) -> str:
             invoke = m.group(1).split("\n")[0]
             reg = m.group(2)
-            return f"{invoke}\n    const/4 {reg}, 0x1"
+            return f"{invoke}\n    {_bool_const(reg, 0x1)}"
 
         return pattern.sub(_replace, content)

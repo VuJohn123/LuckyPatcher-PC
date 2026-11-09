@@ -4,10 +4,10 @@ from __future__ import annotations
 import pytest
 
 from patcher.signature_patcher import (
-    SignatureVerifyPatcher,
     _FLAG_GET_SIGNING_CERTIFICATES,
     _FLAG_INSTALL_ALLOW_DOWNGRADE,
     _FRAMEWORK_METHODS,
+    SignatureVerifyPatcher,
 )
 
 
@@ -123,6 +123,24 @@ class TestPass2CheckSignaturesCall:
         # call site should be patched to return 0
         assert "const/4 v3, 0x0" in content
 
+    def test_high_register_uses_const16(self, patcher, tmp_path):
+        _write_smali(
+            tmp_path, "Check.smali",
+            '.method public verify()V\n'
+            '    .registers 40\n'
+            '    invoke-virtual {p0, p1}, '
+            'Landroid/content/pm/PackageManager;'
+            '->checkSignatures(Ljava/lang/String;Ljava/lang/String;)I\n'
+            '    move-result v16\n'
+            '    return-void\n'
+            '.end method\n'
+        )
+        patcher.patch()
+        content = (tmp_path / "smali" / "Check.smali").read_text()
+        # const/4 cannot encode v16 → must widen to const/16.
+        assert "const/16 v16, 0x0" in content
+        assert "const/4 v16" not in content
+
     def test_no_change_without_signature_keyword(self, patcher, tmp_path):
         _write_smali(
             tmp_path, "NoKeyword.smali",
@@ -143,10 +161,10 @@ class TestPass3GetPackageInfo:
     def test_flag_injection(self, patcher, tmp_path):
         _write_smali(
             tmp_path, "Getter.smali",
-            '.method public get()V\n'
+            '.method public get(Ljava/lang/String;)V\n'
             '    .registers 4\n'
-            '    const/4 v0, 0x40\n'
-            '    invoke-virtual {p0, v0}, '
+            '    const/16 v0, 0x40\n'
+            '    invoke-virtual {p0, p1, v0}, '
             'Landroid/content/pm/PackageManager;'
             '->getPackageInfo(Ljava/lang/String;I)'
             'Landroid/content/pm/PackageInfo;\n'
@@ -155,8 +173,133 @@ class TestPass3GetPackageInfo:
         )
         patcher.patch()
         content = (tmp_path / "smali" / "Getter.smali").read_text()
-        # 0x40 | 0x08000000 = 0x08000040 → const/16 v0, 0x8000040
-        assert "0x8000040" in content.lower()
+        # 0x40 | 0x08000000 = 0x08000040. 0x08000040 does not fit const/16
+        # (signed 16-bit) → must use the 32-bit `const` form.
+        assert "const v0, 0x8000040" in content
+        assert "const/16 v0, 0x8000040" not in content
+
+    def test_invoke_register_list_preserved(self, patcher, tmp_path):
+        _write_smali(
+            tmp_path, "Regs.smali",
+            '.method public get(Ljava/lang/String;)V\n'
+            '    .registers 5\n'
+            '    const/16 v2, 0x40\n'
+            '    invoke-virtual {p0, p1, v2}, '
+            'Landroid/content/pm/PackageManager;'
+            '->getPackageInfo(Ljava/lang/String;I)'
+            'Landroid/content/pm/PackageInfo;\n'
+            '    return-void\n'
+            '.end method\n'
+        )
+        patcher.patch()
+        content = (tmp_path / "smali" / "Regs.smali").read_text()
+        assert "invoke-virtual {p0, p1, v2}" in content
+        assert "{...}" not in content
+
+    def test_unrelated_const_in_other_method_untouched(
+        self, patcher, tmp_path,
+    ):
+        """Regression: DOTALL `(.*?)` used to rewrite an array-size const."""
+        _write_smali(
+            tmp_path, "Mixed.smali",
+            '.method static constructor <clinit>()V\n'
+            '    .locals 1\n'
+            '    const/4 v0, 0x7\n'
+            '    new-array v0, v0, [Ljava/lang/String;\n'
+            '    sput-object v0, Lcom/x;->A:[Ljava/lang/String;\n'
+            '    return-void\n'
+            '.end method\n'
+            '.method public validate(Ljava/lang/String;)V\n'
+            '    .registers 4\n'
+            '    const/16 v0, 0x40\n'
+            '    invoke-virtual {p0, p1, v0}, '
+            'Landroid/content/pm/PackageManager;'
+            '->getPackageInfo(Ljava/lang/String;I)'
+            'Landroid/content/pm/PackageInfo;\n'
+            '    return-void\n'
+            '.end method\n'
+        )
+        patcher.patch()
+        content = (tmp_path / "smali" / "Mixed.smali").read_text()
+        assert "const/4 v0, 0x7" in content
+        assert "new-array v0, v0," in content
+        assert "const v0, 0x8000040" in content
+        assert "0x8000007" not in content
+
+    def test_non_adjacent_const_not_patched(self, patcher, tmp_path):
+        """A const separated by real instructions is not the flag literal."""
+        _write_smali(
+            tmp_path, "Far.smali",
+            '.method public get(Ljava/lang/String;)V\n'
+            '    .registers 4\n'
+            '    const/16 v0, 0x40\n'
+            '    invoke-static {}, Lcom/x;->y()V\n'
+            '    invoke-virtual {p0, p1, v0}, '
+            'Landroid/content/pm/PackageManager;'
+            '->getPackageInfo(Ljava/lang/String;I)'
+            'Landroid/content/pm/PackageInfo;\n'
+            '    return-void\n'
+            '.end method\n'
+        )
+        patcher.patch()
+        content = (tmp_path / "smali" / "Far.smali").read_text()
+        assert "0x8000040" not in content
+
+    def test_idempotent_when_flag_already_set(self, patcher, tmp_path):
+        _write_smali(
+            tmp_path, "Done.smali",
+            '.method public get(Ljava/lang/String;)V\n'
+            '    .registers 4\n'
+            '    const v0, 0x8000040\n'
+            '    invoke-virtual {p0, p1, v0}, '
+            'Landroid/content/pm/PackageManager;'
+            '->getPackageInfo(Ljava/lang/String;I)'
+            'Landroid/content/pm/PackageInfo;\n'
+            '    return-void\n'
+            '.end method\n'
+        )
+        patcher.patch()
+        content = (tmp_path / "smali" / "Done.smali").read_text()
+        assert content.count("0x8000040") == 1
+
+    def test_zero_flags_uses_high16_full_literal(
+        self, patcher, tmp_path,
+    ):
+        """flags=0 → 0x08000000 → const/high16 takes the full literal."""
+        _write_smali(
+            tmp_path, "Zero.smali",
+            '.method public get(Ljava/lang/String;)V\n'
+            '    .registers 4\n'
+            '    const/4 v1, 0x0\n'
+            '    invoke-virtual {p0, p1, v1}, '
+            'Landroid/content/pm/PackageManager;'
+            '->getPackageInfo(Ljava/lang/String;I)'
+            'Landroid/content/pm/PackageInfo;\n'
+            '    return-void\n'
+            '.end method\n'
+        )
+        patcher.patch()
+        content = (tmp_path / "smali" / "Zero.smali").read_text()
+        assert "const/high16 v1, 0x8000000" in content
+        assert "const/high16 v1, 0x800\n" not in content
+
+    def test_range_invoke_flags_register(self, patcher, tmp_path):
+        _write_smali(
+            tmp_path, "Range.smali",
+            '.method public get(Ljava/lang/String;Ljava/lang/Object;)V\n'
+            '    .registers 3\n'
+            '    const/16 p2, 0x40\n'
+            '    invoke-virtual/range {p0 .. p2}, '
+            'Landroid/content/pm/PackageManager;'
+            '->getPackageInfo(Ljava/lang/String;I)'
+            'Landroid/content/pm/PackageInfo;\n'
+            '    return-void\n'
+            '.end method\n'
+        )
+        patcher.patch()
+        content = (tmp_path / "smali" / "Range.smali").read_text()
+        assert "const p2, 0x8000040" in content
+        assert "invoke-virtual/range {p0 .. p2}" in content
 
 
 # ============================================================
@@ -217,6 +360,23 @@ class TestPass5MessageDigest:
         patcher.patch()
         content = (tmp_path / "smali" / "Verifier.smali").read_text()
         assert "const/4 v2, 0x1" in content
+
+    def test_parameter_register_uses_const16(self, patcher, tmp_path):
+        _write_smali(
+            tmp_path, "Verifier2.smali",
+            '.method public verifySignature(Ljava/lang/String;Ljava/lang/String;)V\n'
+            '    .registers 40\n'
+            '    invoke-static {v0, v1}, '
+            'Ljava/security/MessageDigest;'
+            '->isEqual([B[B)Z\n'
+            '    move-result p2\n'
+            '    return-void\n'
+            '.end method\n'
+        )
+        patcher.patch()
+        content = (tmp_path / "smali" / "Verifier2.smali").read_text()
+        assert "const/16 p2, 0x1" in content
+        assert "const/4 p2" not in content
 
 
 # ============================================================
