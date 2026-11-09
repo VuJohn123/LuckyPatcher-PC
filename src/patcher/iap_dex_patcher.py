@@ -133,7 +133,7 @@ class IAPDexPatcher:
     def _read(self, path: str) -> str:
         if self.file_cache:
             return self.file_cache.read(path)
-        with open(path, "r", encoding="utf-8", errors="ignore") as f:
+        with open(path, encoding="utf-8", errors="ignore") as f:
             return f.read()
 
     def _write(self, path: str, content: str) -> None:
@@ -168,11 +168,9 @@ class IAPDexPatcher:
                     return True
 
         content_lower = content.lower()
-        for strong in STRONG_IAP_METHODS_LOWER:
-            if strong in content_lower:
-                return True
-
-        return False
+        return any(
+            strong in content_lower for strong in STRONG_IAP_METHODS_LOWER
+        )
 
     def patch(self) -> int:
         return self.patch_with_report()["total_patched"]
@@ -198,7 +196,7 @@ class IAPDexPatcher:
 
             try:
                 content = self._read(filepath)
-            except (OSError, IOError):
+            except OSError:
                 skipped += 1
                 continue
 
@@ -239,7 +237,7 @@ class IAPDexPatcher:
                     patched_files += 1
                     short = filepath.split("/")[-1].split(chr(92))[-1]
                     self.log(f"[+] [IAPDexPatcher] {short}")
-                except (OSError, IOError):
+                except OSError:
                     skipped += 1
 
         report["total_patched"] = patched_files
@@ -269,9 +267,14 @@ class IAPDexPatcher:
             "    const/4 v2, 0x0\n"
             "    invoke-virtual {v0, v1, v2}, "
             "Landroid/os/Bundle;->putInt(Ljava/lang/String;I)V\n"
+            # Clients read this key with getStringArrayList(); an int value
+            # would come back as null and crash/deny the purchase.
             '    const-string v1, "INAPP_PURCHASE_DATA_LIST"\n'
+            "    new-instance v2, Ljava/util/ArrayList;\n"
+            "    invoke-direct {v2}, Ljava/util/ArrayList;-><init>()V\n"
             "    invoke-virtual {v0, v1, v2}, "
-            "Landroid/os/Bundle;->putInt(Ljava/lang/String;I)V\n"
+            "Landroid/os/Bundle;->putStringArrayList"
+            "(Ljava/lang/String;Ljava/util/ArrayList;)V\n"
             "    return-object v0\n"
             ".end method"
         )

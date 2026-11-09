@@ -53,6 +53,30 @@ def test_patch_bundle_method():
         assert "RESPONSE_CODE" in content
 
 
+def test_bundle_method_sets_string_array_list():
+    """Clients read INAPP_PURCHASE_DATA_LIST with getStringArrayList()."""
+    with tempfile.TemporaryDirectory() as tmp:
+        smali = os.path.join(tmp, "smali", "A.smali")
+        _write(smali, (
+            ".class public LA;\n"
+            ".method public static getBuyIntent()Landroid/os/Bundle;\n"
+            "    .locals 1\n"
+            "    const/4 v0, 0x0\n"
+            "    return-object v0\n"
+            ".end method\n"
+        ))
+        patcher = IAPDexPatcher(tmp, log_callback=lambda *_: None)
+        assert patcher.patch() >= 1
+        with open(smali) as f:
+            content = f.read()
+        assert (
+            "putStringArrayList(Ljava/lang/String;"
+            "Ljava/util/ArrayList;)V"
+        ) in content
+        assert "new-instance v2, Ljava/util/ArrayList;" in content
+        assert "INAPP_PURCHASE_DATA_LIST" in content
+
+
 def test_patch_with_report():
     with tempfile.TemporaryDirectory() as tmp:
         smali = os.path.join(tmp, "smali", "A.smali")
