@@ -39,6 +39,11 @@ def set_file_cache(cache):
     file_cache = cache
 
 
+def get_file_cache():
+    """Return the active FileContentCache (or None when unset)."""
+    return file_cache
+
+
 def set_strategy(strategy: str) -> None:
     """Set runtime strategy — ảnh hưởng patcher behavior."""
     global _strategy

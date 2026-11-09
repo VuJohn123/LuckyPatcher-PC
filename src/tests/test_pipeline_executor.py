@@ -4,8 +4,19 @@ from unittest.mock import MagicMock, patch
 from core.pipeline_executor import (
     _classify_modes,
     execute_modes,
+    get_file_cache,
     process_mode,
+    set_file_cache,
 )
+
+
+def test_file_cache_roundtrip():
+    sentinel = object()
+    set_file_cache(sentinel)
+    try:
+        assert get_file_cache() is sentinel
+    finally:
+        set_file_cache(None)
 
 
 # ============================================================

@@ -75,7 +75,10 @@ class IAPBypass:
             self.log(f"[*] ADB reverse: device:{self.proxy_port} → PC:{self.proxy_port}")
 
         # 4. Patch smali
-        smali = IAPSmaliPatcher(self.decompiled_path, log_callback=self.log)
+        smali = IAPSmaliPatcher(
+            self.decompiled_path, log_callback=self.log,
+            file_cache=self.file_cache,
+        )
         smali_count = smali.patch_billing_calls(
             proxy_host="localhost", proxy_port=self.proxy_port
         )
