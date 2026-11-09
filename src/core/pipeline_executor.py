@@ -133,9 +133,16 @@ def process_mode(mode_name, decompiled_dir, ad_activities,
             decompiled_dir, log_callback=log_callback, **kwargs
         )
 
-        # Gọi phương thức patch
+        # Gọi phương thức patch. IAPBypass defines both patch() and
+        # execute_with_report(); prefer the report API so the per-mode
+        # metrics survive into the pipeline summary.
         if mode_name == 'ads':
             cnt = patcher.remove_activities(ad_activities)
+        elif mode_name in ('iap_dex', 'iap_proxy') and hasattr(
+            patcher, 'execute_with_report'
+        ):
+            result['report'] = patcher.execute_with_report()
+            cnt = result['report'].get('total_patched', 0)
         elif hasattr(patcher, 'patch'):
             cnt = patcher.patch()
         elif hasattr(patcher, 'patch_license_check'):

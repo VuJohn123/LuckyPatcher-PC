@@ -171,6 +171,25 @@ def test_process_mode_with_report(tmp_path):
         assert result["report"]["total_patched"] == 7
 
 
+def test_process_mode_iap_prefers_report_over_patch(tmp_path):
+    """Regression: patch() used to shadow execute_with_report() → empty reports."""
+    mock_patcher = MagicMock(spec=["patch", "execute_with_report"])
+    mock_patcher.execute_with_report.return_value = {"total_patched": 2}
+    mock_cls = MagicMock(return_value=mock_patcher)
+
+    with patch(
+        "core.pipeline_executor.get_patcher_class",
+        return_value=mock_cls,
+    ):
+        result = process_mode(
+            "iap_dex", str(tmp_path), [], str(tmp_path / "x.apk"),
+            lambda *_: None,
+        )
+        assert result["patched"] is True
+        assert result["report"]["total_patched"] == 2
+        mock_patcher.patch.assert_not_called()
+
+
 def test_process_mode_iap_dex_selects_dex_mode(tmp_path):
     """iap:dex must not fall through to IAPBypass default proxy mode."""
     mock_patcher = MagicMock(spec=["execute_with_report"])
