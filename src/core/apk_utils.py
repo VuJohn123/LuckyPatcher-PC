@@ -176,14 +176,12 @@ def recompile_apk(
     verify: bool = True,
     input_apk_for_delta: str | None = None,
 ) -> str:
-    use_aapt2 = False
     for attempt in range(max_retries + 1):
         cmd = _java_cmd("apktool.jar")
         cmd += ["b", decompiled_path, "-o", output_apk]
         if forced_package_id is not None:
             cmd += ["--forced-package-id", str(forced_package_id)]
-        if use_aapt2:
-            cmd.append("--use-aapt2")
+        # NOTE: apktool 3.x defaults to aapt2; --use-aapt2 was removed (error: Unrecognized option)
 
         log_callback(f"[*] [Apktool] Recompile attempt {attempt + 1}")
 
@@ -204,7 +202,8 @@ def recompile_apk(
             return output_apk
 
         if attempt == 0:
-            use_aapt2 = True
+            pass  # retry once with single job for OOM-prone big APKs
+            log_callback("[i] [Apktool] Retrying recompile...")
 
     raise RuntimeError(
         f"Recompile failed after {max_retries + 1} attempts"

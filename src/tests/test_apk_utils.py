@@ -159,7 +159,7 @@ def test_recompile_apk_success_first_attempt(tmp_path):
 
 
 def test_recompile_apk_retry_with_aapt2(tmp_path):
-    """First attempt fail → retry với --use-aapt2."""
+    """First attempt fail → retry (apktool 3.x: no --use-aapt2 flag)."""
     fail_proc = _mock_popen(returncode=1, stdout_lines=["error"])
     success_proc = _mock_popen(returncode=0, stdout_lines=["ok"])
 
@@ -173,7 +173,7 @@ def test_recompile_apk_retry_with_aapt2(tmp_path):
             log_callback=lambda *_: None,
         )
         second_call_args = mock_popen.call_args_list[1][0][0]
-        assert "--use-aapt2" in second_call_args
+        assert "--use-aapt2" not in second_call_args
 
 
 def test_recompile_apk_all_fail(tmp_path):
