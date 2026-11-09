@@ -75,10 +75,11 @@ _SETPKG_RES = [
 
 
 class IAPSmaliPatcher:
-    def __init__(self, decompiled_path: str, log_callback=print):
+    def __init__(self, decompiled_path: str, log_callback=print,
+                 file_cache=None):
         self.decompiled_path = decompiled_path
         self.log = log_callback
-        self._cache = self._try_get_cache()
+        self._cache = file_cache or self._try_get_cache()
 
     def _try_get_cache(self):
         try:
@@ -88,7 +89,7 @@ class IAPSmaliPatcher:
             return None
 
     def _read_direct(self, filepath: str) -> str:
-        with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
+        with open(filepath, encoding="utf-8", errors="ignore") as f:
             return f.read()
 
     def _write_file(self, filepath: str, content: str) -> None:
@@ -126,7 +127,9 @@ class IAPSmaliPatcher:
             matched += 1
             original = content
 
-            for action_re, action in zip(_ACTION_RES, TARGET_ACTIONS):
+            for action_re, action in zip(
+                _ACTION_RES, TARGET_ACTIONS, strict=True,
+            ):
                 content = action_re.sub(
                     rf'const-string \1, "{action}.PROXY"', content,
                 )
