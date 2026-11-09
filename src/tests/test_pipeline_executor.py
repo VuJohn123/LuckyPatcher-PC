@@ -1,9 +1,5 @@
 """Test pipeline executor — process_mode + execute_modes + _classify_modes."""
-import os
-import tempfile
 from unittest.mock import MagicMock, patch
-
-import pytest
 
 from core.pipeline_executor import (
     _classify_modes,
@@ -122,7 +118,7 @@ def test_process_mode_patcher_exception_isolated(tmp_path):
             logs.append,
         )
         assert result["patched"] is False
-        assert any("patch boom" in str(l) for l in logs)
+        assert any("patch boom" in str(line) for line in logs)
 
 
 def test_process_mode_ads_uses_remove_activities(tmp_path):
@@ -162,6 +158,39 @@ def test_process_mode_with_report(tmp_path):
         )
         assert result["patched"] is True
         assert result["report"]["total_patched"] == 7
+
+
+def test_process_mode_iap_dex_selects_dex_mode(tmp_path):
+    """iap:dex must not fall through to IAPBypass default proxy mode."""
+    mock_patcher = MagicMock(spec=["execute_with_report"])
+    mock_patcher.execute_with_report.return_value = {"total_patched": 1}
+    mock_cls = MagicMock(return_value=mock_patcher)
+
+    with patch(
+        "core.pipeline_executor.get_patcher_class",
+        return_value=mock_cls,
+    ):
+        process_mode(
+            "iap_dex", str(tmp_path), [], str(tmp_path / "x.apk"),
+            lambda *_: None,
+        )
+        assert mock_cls.call_args.kwargs.get("mode") == "dex"
+
+
+def test_process_mode_iap_proxy_selects_proxy_mode(tmp_path):
+    mock_patcher = MagicMock(spec=["execute_with_report"])
+    mock_patcher.execute_with_report.return_value = {"total_patched": 0}
+    mock_cls = MagicMock(return_value=mock_patcher)
+
+    with patch(
+        "core.pipeline_executor.get_patcher_class",
+        return_value=mock_cls,
+    ):
+        process_mode(
+            "iap_proxy", str(tmp_path), [], str(tmp_path / "x.apk"),
+            lambda *_: None,
+        )
+        assert mock_cls.call_args.kwargs.get("mode") == "proxy"
 
 
 # ============================================================
@@ -270,7 +299,7 @@ def test_execute_modes_handles_patcher_error(tmp_path):
             str(tmp_path / "x.apk"), logs.append,
         )
         # Không crash, error được log
-        assert any("sequential boom" in str(l) for l in logs)
+        assert any("sequential boom" in str(line) for line in logs)
 
 
 def test_execute_modes_collects_reports(tmp_path):

@@ -13,13 +13,14 @@ v2 fixes:
 """
 from __future__ import annotations
 
+import contextlib
 import logging
 import os
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from core.mode_registry import get_mode_group
 from core.lazy_loader import get_patcher_class
+from core.mode_registry import get_mode_group
 from core.trace_context import (
     get_trace_id,
     prefix_with_trace,
@@ -65,8 +66,8 @@ def process_mode(mode_name, decompiled_dir, ad_activities,
               'duration': 0.0}
     t0 = time.monotonic()
     try:
-        PatcherClass = get_patcher_class(mode_name)
-        if PatcherClass is None:
+        patcher_cls = get_patcher_class(mode_name)
+        if patcher_cls is None:
             # Fallback: các mode không cần patcher
             if mode_name == 'save_purchase':
                 from patcher.iap_manager import IAPManager
@@ -105,10 +106,8 @@ def process_mode(mode_name, decompiled_dir, ad_activities,
             elif mode_name in ('modded_play', 'fake_pkg', 'install_dir', 'hosts_block'):
                 # fake_pkg/install_dir/hosts_block load via lazy_loader; modded_play is N/A on PC (needs root) — degrade gracefully, never crash
                 if mode_name == 'modded_play':
-                    try:
+                    with contextlib.suppress(Exception):
                         log_callback("[i] [modded_play] Modded Play Store requires root — N/A on PC; use iap:dex/proxy instead")
-                    except Exception:
-                        pass
                     result['patched'] = False
                     result['label'] = "Modded Play N/A on PC (use iap:dex)"
                 else:
@@ -119,7 +118,13 @@ def process_mode(mode_name, decompiled_dir, ad_activities,
 
         # Khởi tạo patcher với file_cache
         kwargs = {'file_cache': file_cache} if file_cache else {}
-        patcher = PatcherClass(
+        # IAPBypass defaults to proxy mode; the UI/CLI distinction between
+        # iap:dex ("Reassembly Dex") and iap:proxy must be honored.
+        if mode_name == 'iap_dex':
+            kwargs['mode'] = 'dex'
+        elif mode_name == 'iap_proxy':
+            kwargs['mode'] = 'proxy'
+        patcher = patcher_cls(
             decompiled_dir, log_callback=log_callback, **kwargs
         )
 
