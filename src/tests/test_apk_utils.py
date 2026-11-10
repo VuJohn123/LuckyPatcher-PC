@@ -8,6 +8,7 @@ import pytest
 
 from core.apk_utils import (
     SmaliAssemblyError,
+    decompile_apk,
     get_apk_hash,
     get_cache_dir,
     get_tool_path,
@@ -67,6 +68,46 @@ def test_get_cache_dir_same_hash_same_dir(tmp_path):
     cache1 = get_cache_dir(str(apk), base)
     cache2 = get_cache_dir(str(apk), base)
     assert cache1 == cache2
+
+
+@pytest.mark.parametrize(
+    ("no_res", "expected"),
+    [(True, "nores"), (False, "full")],
+)
+def test_decompile_uses_profile_cache_dir(
+    tmp_path, monkeypatch, no_res, expected
+):
+    """Cache load+save must use the profile that matches resource needs."""
+    apk = tmp_path / "profile.apk"
+    apk.write_bytes(b"p")
+    out = tmp_path / "out"
+    profiles = []
+
+    def fake_get(apk_path, base_cache_dir=None, profile=None):
+        profiles.append(profile)
+        d = tmp_path / f"cache_{profile}"
+        d.mkdir(exist_ok=True)
+        return str(d)
+
+    def fake_run(cmd, log_callback, **kwargs):
+        out.mkdir(parents=True, exist_ok=True)
+        (out / "apktool.yml").write_text("v: 3")
+        return 0, ""
+
+    monkeypatch.setattr("core.apk_utils.get_cache_dir", fake_get)
+    monkeypatch.setattr(
+        "core.apk_utils.run_java_with_heartbeat", fake_run
+    )
+    monkeypatch.setattr(
+        "core.apk_utils.cache_save", lambda *a, **k: True
+    )
+
+    decompile_apk(
+        str(apk), str(out),
+        no_res=no_res,
+        log_callback=lambda *_: None,
+    )
+    assert profiles == [expected, expected]
 
 
 # ============================================================

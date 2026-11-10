@@ -60,6 +60,25 @@ class TestGetCacheDir:
         r2 = get_cache_dir(str(f), str(base))
         assert r1 == r2
 
+    def test_profile_separates_full_and_nores(self, tmp_path):
+        f = tmp_path / "z.apk"
+        f.write_bytes(b"z")
+        base = str(tmp_path / "cache")
+        full = get_cache_dir(str(f), base, profile="full")
+        nores = get_cache_dir(str(f), base, profile="nores")
+        assert full != nores
+        assert full.endswith("_full")
+        assert nores.endswith("_nores")
+
+    def test_profile_is_sanitized(self, tmp_path):
+        f = tmp_path / "s.apk"
+        f.write_bytes(b"s")
+        base = str(tmp_path / "cache")
+        result = get_cache_dir(str(f), base, profile="../evil")
+        assert os.path.dirname(result) == base
+        assert os.sep not in os.path.basename(result)
+        assert "evil" in os.path.basename(result)
+
 
 # ============================================================
 # decide_cache_format

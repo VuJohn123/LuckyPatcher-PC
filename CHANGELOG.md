@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- fix(cache): decompile cache is now keyed by decode profile (`_full` / `_nores`), so a no-res tree can never be reused by resource-requiring modes; the save path records the profile actually decoded.
 - fix(iap): `IAPDexPatcher` skips `abstract`/`native` method headers — injecting instructions there made apktool fail with `An abstract method cannot have any instructions`.
 - fix(pipeline): invalid patcher smali now raises `SmaliAssemblyError` with the offending file; the pipeline no longer wastes a full re-decompile/repatch on it.
 - fix(logs): Java subprocess failures log `[✘] ... (rc=N)` instead of a success checkmark.

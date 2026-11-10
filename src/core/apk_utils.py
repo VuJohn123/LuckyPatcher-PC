@@ -112,7 +112,11 @@ def decompile_apk(
         jobs = max(1, (os.cpu_count() or 4) - 1)
 
     if use_cache and not force:
-        cache_dir = get_cache_dir(apk_path)
+        # Cache key includes the decode profile: a no-res tree cannot
+        # satisfy a mode that needs resources.
+        cache_dir = get_cache_dir(
+            apk_path, profile="nores" if no_res else "full"
+        )
         if cache_is_valid(cache_dir):
             age_days = (time.time() - cache_mtime(cache_dir)) / 86400
             if age_days <= cache_ttl_days:
@@ -157,9 +161,14 @@ def decompile_apk(
         if rc == 0:
             if use_cache:
                 try:
+                    # Save under the profile actually decoded (a retry
+                    # may downgrade to no-res).
                     cache_save(
                         output_dir,
-                        get_cache_dir(apk_path),
+                        get_cache_dir(
+                            apk_path,
+                            profile="nores" if use_no_res else "full",
+                        ),
                         log_callback,
                     )
                 except Exception as e:

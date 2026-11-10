@@ -50,10 +50,26 @@ def get_apk_hash(apk_path: str) -> str:
     return hasher.hexdigest()
 
 
-def get_cache_dir(apk_path: str, base_cache_dir: str | None = None) -> str:
+def get_cache_dir(
+    apk_path: str,
+    base_cache_dir: str | None = None,
+    profile: str | None = None,
+) -> str:
+    """Cache dir cho APK.
+
+    profile tách cache full-res và no-res: dùng cache no-res cho mode
+    cần resources sẽ làm recompile fail (thiếu res/).
+    """
     if base_cache_dir is None:
         base_cache_dir = os.path.join(_PROJECT_ROOT, "workspace", "cache")
-    cache_dir = os.path.join(base_cache_dir, get_apk_hash(apk_path))
+    name = get_apk_hash(apk_path)
+    if profile:
+        safe = "".join(
+            ch if ch.isalnum() or ch in "._-" else "_"
+            for ch in profile
+        )
+        name = f"{name}_{safe}"
+    cache_dir = os.path.join(base_cache_dir, name)
     os.makedirs(cache_dir, exist_ok=True)
     return cache_dir
 
