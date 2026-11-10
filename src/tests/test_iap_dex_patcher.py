@@ -77,6 +77,26 @@ def test_bundle_method_sets_string_array_list():
         assert "INAPP_PURCHASE_DATA_LIST" in content
 
 
+def test_skips_abstract_and_native_methods():
+    """Regression: rewritten abstract/native methods break apktool."""
+    with tempfile.TemporaryDirectory() as tmp:
+        smali = os.path.join(tmp, "smali", "A.smali")
+        _write(smali, (
+            ".class public abstract LA;\n"
+            ".method public abstract queryPurchases()V\n"
+            ".end method\n"
+            ".method public native getBuyIntent()Landroid/os/Bundle;\n"
+            ".end method\n"
+        ))
+        patcher = IAPDexPatcher(tmp, log_callback=lambda *_: None)
+        assert patcher.patch() == 0
+        with open(smali) as f:
+            content = f.read()
+        assert ".method public abstract queryPurchases()V\n.end method" in content
+        assert "native getBuyIntent()Landroid/os/Bundle;\n.end method" in content
+        assert ".locals" not in content
+
+
 def test_patch_with_report():
     with tempfile.TemporaryDirectory() as tmp:
         smali = os.path.join(tmp, "smali", "A.smali")

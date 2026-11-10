@@ -191,6 +191,51 @@ def test_run_pipeline_catches_exception(tmp_path):
         assert reports == {}
 
 
+def test_run_pipeline_skips_resource_retry_on_invalid_smali(tmp_path):
+    """Invalid patcher smali must not trigger a full re-decompile/re-patch."""
+    from core.apk_utils import SmaliAssemblyError
+    from main import run_pipeline
+    apk = _make_apk(tmp_path)
+
+    with patch("main.normalize_input", return_value=apk), \
+         patch("core.apk_utils.decompile_apk") as mock_decompile, \
+         patch(
+             "core.pipeline_executor.execute_modes",
+             return_value=([], {}),
+         ), \
+         patch("core.smali_utils.FileContentCache") as mock_cache, \
+         patch("core.pipeline_executor.set_file_cache"), \
+         patch(
+             "core.apk_utils.recompile_apk",
+             side_effect=SmaliAssemblyError(
+                 "Recompile failed: patcher emitted invalid smali: A.smali"
+             ),
+         ), \
+         patch("core.patch_history.PatchHistory"), \
+         patch("patcher.watermarker.Watermarker.add_watermark"), \
+         patch("scanner.analyzer.AppDeepAnalyzer"), \
+         patch("scanner.ad_scanner.AdScanner"):
+        mock_cache.return_value.flush = MagicMock()
+
+        success, out, _ = run_pipeline(
+            apk,
+            mode="license",
+            log_callback=lambda *_: None,
+            config={
+                "conversion": {},
+                "pipeline": {},
+                "logging": {
+                    "level": "INFO",
+                    "file": str(tmp_path / "log.log"),
+                },
+            },
+        )
+
+    assert success is False
+    assert out is None
+    assert mock_decompile.call_count == 1
+
+
 # ============================================================
 # main() — CLI
 # ============================================================

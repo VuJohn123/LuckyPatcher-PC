@@ -256,7 +256,14 @@ def run_java_with_heartbeat(
         )
         return -1, "\n".join(output_lines)
 
-    log_callback(f"[✔] [{label}] Xong trong {elapsed:.1f}s (rc={rc})")
+    if rc == 0:
+        log_callback(
+            f"[✔] [{label}] Xong trong {elapsed:.1f}s (rc={rc})"
+        )
+    else:
+        log_callback(
+            f"[✘] [{label}] Thất bại sau {elapsed:.1f}s (rc={rc})"
+        )
     return rc, "\n".join(output_lines)
 
 

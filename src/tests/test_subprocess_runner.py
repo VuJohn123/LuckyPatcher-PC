@@ -84,6 +84,8 @@ class TestRunJavaWithHeartbeat:
                 timeout_sec=5, heartbeat_sec=1,
             )
         assert rc == 42
+        assert any("[✘]" in line for line in logs)
+        assert not any("[✔]" in line for line in logs)
 
     def test_popen_oserror_returns_minus1(self):
         logs = []

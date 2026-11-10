@@ -213,6 +213,14 @@ class IAPDexPatcher:
                 full = match.group(0)
                 method_sig = match.group(1)
                 return_type = match.group(2)
+                header = full.split("\n")[0]
+
+                # Abstract/native methods have no body; injecting
+                # instructions makes apktool fail with
+                # "An abstract method cannot have any instructions".
+                modifiers = header.split()
+                if "abstract" in modifiers or "native" in modifiers:
+                    continue
 
                 if not any(
                     m in method_sig.lower() for m in target_lower
@@ -220,13 +228,9 @@ class IAPDexPatcher:
                     continue
 
                 if return_type == "V":
-                    replacement = self._void_method(
-                        full.split("\n")[0]
-                    )
+                    replacement = self._void_method(header)
                 else:
-                    replacement = self._bundle_method(
-                        full.split("\n")[0]
-                    )
+                    replacement = self._bundle_method(header)
 
                 content = content.replace(full, replacement)
                 report["patterns"][method_sig] = True

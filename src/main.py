@@ -727,6 +727,7 @@ def _run_pipeline_body(
         from core.pipeline_executor import execute_modes, set_file_cache
         from core.smali_utils import FileContentCache
         from core.apk_utils import (
+            SmaliAssemblyError,
             decompile_apk, recompile_apk, sign_apk,
         )
         from core.device_bridge import install_apk
@@ -833,6 +834,13 @@ def _run_pipeline_body(
                     verify=True,
                     input_apk_for_delta=apk_path,
                 )
+            except SmaliAssemblyError as smali_err:
+                _log(f"[!] {smali_err}")
+                _log(
+                    "[!] Bỏ retry resources: smali lỗi do patcher, "
+                    "decompile lại không sửa được"
+                )
+                raise
             except RuntimeError as recompile_err:
                 if use_no_res:
                     _log(

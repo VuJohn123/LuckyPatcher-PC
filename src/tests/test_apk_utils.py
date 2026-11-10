@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from core.apk_utils import (
+    SmaliAssemblyError,
     get_apk_hash,
     get_cache_dir,
     get_tool_path,
@@ -185,6 +186,26 @@ def test_recompile_apk_all_fail(tmp_path):
                 log_callback=lambda *_: None,
                 max_retries=1,
             )
+
+
+def test_recompile_apk_invalid_smali_fails_fast(tmp_path):
+    """Patcher smali errors must not trigger the resource retry."""
+    fail_proc = _mock_popen(
+        returncode=1,
+        stdout_lines=[
+            "workspace\\decompiled\\smali\\A.smali[10,0] "
+            "An abstract method cannot have any instructions",
+            "Exception in thread \"main\" Could not smali file: "
+            "C:\\ws\\decompiled\\smali\\A.smali",
+        ],
+    )
+    with patch("subprocess.Popen", return_value=fail_proc), \
+         pytest.raises(SmaliAssemblyError, match="invalid smali"):
+        recompile_apk(
+            str(tmp_path), str(tmp_path / "out.apk"),
+            log_callback=lambda *_: None,
+            max_retries=1,
+        )
 
 
 def test_recompile_apk_forced_package_id(tmp_path):

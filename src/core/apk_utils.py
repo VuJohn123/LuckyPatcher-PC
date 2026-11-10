@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import shutil
 import zipfile
 
@@ -58,6 +59,19 @@ _PROJECT_ROOT = os.path.dirname(
 )
 TOOLS_DIR = os.path.join(_PROJECT_ROOT, "tools")
 NAILGUN = shutil.which("ng")
+
+# apktool/smali diagnostics that mean a patcher emitted invalid smali.
+# Re-decompiling with resources cannot fix these — fail fast instead.
+_SMALI_ERROR_MARKERS = (
+    "Could not smali file",
+    "An abstract method cannot have any instructions",
+    "Invalid directive",
+    "Error for input",
+)
+
+
+class SmaliAssemblyError(RuntimeError):
+    """Patcher output cannot be assembled (retrying decompile won't help)."""
 
 
 # ============================================================
@@ -176,6 +190,7 @@ def recompile_apk(
     verify: bool = True,
     input_apk_for_delta: str | None = None,
 ) -> str:
+    outputs: list[str] = []
     for attempt in range(max_retries + 1):
         cmd = _java_cmd("apktool.jar")
         cmd += ["b", decompiled_path, "-o", output_apk]
@@ -185,13 +200,14 @@ def recompile_apk(
 
         log_callback(f"[*] [Apktool] Recompile attempt {attempt + 1}")
 
-        rc, _ = run_java_with_heartbeat(
+        rc, out = run_java_with_heartbeat(
             cmd,
             log_callback=log_callback,
             label="Apktool Recompile",
             timeout_sec=1800,
             heartbeat_sec=30,
         )
+        outputs.append(out)
 
         if rc == 0:
             if verify:
@@ -204,6 +220,16 @@ def recompile_apk(
         if attempt == 0:
             pass  # retry once with single job for OOM-prone big APKs
             log_callback("[i] [Apktool] Retrying recompile...")
+
+    last_output = "\n".join(outputs)
+    if any(marker in last_output for marker in _SMALI_ERROR_MARKERS):
+        bad = re.search(
+            r"Could not smali file:\s*(.+)", last_output,
+        )
+        detail = f": {bad.group(1).strip()}" if bad else ""
+        raise SmaliAssemblyError(
+            f"Recompile failed: patcher emitted invalid smali{detail}"
+        )
 
     raise RuntimeError(
         f"Recompile failed after {max_retries + 1} attempts"
