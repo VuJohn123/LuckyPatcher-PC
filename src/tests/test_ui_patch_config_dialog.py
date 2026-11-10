@@ -6,7 +6,6 @@ from PyQt6.QtWidgets import QRadioButton
 
 from ui.patch_config_dialog import PatchConfigDialog
 
-
 _OPTS = {
     "auto": "Tự động",
     "dex": "Dex mode",

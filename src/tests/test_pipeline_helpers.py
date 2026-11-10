@@ -1,6 +1,5 @@
 """Test pipeline helpers — normalize_input, setup_logging."""
 import os
-import tempfile
 from unittest.mock import patch
 
 import pytest
@@ -106,9 +105,8 @@ def test_normalize_input_xapk_conversion_error(tmp_path):
     with patch(
         "core.xapk_converter.convert_xapk_to_apk",
         side_effect=XAPKConversionError("bad zip"),
-    ):
-        with pytest.raises(ValueError, match="thất bại"):
-            normalize_input(str(xapk), config, lambda *_: None)
+    ), pytest.raises(ValueError, match="thất bại"):
+        normalize_input(str(xapk), config, lambda *_: None)
 
 
 # ============================================================
@@ -146,9 +144,8 @@ def test_normalize_input_apks_conversion_error(tmp_path):
     with patch(
         "core.apks_converter.convert_apks_to_apk",
         side_effect=APKSConversionError("bad format"),
-    ):
-        with pytest.raises(ValueError, match="thất bại"):
-            normalize_input(str(apks), config, lambda *_: None)
+    ), pytest.raises(ValueError, match="thất bại"):
+        normalize_input(str(apks), config, lambda *_: None)
 
 
 # ============================================================

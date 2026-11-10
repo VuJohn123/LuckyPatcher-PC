@@ -1,7 +1,6 @@
 """Test .apks converter — 4 layouts."""
 import io
 import os
-import tempfile
 import zipfile
 
 import pytest

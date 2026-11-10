@@ -1,7 +1,9 @@
 """Giả mạo archive signature check."""
 from __future__ import annotations
+
 from core.smali_utils import REGEX_INTEGRITY_METHOD
 from patcher.base import BasePatcher
+
 
 class SignatureFakeArchivePatcher(BasePatcher):
     KEYWORDS = ("ZipEntry", "getEntry")

@@ -48,7 +48,7 @@ def _load_lang(lang: str) -> dict:
         logger.debug("Missing translation file: %s", path)
         return {}
     try:
-        with open(path, "r", encoding="utf-8") as f:
+        with open(path, encoding="utf-8") as f:
             return json.load(f)
     except (OSError, json.JSONDecodeError) as e:
         logger.warning("Load %s failed: %s", path, e)

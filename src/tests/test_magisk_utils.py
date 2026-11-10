@@ -2,8 +2,6 @@
 import os
 import zipfile
 
-import pytest
-
 from patcher.magisk_utils import create_magisk_module
 
 

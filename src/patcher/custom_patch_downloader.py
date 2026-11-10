@@ -23,6 +23,8 @@ logger = logging.getLogger(__name__)
 try:
     from core.url_security import (
         sanitize_filename as _sanitize_filename,
+    )
+    from core.url_security import (
         validate_url as _validate_url,
     )
     _HAS_URL_SEC = True

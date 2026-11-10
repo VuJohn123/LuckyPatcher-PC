@@ -37,7 +37,6 @@ import shutil
 import tempfile
 import zipfile
 from dataclasses import dataclass, field
-from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -347,7 +346,7 @@ class HexPatternPatcher:
 
         # Read + parse
         try:
-            with open(patch_file, "r", encoding="utf-8") as f:
+            with open(patch_file, encoding="utf-8") as f:
                 text = f.read()
         except OSError as e:
             result.errors.append(f"Cannot read patch file: {e}")
@@ -462,7 +461,7 @@ class HexPatternPatcher:
     @staticmethod
     def parse_patch_file(patch_file: str) -> list[HexPatch]:
         """Public parse helper for tests / analyzer."""
-        with open(patch_file, "r", encoding="utf-8") as f:
+        with open(patch_file, encoding="utf-8") as f:
             text = f.read()
         return LPPatchParser(text).parse()
 

@@ -1,8 +1,11 @@
 """Ad remover — xóa ad activities khỏi AndroidManifest."""
 from __future__ import annotations
+
 import os
 import re
+
 from patcher.base import BasePatcher
+
 
 class AdRemover(BasePatcher):
     def __init__(self, decompiled_path, log_callback=print, file_cache=None):

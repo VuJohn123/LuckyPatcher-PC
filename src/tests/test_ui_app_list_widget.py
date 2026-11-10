@@ -6,10 +6,10 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QMenu
 
 from ui.app_list_widget import (
+    _COLOR_EMOJI,
+    _COLOR_MAP,
     AppListWidget,
     _AppItemWidget,
-    _COLOR_MAP,
-    _COLOR_EMOJI,
 )
 
 

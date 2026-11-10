@@ -9,20 +9,19 @@ from __future__ import annotations
 import hashlib
 import logging
 import os
-import time
-from typing import Callable
+from collections.abc import Callable
 
-from core.fs_utils import (
-    has_robocopy,
-    remove_dst,
-    robocopy_copy,
-    safe_copytree,
-)
 from core.archive_utils import (
     archive_via_7z,
     archive_via_python,
     extract_via_7z,
     extract_via_python,
+)
+from core.fs_utils import (
+    has_robocopy,
+    remove_dst,
+    robocopy_copy,
+    safe_copytree,
 )
 
 logger = logging.getLogger(__name__)

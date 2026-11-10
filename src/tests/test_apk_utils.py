@@ -1,6 +1,5 @@
 """Test APK utils — hash, cache dir, decompile, recompile, sign, merge."""
 import os
-import subprocess
 import zipfile
 from unittest.mock import MagicMock, patch
 

@@ -125,7 +125,7 @@ class AIDLProxyPatcher:
             return 0
 
         try:
-            with open(manifest, "r", encoding="utf-8") as f:
+            with open(manifest, encoding="utf-8") as f:
                 content = f.read()
         except OSError as e:
             logger.warning("Đọc manifest failed: %s", e)

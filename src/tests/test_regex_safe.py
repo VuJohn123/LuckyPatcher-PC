@@ -1,8 +1,6 @@
 """Test core/regex_safe.py — ReDoS-safe regex helpers."""
 import re
 
-import pytest
-
 from core.regex_safe import (
     _HAS_REGEX_LIB,
     _MAX_PATTERN_LEN,

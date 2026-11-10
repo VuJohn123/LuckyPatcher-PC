@@ -1,5 +1,4 @@
 """Test patcher/batch_queue.py — BatchQueue."""
-import threading
 import time
 
 import pytest

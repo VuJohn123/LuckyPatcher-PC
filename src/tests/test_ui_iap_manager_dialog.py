@@ -5,7 +5,7 @@ from unittest.mock import MagicMock
 
 import pytest
 from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QMessageBox, QPushButton
+from PyQt6.QtWidgets import QPushButton
 
 from ui.iap_manager_dialog import IAPManagerDialog
 

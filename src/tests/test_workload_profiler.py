@@ -1,9 +1,5 @@
 """Test core/workload_profiler.py."""
-import io
-import os
 import zipfile
-
-import pytest
 
 from core.workload_profiler import (
     SizeClass,

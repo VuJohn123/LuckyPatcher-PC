@@ -9,21 +9,34 @@ v4 (2026):
 """
 from __future__ import annotations
 
-from PyQt6.QtWidgets import (
-    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
-    QLabel, QToolBar, QStatusBar, QComboBox, QLineEdit,
-    QStackedWidget, QFrame, QProgressBar, QMessageBox, QSplitter,
-)
-from PyQt6.QtCore import Qt, QSize
+from PyQt6.QtCore import QSize, Qt
 from PyQt6.QtGui import QFont, QKeySequence, QShortcut
+from PyQt6.QtWidgets import (
+    QComboBox,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QMainWindow,
+    QMessageBox,
+    QProgressBar,
+    QPushButton,
+    QSplitter,
+    QStackedWidget,
+    QStatusBar,
+    QToolBar,
+    QVBoxLayout,
+    QWidget,
+)
 
+from core.i18n import t
+
+from .apk_detail_widget import APKDetailWidget
+from .app_controller import AppController
 from .app_list_widget import AppListWidget
 from .log_widget import LogWidget
-from .apk_detail_widget import APKDetailWidget
 from .switches_panel import SwitchesPanel
-from .app_controller import AppController
 from .toolbox_menu import ToolboxMenu
-from core.i18n import t
 
 
 class MainWindow(QMainWindow):

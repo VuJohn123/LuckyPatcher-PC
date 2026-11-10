@@ -1,13 +1,10 @@
 """Test core/env_probe.py."""
-from unittest.mock import MagicMock, patch
 
-import pytest
 
 from core.env_probe import (
     EnvSpec,
     _detect_os,
     _detect_physical_cores,
-    _detect_ssd,
     _safe_import,
     auto_tune,
     probe,

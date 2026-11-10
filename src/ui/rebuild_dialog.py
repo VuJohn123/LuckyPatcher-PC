@@ -3,15 +3,24 @@ Dialog tạo APK đã sửa — cho phép chọn nhiều patch với cấu hình
 """
 from __future__ import annotations
 
-import os
-
-from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
-    QScrollArea, QWidget, QCheckBox, QFrame, QMessageBox,
-    QComboBox, QSpinBox, QGroupBox, QSizePolicy,
-)
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtGui import QFont
+from PyQt6.QtWidgets import (
+    QCheckBox,
+    QComboBox,
+    QDialog,
+    QFrame,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QMessageBox,
+    QPushButton,
+    QScrollArea,
+    QSizePolicy,
+    QSpinBox,
+    QVBoxLayout,
+    QWidget,
+)
 
 from .patch_config_dialog import PatchConfigDialog
 from .preview_dialog import PreviewDialog

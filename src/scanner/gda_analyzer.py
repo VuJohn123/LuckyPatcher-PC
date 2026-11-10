@@ -54,7 +54,7 @@ class GDAAnalyzer:
             if not os.path.exists(report):
                 return findings
 
-            with open(report, "r", encoding="utf-8",
+            with open(report, encoding="utf-8",
                       errors="ignore") as f:
                 content = f.read()
 

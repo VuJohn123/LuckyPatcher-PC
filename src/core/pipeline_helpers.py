@@ -70,7 +70,9 @@ def normalize_input(path: str, config: dict, log) -> str:
     # Case 2: .xapk  (APKPure XAPK có manifest.json)
     # ============================================================
     from core.xapk_converter import (
-        XAPKConversionError, convert_xapk_to_apk, is_xapk,
+        XAPKConversionError,
+        convert_xapk_to_apk,
+        is_xapk,
     )
     if os.path.isfile(path) and (
         path.lower().endswith(".xapk") or is_xapk(path)
@@ -86,7 +88,9 @@ def normalize_input(path: str, config: dict, log) -> str:
     # Case 3: .apks  (bundletool HOẶC APKPure apkcube)
     # ============================================================
     from core.apks_converter import (
-        APKSConversionError, convert_apks_to_apk, is_bundle_zip,
+        APKSConversionError,
+        convert_apks_to_apk,
+        is_bundle_zip,
     )
     if os.path.isfile(path) and (
         path.lower().endswith(".apks") or is_bundle_zip(path)

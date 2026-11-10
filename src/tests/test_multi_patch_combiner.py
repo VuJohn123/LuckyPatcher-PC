@@ -1,8 +1,6 @@
 """Test patcher/multi_patch_combiner.py."""
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from patcher.multi_patch_combiner import MultiPatchCombiner
 
 

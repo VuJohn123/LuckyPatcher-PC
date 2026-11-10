@@ -3,8 +3,6 @@ from __future__ import annotations
 
 import os
 
-import pytest
-
 from core.xposed_generator import (
     _HOOK_CLASS_NAMES,
     _INNER_CLASS_TEMPLATES,

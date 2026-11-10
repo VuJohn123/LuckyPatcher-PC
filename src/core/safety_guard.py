@@ -24,8 +24,8 @@ import logging
 import os
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable
 
 logger = logging.getLogger(__name__)
 
@@ -233,8 +233,8 @@ class SafetyGuard:
 
         # ---- Disk ----
         try:
-            from pathlib import Path
             import shutil as _sh
+            from pathlib import Path
             root = Path(__file__).resolve().parent.parent
             usage = _sh.disk_usage(root)
             free_pct = usage.free * 100 / usage.total

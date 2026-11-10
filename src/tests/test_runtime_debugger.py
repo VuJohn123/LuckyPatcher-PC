@@ -2,12 +2,9 @@
 from __future__ import annotations
 
 import subprocess
-import threading
 from unittest.mock import MagicMock, patch
 
-import pytest
-
-from core.runtime_debugger import RuntimeDebugger, _PATTERNS
+from core.runtime_debugger import _PATTERNS, RuntimeDebugger
 
 
 # ============================================================

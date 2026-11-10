@@ -2,11 +2,11 @@
 from __future__ import annotations
 
 import logging
-import re
-import zipfile
 import os
-import tempfile
+import re
 import shutil
+import tempfile
+import zipfile
 
 logger = logging.getLogger(__name__)
 
@@ -17,9 +17,9 @@ class LPDiffAnalyzer:
         self.patched = patched_smali
 
     def generate_pattern(self, mask_operands: bool = True) -> str:
-        with open(self.orig, "r", encoding="utf-8", errors="ignore") as f:
+        with open(self.orig, encoding="utf-8", errors="ignore") as f:
             orig_lines = f.readlines()
-        with open(self.patched, "r", encoding="utf-8", errors="ignore") as f:
+        with open(self.patched, encoding="utf-8", errors="ignore") as f:
             patched_lines = f.readlines()
 
         orig_insts = self._extract_instructions(orig_lines)

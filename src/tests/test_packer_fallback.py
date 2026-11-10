@@ -8,8 +8,6 @@ from __future__ import annotations
 import zipfile
 from unittest.mock import MagicMock
 
-import pytest
-
 from scanner.checks.packer_check import (
     _replace_no_packer_finding,
     check_packer_with_fallback,

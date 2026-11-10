@@ -1,6 +1,4 @@
 """Test watermarker — add + check."""
-import os
-import tempfile
 import zipfile
 
 from patcher.watermarker import Watermarker

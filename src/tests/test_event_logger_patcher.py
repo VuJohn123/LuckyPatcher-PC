@@ -1,9 +1,7 @@
 """Test patcher/event_logger.py — EventLogger injector."""
-import os
 
-import pytest
 
-from patcher.event_logger import EventLogger, LOGGER_SMALI, BILLING_METHODS
+from patcher.event_logger import BILLING_METHODS, LOGGER_SMALI, EventLogger
 
 
 # ============================================================

@@ -2,8 +2,6 @@
 import os
 import zipfile
 
-import pytest
-
 from patcher.custom_patch import CustomPatchApplier, CustomPatchParser
 
 
@@ -167,7 +165,6 @@ def test_applier_non_replace_op(tmp_path):
 
 def test_applier_patch_no_env_var(tmp_path):
     """patch() khi không có LP_CUSTOM_PATCH env → return 0."""
-    import os
     saved = os.environ.pop("LP_CUSTOM_PATCH", None)
     try:
         a = CustomPatchApplier(str(tmp_path))
@@ -184,11 +181,10 @@ def test_applier_patch_with_file(tmp_path):
 
     patch_file = tmp_path / "patch.txt"
     patch_file.write_text(
-        f"[smali/A\\.smali]\nold_content -> new_content\n",
+        "[smali/A\\.smali]\nold_content -> new_content\n",
         encoding="utf-8",
     )
 
-    import os
     os.environ["LP_CUSTOM_PATCH"] = str(patch_file)
     try:
         a = CustomPatchApplier(str(tmp_path))

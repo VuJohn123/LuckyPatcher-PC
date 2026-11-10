@@ -1,6 +1,5 @@
 """Test event bus — pub/sub, thread-safe, isolate errors."""
 import threading
-import time
 
 from core.event_bus import EventBus
 

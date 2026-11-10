@@ -1,5 +1,4 @@
 """Test patcher/base.py — BasePatcher abstract + helpers."""
-import os
 
 import pytest
 

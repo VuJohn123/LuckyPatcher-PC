@@ -4,9 +4,9 @@ from __future__ import annotations
 import pytest
 
 from patcher.signature_integrity_patcher import (
-    SignatureIntegrityPatcher,
     _INTEGRITY_METHOD_ACTIONS,
     _KEYWORDS,
+    SignatureIntegrityPatcher,
 )
 
 

@@ -1,16 +1,14 @@
 """Test scanner/checks/packer_check.py — APK packer detection."""
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from scanner.checks.packer_check import (
+    _PACKER_SIGNATURES,
     _asset_names,
     _get_application_class,
     _get_zip_entries,
     _native_lib_names,
     _scan_dex_prefixes,
     check_packer,
-    _PACKER_SIGNATURES,
 )
 
 

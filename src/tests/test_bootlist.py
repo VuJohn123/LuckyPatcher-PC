@@ -4,13 +4,10 @@ from __future__ import annotations
 import os
 import time
 
-import pytest
-
 from core.bootlist import (
-    _BOOTLIST_VERSION,
     _MAX_ENTRIES,
-    BootListManager,
     BootlistEntry,
+    BootListManager,
     _compute_file_hash,
     get_bootlist,
 )

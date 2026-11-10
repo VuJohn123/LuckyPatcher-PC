@@ -2,8 +2,6 @@
 import os
 import zipfile
 
-import pytest
-
 from patcher.fast_apk_patcher import FastAPKPatcher
 
 

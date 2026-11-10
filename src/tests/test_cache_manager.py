@@ -1,8 +1,6 @@
 """Test core/cache_manager.py — cache dispatcher."""
 import os
-from unittest.mock import MagicMock, patch
-
-import pytest
+from unittest.mock import patch
 
 from core.cache_manager import (
     _CACHE_7Z_FILENAME,
@@ -261,9 +259,8 @@ class TestCacheLoad:
         with patch(
             "core.cache_manager.extract_via_7z",
             return_value=True,
-        ) as mock_x:
-            with patch("os.path.isdir", return_value=True):
-                ok = cache_load(str(cache), str(dst), lambda *_: None)
+        ) as mock_x, patch("os.path.isdir", return_value=True):
+            ok = cache_load(str(cache), str(dst), lambda *_: None)
         assert ok is True
         mock_x.assert_called_once()
 

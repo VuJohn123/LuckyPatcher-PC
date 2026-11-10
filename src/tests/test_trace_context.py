@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import contextvars
 import logging
-import os
 import re
 import threading
 from concurrent.futures import ThreadPoolExecutor
@@ -105,10 +104,9 @@ class TestTraceContext:
         assert get_trace_id() == "-"
 
     def test_restores_on_exception(self):
-        with pytest.raises(RuntimeError):
-            with trace_context("exc00001"):
-                assert get_trace_id() == "exc00001"
-                raise RuntimeError("boom")
+        with pytest.raises(RuntimeError), trace_context("exc00001"):
+            assert get_trace_id() == "exc00001"
+            raise RuntimeError("boom")
         assert get_trace_id() == "-"
 
     def test_yield_value_matches_contextvar(self):
@@ -145,9 +143,8 @@ class TestSubmitWithContext:
         def worker():
             captured.append(get_trace_id())
 
-        with trace_context("parent12"):
-            with ThreadPoolExecutor(max_workers=1) as ex:
-                submit_with_context(ex, worker).result()
+        with trace_context("parent12"), ThreadPoolExecutor(max_workers=1) as ex:
+            submit_with_context(ex, worker).result()
 
         assert captured == ["parent12"]
 
@@ -157,14 +154,13 @@ class TestSubmitWithContext:
         def worker(n: int):
             captured.append(get_trace_id())
 
-        with trace_context("shared12"):
-            with ThreadPoolExecutor(max_workers=4) as ex:
-                futures = [
-                    submit_with_context(ex, worker, i)
-                    for i in range(4)
-                ]
-                for f in futures:
-                    f.result()
+        with trace_context("shared12"), ThreadPoolExecutor(max_workers=4) as ex:
+            futures = [
+                submit_with_context(ex, worker, i)
+                for i in range(4)
+            ]
+            for f in futures:
+                f.result()
 
         assert captured == ["shared12"] * 4
 
@@ -175,9 +171,8 @@ class TestSubmitWithContext:
         def worker():
             captured.append(get_trace_id())
 
-        with trace_context("lost0001"):
-            with ThreadPoolExecutor(max_workers=1) as ex:
-                ex.submit(worker).result()
+        with trace_context("lost0001"), ThreadPoolExecutor(max_workers=1) as ex:
+            ex.submit(worker).result()
 
         assert captured == ["-"]
 
@@ -313,6 +308,7 @@ class TestBindTraceToLoguru:
 
     def test_no_crash_when_configure_raises(self):
         from unittest.mock import MagicMock
+
         from core.trace_context import bind_trace_to_loguru
         fake = MagicMock()
         fake.configure.side_effect = RuntimeError("boom")
@@ -320,6 +316,7 @@ class TestBindTraceToLoguru:
 
     def test_calls_configure_patch_add(self):
         from unittest.mock import MagicMock
+
         from core.trace_context import bind_trace_to_loguru
         fake = MagicMock()
         fake.patch.return_value = fake
@@ -331,6 +328,7 @@ class TestBindTraceToLoguru:
     def test_patch_callback_reads_trace_id(self):
         """Verify patch callback inject trace_id từ context."""
         from unittest.mock import MagicMock
+
         from core.trace_context import bind_trace_to_loguru
 
         fake = MagicMock()
@@ -355,6 +353,7 @@ class TestBindTraceToLoguru:
     def test_add_callback_prints_with_trace(self, capsys):
         """Add callback → print có prefix [tid:xxx]."""
         from unittest.mock import MagicMock
+
         from core.trace_context import bind_trace_to_loguru
 
         fake = MagicMock()
@@ -378,6 +377,7 @@ class TestBindTraceToLoguru:
 
     def test_add_callback_handles_missing_trace(self, capsys):
         from unittest.mock import MagicMock
+
         from core.trace_context import bind_trace_to_loguru
 
         fake = MagicMock()

@@ -8,8 +8,6 @@ import time
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 import core.tool_updater as tu
 from core.tool_updater import (
     _TOOL_REGISTRY,

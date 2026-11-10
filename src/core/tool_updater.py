@@ -171,8 +171,8 @@ def _detect_local_version(jar_path: Path, cfg: dict) -> str:
 def _fetch_latest_release(repo: str, timeout_sec: float) -> dict | None:
     """Query GitHub releases API."""
     try:
-        import urllib.request
         import urllib.error
+        import urllib.request
     except ImportError:
         return None
 

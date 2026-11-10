@@ -1,10 +1,6 @@
 """Test AppDeepAnalyzer — full analyzer với mock APK + DEX."""
-import os
-import tempfile
 import zipfile
 from unittest.mock import MagicMock, patch
-
-import pytest
 
 from scanner.analyzer import AppDeepAnalyzer
 

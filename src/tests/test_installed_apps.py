@@ -3,8 +3,8 @@ import subprocess
 from unittest.mock import MagicMock, patch
 
 from scanner.installed_apps import (
-    _adb_available,
     _PKG_RE,
+    _adb_available,
     get_installed_apps,
 )
 

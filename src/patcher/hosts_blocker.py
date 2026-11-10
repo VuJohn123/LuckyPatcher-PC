@@ -1,7 +1,10 @@
 """Hosts blocker — generates ad-blocking hosts file from AdsBlockList."""
 from __future__ import annotations
-import logging, os
+
+import logging
+
 from patcher.base import BasePatcher
+
 logger = logging.getLogger(__name__)
 
 class HostsBlocker(BasePatcher):

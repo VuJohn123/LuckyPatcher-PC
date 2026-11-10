@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import logging
 import os
-import platform
 import shutil
 import sys
 import threading
@@ -24,7 +23,7 @@ logger = logging.getLogger(__name__)
 # ============================================================
 # PROBE CACHE (THREAD-SAFE)
 # ============================================================
-_probe_cache: "EnvSpec | None" = None
+_probe_cache: EnvSpec | None = None
 _probe_ts: float = 0.0
 _probe_lock = threading.Lock()
 _PROBE_TTL = 300.0  # 5 phút

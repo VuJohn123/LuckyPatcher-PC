@@ -7,12 +7,9 @@ from __future__ import annotations
 
 import pytest
 
-from PyQt6.QtCore import Qt
-
 from ui.apk_detail_widget import (
-    APKDetailWidget,
-    _COLOR_MAP,
     _TYPE_TO_ACTION,
+    APKDetailWidget,
 )
 
 

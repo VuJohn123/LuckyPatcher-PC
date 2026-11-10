@@ -73,7 +73,7 @@ class PatchHistory:
         if not os.path.exists(self.history_file):
             return []
         try:
-            with open(self.history_file, "r", encoding="utf-8") as f:
+            with open(self.history_file, encoding="utf-8") as f:
                 data = json.load(f)
             if not isinstance(data, list):
                 return []

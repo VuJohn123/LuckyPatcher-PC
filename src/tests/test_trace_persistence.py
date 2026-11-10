@@ -18,12 +18,12 @@ import time
 
 import pytest
 
-from core.patch_history import PatchHistory
 from core.metrics import (
     PatchMetrics,
     get_metrics,
     reset_metrics,
 )
+from core.patch_history import PatchHistory
 from core.trace_context import (
     get_trace_id,
     trace_context,
@@ -343,7 +343,7 @@ class TestAtomicity:
             history.add_record(
                 f"/a{i}.apk", "m", True, trace_id=f"t{i}",
             )
-        with open(history.history_file, "r", encoding="utf-8") as f:
+        with open(history.history_file, encoding="utf-8") as f:
             data = json.load(f)
         assert isinstance(data, list)
         assert len(data) == 5

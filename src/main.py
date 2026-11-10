@@ -58,13 +58,13 @@ import time
 import traceback
 from pathlib import Path
 
-from core.pipeline_helpers import normalize_input, setup_logging
 from core.config import load_config
+from core.output_namer import build_output_filename
+from core.pipeline_helpers import normalize_input, setup_logging
 from core.trace_context import (
     get_trace_id,
     trace_context,
 )
-from core.output_namer import build_output_filename
 
 logger = logging.getLogger(__name__)
 
@@ -724,14 +724,16 @@ def _run_pipeline_body(
         gc.disable()
 
     try:
-        from core.pipeline_executor import execute_modes, set_file_cache
-        from core.smali_utils import FileContentCache
         from core.apk_utils import (
             SmaliAssemblyError,
-            decompile_apk, recompile_apk, sign_apk,
+            decompile_apk,
+            recompile_apk,
+            sign_apk,
         )
         from core.device_bridge import install_apk
         from core.patch_history import PatchHistory
+        from core.pipeline_executor import execute_modes, set_file_cache
+        from core.smali_utils import FileContentCache
         from patcher.watermarker import Watermarker
 
         # ---- GDA ----

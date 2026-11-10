@@ -24,13 +24,14 @@ import hashlib
 import logging
 import mmap
 import os
+
+# Regex engine — stdlib re (ổn định, đủ API)
+import re  # type: ignore
 import threading
 import time
 from collections import OrderedDict
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
-# Regex engine — stdlib re (ổn định, đủ API)
-import re  # type: ignore
 RE_ENGINE = "re"
 
 # JSON engine: orjson (Rust) > stdlib json
@@ -204,10 +205,10 @@ class FileContentCache:
                 with open(filepath, "r+b") as f:
                     with mmap.mmap(f.fileno(), 0) as mm:
                         return mm.read().decode("utf-8", errors="ignore")
-            with open(filepath, "r", encoding="utf-8",
+            with open(filepath, encoding="utf-8",
                       errors="ignore") as f:
                 return f.read()
-        except (OSError, IOError, ValueError):
+        except (OSError, ValueError):
             return ""
 
     # ---------------- WRITE ----------------
@@ -243,7 +244,7 @@ class FileContentCache:
                           buffering=128 * 1024) as f:
                     f.write(content)
                 count += 1
-            except (OSError, IOError, ValueError, TypeError) as e:
+            except (OSError, ValueError, TypeError) as e:
                 errors += 1
                 log_callback(f"[!] [FileCache] {filepath}: {e}")
 
@@ -355,7 +356,7 @@ class APKCache:
             return None
 
         try:
-            with open(cache_path, "r", encoding="utf-8") as f:
+            with open(cache_path, encoding="utf-8") as f:
                 data = json_loads(f.read())
         except (OSError, ValueError):
             return None

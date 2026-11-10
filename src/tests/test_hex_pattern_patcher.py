@@ -1,10 +1,7 @@
 """Test hex_pattern_patcher — LP format parser + byte-level matcher."""
 from __future__ import annotations
 
-import os
 import zipfile
-
-import pytest
 
 from patcher.hex_pattern_patcher import (
     HexOp,

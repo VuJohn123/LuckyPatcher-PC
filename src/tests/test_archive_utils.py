@@ -1,7 +1,5 @@
 """Test core/archive_utils.py — 7z + Python zip fallback."""
 import io
-import os
-import subprocess
 import zipfile
 from unittest.mock import MagicMock, patch
 

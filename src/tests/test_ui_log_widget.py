@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import pytest
-from PyQt6.QtGui import QTextCursor
 
 from ui.log_widget import LogWidget
 

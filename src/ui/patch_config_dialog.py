@@ -2,8 +2,13 @@
 from __future__ import annotations
 
 from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QRadioButton, QPushButton,
-    QButtonGroup, QHBoxLayout, QLabel,
+    QButtonGroup,
+    QDialog,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QRadioButton,
+    QVBoxLayout,
 )
 
 from core.i18n import t

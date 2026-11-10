@@ -1,7 +1,11 @@
 """Install-dir metadata patcher — records custom install path in apk.yml."""
 from __future__ import annotations
-import logging, os
+
+import logging
+import os
+
 from patcher.base import BasePatcher
+
 logger = logging.getLogger(__name__)
 
 class InstallDirPatcher(BasePatcher):

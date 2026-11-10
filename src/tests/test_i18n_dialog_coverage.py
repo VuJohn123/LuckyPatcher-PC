@@ -9,15 +9,13 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import pytest
-
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _I18N_DIR = _REPO_ROOT / "assets" / "i18n"
 
 
 def _load(lang: str) -> dict:
     path = _I18N_DIR / f"{lang}.json"
-    with open(path, "r", encoding="utf-8") as f:
+    with open(path, encoding="utf-8") as f:
         return json.load(f)
 
 

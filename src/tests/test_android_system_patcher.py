@@ -3,8 +3,6 @@ import subprocess
 import zipfile
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from patcher.android_system_patcher import AndroidSystemPatcher
 
 

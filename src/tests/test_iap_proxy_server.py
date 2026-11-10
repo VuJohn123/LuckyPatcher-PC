@@ -3,8 +3,6 @@ import json
 import socket
 import threading
 import time
-from http.server import HTTPServer
-from unittest.mock import MagicMock, patch
 
 import pytest
 

@@ -3,10 +3,10 @@ import os
 import tempfile
 
 from core.smali_utils import (
+    REGEX_BOOLEAN_METHOD,
     FileContentCache,
     get_all_smali_files,
     get_smali_dirs,
-    REGEX_BOOLEAN_METHOD,
 )
 
 

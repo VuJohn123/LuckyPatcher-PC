@@ -1,9 +1,7 @@
 """Test patcher/ws_proxy_server.py."""
 from unittest.mock import MagicMock, patch
 
-import pytest
-
-from patcher.ws_proxy_server import WSBillingProxy, WS_AVAILABLE, _build_buy_intent
+from patcher.ws_proxy_server import WS_AVAILABLE, WSBillingProxy, _build_buy_intent
 
 
 # ============================================================

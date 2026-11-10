@@ -21,7 +21,7 @@ import shutil
 import tempfile
 import zipfile
 
-from core.regex_safe import safe_sub, is_safe_pattern, safe_search
+from core.regex_safe import is_safe_pattern, safe_search, safe_sub
 from core.smali_utils import get_all_smali_files
 
 logger = logging.getLogger(__name__)
@@ -110,7 +110,7 @@ class CustomPatchParser:
         current_ops: list[dict] = []
 
         try:
-            with open(self.path, "r", encoding="utf-8") as f:
+            with open(self.path, encoding="utf-8") as f:
                 lines = f.readlines()
         except OSError as e:
             logger.error("Không đọc được patch: %s", e)
@@ -190,7 +190,7 @@ class CustomPatchApplier:
     def _read(self, path: str) -> str:
         if self.file_cache:
             return self.file_cache.read(path)
-        with open(path, "r", encoding="utf-8", errors="ignore") as f:
+        with open(path, encoding="utf-8", errors="ignore") as f:
             return f.read()
 
     def _write(self, path: str, content: str) -> None:

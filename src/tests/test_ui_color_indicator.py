@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import pytest
 
-from ui.color_indicator import ColorIndicator, _COLOR_MAP
+from ui.color_indicator import _COLOR_MAP, ColorIndicator
 
 
 @pytest.fixture

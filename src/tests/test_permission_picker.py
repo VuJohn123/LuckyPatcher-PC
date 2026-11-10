@@ -1,9 +1,6 @@
 """Test permission_picker_dialog + env var bridge."""
 from __future__ import annotations
 
-import os
-import zipfile
-
 import pytest
 
 from patcher.permission_changer import PermissionChanger

@@ -4,7 +4,6 @@ UI test cho RebuildTreeDialog — checkbox logic, preselect, summary.
 from __future__ import annotations
 
 import pytest
-
 from PyQt6.QtCore import Qt
 
 from ui.rebuild_tree_dialog import RebuildTreeDialog

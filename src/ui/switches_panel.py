@@ -1,8 +1,8 @@
 """Panel công tắc — toggle switch kiểu Lucky Patcher (i18n)."""
 from __future__ import annotations
 
-from PyQt6.QtWidgets import QWidget, QHBoxLayout, QPushButton
 from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import QHBoxLayout, QPushButton, QWidget
 
 from core.i18n import t
 

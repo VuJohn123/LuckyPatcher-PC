@@ -1,6 +1,7 @@
 from patcher.fake_package_patcher import FakePackagePatcher
-from patcher.install_dir_patcher import InstallDirPatcher
 from patcher.hosts_blocker import HostsBlocker
+from patcher.install_dir_patcher import InstallDirPatcher
+
 
 def test_fake_pkg(tmp_path):
     (tmp_path / "AndroidManifest.xml").write_text('<manifest package="com.real.app"></manifest>')

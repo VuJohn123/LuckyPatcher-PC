@@ -1,10 +1,7 @@
 """Test core/subprocess_runner.py — java subprocess wrapper."""
 import subprocess
-import threading
 import time
 from unittest.mock import MagicMock, patch
-
-import pytest
 
 from core.subprocess_runner import (
     _get_tree_cpu_seconds,

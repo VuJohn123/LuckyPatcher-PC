@@ -50,7 +50,7 @@ class GMSSpoofer:
     def _read(self, path: str) -> str:
         if self.file_cache:
             return self.file_cache.read(path)
-        with open(path, "r", encoding="utf-8", errors="ignore") as f:
+        with open(path, encoding="utf-8", errors="ignore") as f:
             return f.read()
 
     def _write(self, path: str, content: str) -> None:

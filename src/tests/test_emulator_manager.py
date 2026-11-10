@@ -3,12 +3,8 @@ from __future__ import annotations
 
 import os
 import subprocess
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
-
-import core.emulator_manager as em
 from core.emulator_manager import EmulatorManager
 
 

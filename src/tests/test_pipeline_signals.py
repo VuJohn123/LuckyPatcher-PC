@@ -4,9 +4,9 @@ import threading
 import pytest
 
 from core.pipeline_signals import (
-    _FallbackSignal,
     _HAS_QT,
     PipelineSignals,
+    _FallbackSignal,
 )
 
 

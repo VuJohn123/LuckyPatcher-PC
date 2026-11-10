@@ -10,7 +10,7 @@ Usage:
 from __future__ import annotations
 
 import time
-from typing import Callable
+from collections.abc import Callable
 
 try:
     from tqdm import tqdm as _tqdm

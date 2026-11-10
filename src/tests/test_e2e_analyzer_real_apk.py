@@ -13,7 +13,6 @@ nội dung tối thiểu.
 """
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 import pytest
@@ -129,6 +128,7 @@ class TestAnalyzerCacheE2E:
         Note: full scan trên Test.apk mất ~60-180s; cache hit ~1s.
         """
         import time
+
         from scanner.analyzer import AppDeepAnalyzer
 
         # 1) Full scan (force)

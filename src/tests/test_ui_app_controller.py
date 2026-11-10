@@ -11,8 +11,8 @@ from unittest.mock import MagicMock
 import pytest
 
 from ui.app_controller import (
-    AppController,
     _SPECIAL_MODES,
+    AppController,
 )
 
 

@@ -277,7 +277,7 @@ def load_config(
             logger.warning("PyYAML không cài — dùng defaults")
         else:
             try:
-                with open(path, "r", encoding="utf-8") as f:
+                with open(path, encoding="utf-8") as f:
                     user_config = yaml.safe_load(f) or {}
                 logger.debug("Loaded YAML: %s", path)
             except Exception as e:

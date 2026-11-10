@@ -5,7 +5,6 @@ import logging
 import re
 import shutil
 import subprocess
-import zipfile
 
 logger = logging.getLogger(__name__)
 

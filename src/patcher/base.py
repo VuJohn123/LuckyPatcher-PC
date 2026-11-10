@@ -8,10 +8,9 @@ v2 (2026) — trace_id prefix:
 from __future__ import annotations
 
 import logging
-import os
 import time
 from abc import ABC, abstractmethod
-from typing import Callable
+from collections.abc import Callable
 
 from core.progress import Progress
 from core.smali_utils import get_all_smali_files
@@ -65,7 +64,7 @@ class BasePatcher(ABC):
                 return self.file_cache.read(path)
             except Exception:
                 pass
-        with open(path, "r", encoding="utf-8", errors="ignore") as f:
+        with open(path, encoding="utf-8", errors="ignore") as f:
             return f.read()
 
     def _write(self, path: str, content: str) -> None:

@@ -7,7 +7,7 @@ import time
 
 import pytest
 
-from core.patch_history import PatchHistory, _MAX_ENTRIES
+from core.patch_history import _MAX_ENTRIES, PatchHistory
 
 
 # ============================================================
@@ -169,7 +169,7 @@ class TestCorruptedFile:
 class TestAtomicIO:
     def test_file_valid_json_after_write(self, hist):
         hist.add_record("a.apk", "license", True)
-        with open(hist.history_file, "r", encoding="utf-8") as f:
+        with open(hist.history_file, encoding="utf-8") as f:
             data = json.load(f)
         assert isinstance(data, list)
         assert len(data) == 1

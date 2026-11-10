@@ -2,8 +2,6 @@
 from __future__ import annotations
 
 from PyQt6.QtWidgets import QLabel
-from PyQt6.QtCore import Qt
-
 
 _COLOR_MAP = {
     "green": "#238636", "yellow": "#d29922", "blue": "#1f6feb",

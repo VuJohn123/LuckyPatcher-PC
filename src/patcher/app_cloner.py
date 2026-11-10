@@ -44,7 +44,7 @@ class AppCloner:
 
         manifest = os.path.join(decompiled, "AndroidManifest.xml")
         try:
-            with open(manifest, "r", encoding="utf-8") as f:
+            with open(manifest, encoding="utf-8") as f:
                 content = f.read()
         except OSError:
             return None
@@ -66,7 +66,7 @@ class AppCloner:
         new_path = self.new_package.replace(".", "/")
         for filepath in get_all_smali_files(decompiled):
             try:
-                with open(filepath, "r", encoding="utf-8",
+                with open(filepath, encoding="utf-8",
                           errors="ignore") as f:
                     c = f.read()
                 if old_path in c:

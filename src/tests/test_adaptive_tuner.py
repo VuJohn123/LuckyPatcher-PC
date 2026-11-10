@@ -2,8 +2,6 @@
 import time
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from core.adaptive_tuner import (
     AdaptiveTuner,
     RuntimeState,

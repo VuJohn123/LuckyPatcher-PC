@@ -3,12 +3,11 @@ import os
 import zipfile
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 
 # Import lazy — main.py import nặng
 def _import_main():
     import importlib
+
     import main as main_mod
     importlib.reload(main_mod)
     return main_mod
@@ -242,6 +241,7 @@ def test_run_pipeline_skips_resource_retry_on_invalid_smali(tmp_path):
 def test_main_no_args_prints_help(capsys):
     """Không có arg → in help, return 1."""
     import sys
+
     from main import main
     with patch.object(sys, "argv", ["lp-pc-suite"]):
         rc = main()
@@ -251,6 +251,7 @@ def test_main_no_args_prints_help(capsys):
 def test_main_with_invalid_apk(tmp_path):
     """APK không tồn tại → pipeline fail, return 1."""
     import sys
+
     from main import main
     with patch.object(
         sys, "argv",
@@ -263,6 +264,7 @@ def test_main_with_invalid_apk(tmp_path):
 
 def test_main_success_returns_0(tmp_path):
     import sys
+
     from main import main
     apk = _make_apk(tmp_path)
 
@@ -277,6 +279,7 @@ def test_main_success_returns_0(tmp_path):
 def test_main_custom_patch_env(tmp_path, monkeypatch):
     """--custom-patch set env var."""
     import sys
+
     from main import main
     apk = _make_apk(tmp_path)
     patch_file = tmp_path / "patch.txt"
@@ -295,6 +298,7 @@ def test_main_custom_patch_env(tmp_path, monkeypatch):
 
 def test_main_verbose_sets_debug(tmp_path):
     import sys
+
     from main import main
     apk = _make_apk(tmp_path)
 

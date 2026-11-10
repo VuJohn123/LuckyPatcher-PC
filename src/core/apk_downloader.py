@@ -5,8 +5,6 @@ import ipaddress
 import logging
 import os
 import re
-import socket
-import zipfile
 from urllib.parse import unquote, urlparse
 
 import requests
@@ -295,7 +293,7 @@ class APKDownloader:
         """
         cd = resp.headers.get("Content-Disposition", "")
 
-        # RFC 5987 — phải check TRƯỚC "filename=" (vì "filename*=..." 
+        # RFC 5987 — phải check TRƯỚC "filename=" (vì "filename*=..."
         # cũng chứa substring nhưng khác pattern)
         if "filename*=" in cd:
             m = re.search(r"filename\*=UTF-8''([^;]+)", cd)

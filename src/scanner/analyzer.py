@@ -22,14 +22,14 @@ from androguard.core.apk import APK
 
 from core.smali_utils import APKCache
 from patcher.watermarker import Watermarker
-from scanner.checks.license_check import check_license
 from scanner.checks.ads_check import check_ads
 from scanner.checks.iap_check import check_iap
+from scanner.checks.license_check import check_license
 from scanner.checks.packer_check import check_packer_with_fallback
 from scanner.checks.security_check import (
-    check_root_detection,
-    check_lp_detection,
     _extract_dex_names,
+    check_lp_detection,
+    check_root_detection,
 )
 
 logger = logging.getLogger(__name__)

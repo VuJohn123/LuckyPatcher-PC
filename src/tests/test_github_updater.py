@@ -1,10 +1,7 @@
 """Test GitHub updater — mock requests."""
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from core.github_updater import (
-    CURRENT_VERSION,
     GitHubUpdater,
     UpdateInfo,
     _is_newer,

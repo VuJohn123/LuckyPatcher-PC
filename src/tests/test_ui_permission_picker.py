@@ -12,10 +12,10 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QMessageBox
 
 from ui.permission_picker_dialog import (
+    _CATEGORY_ORDER,
+    _PERMISSION_DB,
     PermissionPickerDialog,
     _classify,
-    _PERMISSION_DB,
-    _CATEGORY_ORDER,
 )
 
 

@@ -1,5 +1,5 @@
 """Test ResignPatcher — mock subprocess, không chạy jarsigner thật."""
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 from patcher.resign_patcher import ResignPatcher
 

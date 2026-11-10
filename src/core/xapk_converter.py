@@ -104,7 +104,7 @@ def _read_package_name(temp_dir: str) -> str | None:
     if not os.path.exists(manifest_path):
         return None
     try:
-        with open(manifest_path, "r", encoding="utf-8") as f:
+        with open(manifest_path, encoding="utf-8") as f:
             manifest = json.load(f)
         return manifest.get("package_name")
     except (json.JSONDecodeError, OSError) as e:

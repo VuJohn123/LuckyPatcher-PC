@@ -1,12 +1,8 @@
 """Test core/auto_updater.py — watch folder + auto re-patch."""
 from __future__ import annotations
 
-import threading
 import time
-from pathlib import Path
 from unittest.mock import MagicMock, patch
-
-import pytest
 
 from core.auto_updater import AutoUpdater
 

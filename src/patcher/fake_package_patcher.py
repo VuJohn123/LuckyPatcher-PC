@@ -1,7 +1,12 @@
 """Fake package patcher — change package id in AndroidManifest + smali refs."""
 from __future__ import annotations
-import logging, os, re
+
+import logging
+import os
+import re
+
 from patcher.base import BasePatcher
+
 logger = logging.getLogger(__name__)
 _PKG_RE = re.compile(r'package="([^"]+)"')
 

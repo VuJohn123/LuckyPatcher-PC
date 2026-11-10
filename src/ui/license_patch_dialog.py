@@ -1,11 +1,16 @@
 """Dialog chọn chế độ License patch."""
 from __future__ import annotations
 
-from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QRadioButton, QPushButton,
-    QButtonGroup, QHBoxLayout, QLabel,
-)
 from PyQt6.QtCore import pyqtSignal
+from PyQt6.QtWidgets import (
+    QButtonGroup,
+    QDialog,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QRadioButton,
+    QVBoxLayout,
+)
 
 
 class LicensePatchDialog(QDialog):

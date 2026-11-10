@@ -13,7 +13,6 @@ from pathlib import Path
 
 import pytest
 
-
 # ============================================================
 # SYS.PATH SETUP (BẮT BUỘC — trước mọi import từ src/*)
 # ============================================================

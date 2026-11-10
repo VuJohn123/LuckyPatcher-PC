@@ -7,8 +7,8 @@ v2 (2026):
 """
 from __future__ import annotations
 
-from PyQt6.QtWidgets import QMenu, QInputDialog, QMessageBox
 from PyQt6.QtCore import pyqtSignal
+from PyQt6.QtWidgets import QMenu, QMessageBox
 
 
 class ToolboxMenu(QMenu):

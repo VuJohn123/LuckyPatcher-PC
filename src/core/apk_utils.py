@@ -19,37 +19,63 @@ import re
 import shutil
 import zipfile
 
-from core.subprocess_runner import (
-    run_java_with_heartbeat,
-    run_java_with_heartbeat as _run_java_with_heartbeat,
+from core.archive_utils import (
+    archive_via_7z as _archive_via_7z,
+)
+from core.archive_utils import (
+    archive_via_python as _archive_via_python,
+)
+from core.archive_utils import (
+    extract_via_7z as _extract_via_7z,
+)
+from core.archive_utils import (
+    extract_via_python as _extract_via_python,
+)
+from core.archive_utils import (
+    find_7zip as _find_7zip,
 )
 from core.cache_manager import (
-    cache_load,
-    cache_save,
     cache_is_valid,
+    cache_load,
     cache_mtime,
-    decide_cache_format as _decide_cache_format,
-    cache_save as _cache_save,
-    cache_load as _cache_load,
+    cache_save,
     get_apk_hash,
     get_cache_dir,
+)
+from core.cache_manager import (
+    cache_load as _cache_load,
+)
+from core.cache_manager import (
+    cache_save as _cache_save,
+)
+from core.cache_manager import (
+    decide_cache_format as _decide_cache_format,
+)
+from core.fs_utils import (
+    has_robocopy as _find_robocopy,
+)
+from core.fs_utils import (
+    is_link_to as _is_link_to,
 )
 
 # Backward compat re-exports — tests + callers import trực tiếp từ apk_utils
 from core.fs_utils import (
     remove_dst as _remove_dst,
-    is_link_to as _is_link_to,
-    try_link as _try_link,
-    safe_copytree as _safe_copytree,
-    has_robocopy as _find_robocopy,
+)
+from core.fs_utils import (
     robocopy_copy as _robocopy_copy,
 )
-from core.archive_utils import (
-    find_7zip as _find_7zip,
-    archive_via_7z as _archive_via_7z,
-    extract_via_7z as _extract_via_7z,
-    archive_via_python as _archive_via_python,
-    extract_via_python as _extract_via_python,
+from core.fs_utils import (
+    safe_copytree as _safe_copytree,
+)
+from core.fs_utils import (
+    try_link as _try_link,
+)
+from core.subprocess_runner import (
+    run_java_with_heartbeat,
+)
+from core.subprocess_runner import (
+    run_java_with_heartbeat as _run_java_with_heartbeat,
 )
 
 logger = logging.getLogger(__name__)

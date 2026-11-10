@@ -1,13 +1,18 @@
 """App list widget — card-style items với màu phân loại."""
 from __future__ import annotations
 
-from PyQt6.QtWidgets import (
-    QListWidget, QListWidgetItem, QWidget, QHBoxLayout, QVBoxLayout,
-    QLabel, QMenu, QApplication, QFrame,
-)
 from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QFont
-
+from PyQt6.QtWidgets import (
+    QApplication,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QListWidget,
+    QListWidgetItem,
+    QMenu,
+    QVBoxLayout,
+    QWidget,
+)
 
 _COLOR_MAP = {
     "green": "#3fb950",
@@ -45,20 +50,20 @@ class _AppItemWidget(QWidget):
         emoji = _COLOR_EMOJI.get(primary, "📱")
 
         # === Base style (background + border-radius) ===
-        self.setStyleSheet(f"""
-            QWidget#appItem {{
+        self.setStyleSheet("""
+            QWidget#appItem {
                 background-color: #161b22;
                 border: 1px solid #21262d;
                 border-radius: 8px;
-            }}
-            QWidget#appItem:hover {{
+            }
+            QWidget#appItem:hover {
                 background-color: #1c232c;
                 border-color: #30363d;
-            }}
-            QWidget#appItem[selected="true"] {{
+            }
+            QWidget#appItem[selected="true"] {
                 background-color: #1f6feb22;
                 border-color: #1f6feb;
-            }}
+            }
         """)
 
         # === Outer layout: stripe | content ===
@@ -324,14 +329,17 @@ class AppListWidget(QListWidget):
             visible = True
             if text and text not in name and text not in package:
                 visible = False
-            if filter_type == "License check" and "green" not in colors:
-                visible = False
-            elif filter_type == "Ads" and "blue" not in colors:
-                visible = False
-            elif filter_type == "Custom patch" and "yellow" not in colors:
-                visible = False
-            elif filter_type == "System" and not (
-                "purple" in colors or "orange" in colors
+            if (
+                (filter_type == "License check" and "green" not in colors)
+                or (filter_type == "Ads" and "blue" not in colors)
+                or (
+                    filter_type == "Custom patch"
+                    and "yellow" not in colors
+                )
+                or (
+                    filter_type == "System"
+                    and not ("purple" in colors or "orange" in colors)
+                )
             ):
                 visible = False
 

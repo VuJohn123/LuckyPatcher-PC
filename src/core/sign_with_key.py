@@ -114,7 +114,7 @@ class APKSigner:
             "--out", signed,
             apk_path,
         ]
-        log(f"[*] [Signer] apksigner sign --ks-type PKCS12 ...")
+        log("[*] [Signer] apksigner sign --ks-type PKCS12 ...")
         proc = subprocess.run(cmd, capture_output=True, text=True)
         if proc.returncode != 0:
             raise RuntimeError(

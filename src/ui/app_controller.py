@@ -16,17 +16,25 @@ import sys
 import threading
 from pathlib import Path
 
-from PyQt6.QtCore import QObject, pyqtSignal, Qt
+from PyQt6.QtCore import QObject, Qt, pyqtSignal
 from PyQt6.QtWidgets import (
-    QFileDialog, QMessageBox, QDialog, QVBoxLayout, QHBoxLayout,
-    QLabel, QLineEdit, QPushButton, QComboBox, QTextEdit,
+    QComboBox,
+    QDialog,
+    QFileDialog,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QMessageBox,
+    QPushButton,
+    QTextEdit,
+    QVBoxLayout,
 )
 
-from scanner.installed_apps import get_installed_apps
-from scanner.app_classifier import AppDeepAnalyzer
-from patcher.iap_manager import IAPManager
-from core.pipeline_signals import PipelineSignals
 from core.apk_downloader import APKDownloader
+from core.pipeline_signals import PipelineSignals
+from patcher.iap_manager import IAPManager
+from scanner.app_classifier import AppDeepAnalyzer
+from scanner.installed_apps import get_installed_apps
 
 logger = logging.getLogger(__name__)
 
@@ -125,8 +133,8 @@ class AppController(QObject):
         ).start()
 
     def _convert_bundle(self, file: str) -> str:
-        from core.xapk_converter import convert_xapk_to_apk, is_xapk
         from core.apks_converter import convert_apks_to_apk, is_apks
+        from core.xapk_converter import convert_xapk_to_apk, is_xapk
 
         file_lower = file.lower()
         if file_lower.endswith(".xapk") or is_xapk(file):

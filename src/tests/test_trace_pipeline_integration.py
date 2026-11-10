@@ -9,8 +9,6 @@ from __future__ import annotations
 
 import logging
 
-import pytest
-
 from core.trace_context import (
     get_trace_id,
     trace_context,

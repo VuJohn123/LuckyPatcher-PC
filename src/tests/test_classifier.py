@@ -33,58 +33,54 @@ def test_classify_clean_app():
 
 
 def test_classify_license_only():
-    with patch("scanner.classifier.APK"):
-        with patch.object(
-            AppClassifier, "_has_license", return_value=True
-        ), patch.object(
-            AppClassifier, "_has_ads", return_value=False
-        ), patch.object(
-            AppClassifier, "_is_system", return_value=False
-        ):
-            c = AppClassifier("/tmp/x.apk")
-            assert c.classify() == ["green"]
+    with patch("scanner.classifier.APK"), patch.object(
+        AppClassifier, "_has_license", return_value=True
+    ), patch.object(
+        AppClassifier, "_has_ads", return_value=False
+    ), patch.object(
+        AppClassifier, "_is_system", return_value=False
+    ):
+        c = AppClassifier("/tmp/x.apk")
+        assert c.classify() == ["green"]
 
 
 def test_classify_ads_only():
-    with patch("scanner.classifier.APK"):
-        with patch.object(
-            AppClassifier, "_has_license", return_value=False
-        ), patch.object(
-            AppClassifier, "_has_ads", return_value=True
-        ), patch.object(
-            AppClassifier, "_is_system", return_value=False
-        ):
-            c = AppClassifier("/tmp/x.apk")
-            assert c.classify() == ["blue"]
+    with patch("scanner.classifier.APK"), patch.object(
+        AppClassifier, "_has_license", return_value=False
+    ), patch.object(
+        AppClassifier, "_has_ads", return_value=True
+    ), patch.object(
+        AppClassifier, "_is_system", return_value=False
+    ):
+        c = AppClassifier("/tmp/x.apk")
+        assert c.classify() == ["blue"]
 
 
 def test_classify_system_only():
-    with patch("scanner.classifier.APK"):
-        with patch.object(
-            AppClassifier, "_has_license", return_value=False
-        ), patch.object(
-            AppClassifier, "_has_ads", return_value=False
-        ), patch.object(
-            AppClassifier, "_is_system", return_value=True
-        ):
-            c = AppClassifier("/tmp/x.apk")
-            assert c.classify() == ["purple"]
+    with patch("scanner.classifier.APK"), patch.object(
+        AppClassifier, "_has_license", return_value=False
+    ), patch.object(
+        AppClassifier, "_has_ads", return_value=False
+    ), patch.object(
+        AppClassifier, "_is_system", return_value=True
+    ):
+        c = AppClassifier("/tmp/x.apk")
+        assert c.classify() == ["purple"]
 
 
 def test_classify_all_three():
-    with patch("scanner.classifier.APK"):
-        with patch.object(
-            AppClassifier, "_has_license", return_value=True
-        ), patch.object(
-            AppClassifier, "_has_ads", return_value=True
-        ), patch.object(
-            AppClassifier, "_is_system", return_value=True
-        ):
-            c = AppClassifier("/tmp/x.apk")
-            colors = c.classify()
-            assert "green" in colors
-            assert "blue" in colors
-            assert "purple" in colors
+    with patch("scanner.classifier.APK"), patch.object(
+        AppClassifier, "_has_license", return_value=True
+    ), patch.object(
+        AppClassifier, "_has_ads", return_value=True
+    ), patch.object(
+        AppClassifier, "_is_system", return_value=True
+    ):
+        c = AppClassifier("/tmp/x.apk")
+        colors = c.classify()
+        assert "green" in colors
+        assert "blue" in colors
+        assert "purple" in colors
 
 
 # ============================================================
@@ -185,7 +181,8 @@ def test_is_system_exception():
 # ============================================================
 def test_has_license_offline_helper_skipped():
     """OfflineLicenseHelper phải bị skip, không tính là license."""
-    import zipfile, io
+    import io
+    import zipfile
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w") as z:
         z.writestr("classes.dex", b"fake")

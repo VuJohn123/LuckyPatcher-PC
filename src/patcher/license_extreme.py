@@ -16,8 +16,8 @@ import re
 
 from core.smali_utils import (
     REGEX_BOOLEAN_METHOD,
-    REGEX_INVOKE_LICENSE,
     REGEX_INVOKE_ILICENSING,
+    REGEX_INVOKE_LICENSE,
 )
 from patcher.base import BasePatcher
 

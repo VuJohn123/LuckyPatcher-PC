@@ -4,8 +4,6 @@ from __future__ import annotations
 import os
 import zipfile
 
-import pytest
-
 from scanner.checks.packer_bytecode import (
     _BYTECODE_SIGNATURES,
     _ENCRYPTED_ENTROPY_MIN,
@@ -616,9 +614,6 @@ class TestWindowEntropyResultDataclass:
 
 class TestBytecodeDetectionWindowFields:
     def test_detection_has_window_fields(self):
-        from scanner.checks.packer_bytecode import (
-            BytecodeDetection,
-        )
         d = BytecodeDetection(
             name="x", confidence="high", patchable=False,
         )
@@ -700,7 +695,8 @@ class TestAugmentWindowPropagation:
 class TestFastEntropy:
     def test_matches_shannon(self):
         from scanner.checks.packer_bytecode import (
-            _fast_entropy, shannon_entropy,
+            _fast_entropy,
+            shannon_entropy,
         )
         data = os.urandom(4096)
         assert abs(_fast_entropy(data) - shannon_entropy(data)) < 1e-9

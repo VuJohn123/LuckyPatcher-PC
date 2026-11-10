@@ -3,11 +3,16 @@ from __future__ import annotations
 
 import time
 
-from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QListWidget, QListWidgetItem,
-    QPushButton, QHBoxLayout, QMessageBox,
-)
 from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import (
+    QDialog,
+    QHBoxLayout,
+    QListWidget,
+    QListWidgetItem,
+    QMessageBox,
+    QPushButton,
+    QVBoxLayout,
+)
 
 
 class IAPManagerDialog(QDialog):

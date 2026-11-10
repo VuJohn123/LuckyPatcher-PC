@@ -8,9 +8,9 @@ import pytest
 
 from core.apk_downloader import (
     ALLOWED_SCHEMES,
-    APKDownloader,
     BLOCKED_HOSTS,
     MAX_DOWNLOAD_SIZE,
+    APKDownloader,
     UnsafeDownloadError,
     _validate_url,
 )

@@ -1,8 +1,6 @@
 """Test scanner/gda_analyzer.py — GDA integration."""
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from scanner.gda_analyzer import GDAAnalyzer
 
 

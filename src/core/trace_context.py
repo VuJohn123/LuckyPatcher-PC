@@ -33,9 +33,10 @@ import contextvars
 import logging
 import os
 import uuid
+from collections.abc import Callable
 from concurrent.futures import Executor, Future
 from contextlib import contextmanager
-from typing import Any, Callable
+from typing import Any
 
 logger = logging.getLogger(__name__)
 

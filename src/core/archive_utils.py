@@ -15,7 +15,7 @@ import subprocess
 import threading
 import time
 import zipfile
-from typing import Callable
+from collections.abc import Callable
 
 from core.progress import Progress
 

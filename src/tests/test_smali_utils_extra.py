@@ -1,14 +1,12 @@
 """Test smali_utils — các phần chưa được cover."""
-import os
-from unittest.mock import MagicMock, patch
 
 import pytest
 
 from core.smali_utils import (
-    APKCache,
-    FileContentCache,
     JSON_FAST,
     RE_ENGINE,
+    APKCache,
+    FileContentCache,
     get_all_smali_files,
     get_smali_dirs,
     json_dumps,

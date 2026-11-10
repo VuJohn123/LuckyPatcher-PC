@@ -10,12 +10,10 @@ Chạy trước pipeline, và có thể re-tune giữa chừng nếu throttle.
 from __future__ import annotations
 
 import logging
-import os
 import threading
 import time
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +58,7 @@ class TuneResult:
 class AdaptiveTuner:
     """Singleton — stateful across runs."""
 
-    _instance: "AdaptiveTuner | None" = None
+    _instance: AdaptiveTuner | None = None
     _lock = threading.RLock()
 
     def __new__(cls, *args, **kwargs):

@@ -1,9 +1,9 @@
 """Log widget — dùng QPlainTextEdit cho hiệu suất + block limit."""
 from __future__ import annotations
 
-from PyQt6.QtWidgets import QPlainTextEdit
-from PyQt6.QtGui import QTextCursor
 from PyQt6.QtCore import pyqtSlot
+from PyQt6.QtGui import QTextCursor
+from PyQt6.QtWidgets import QPlainTextEdit
 
 
 class LogWidget(QPlainTextEdit):

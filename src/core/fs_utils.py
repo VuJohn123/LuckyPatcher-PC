@@ -11,7 +11,7 @@ import os
 import shutil
 import subprocess
 import time
-from typing import Callable
+from collections.abc import Callable
 
 from core.progress import Progress
 

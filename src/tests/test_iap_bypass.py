@@ -1,10 +1,6 @@
 """Test patcher/iap_bypass.py — orchestrator."""
 import socket
-import threading
-import time
 from unittest.mock import MagicMock, patch
-
-import pytest
 
 from patcher.iap_bypass import IAPBypass
 

@@ -82,7 +82,7 @@ def parse_ads_blocklist(filepath: str) -> tuple[list[str], list[str]]:
     section: str | None = None
 
     try:
-        with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
+        with open(filepath, encoding="utf-8", errors="ignore") as f:
             for raw in f:
                 line = raw.strip()
                 if not line or line.startswith("#"):

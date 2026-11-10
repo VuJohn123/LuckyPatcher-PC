@@ -2,8 +2,8 @@
 from __future__ import annotations
 
 import logging
-import sys
 import os
+import sys
 
 # Đảm bảo src/ trong path
 _SRC_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -100,12 +100,12 @@ def _setup_environment() -> None:
 _setup_environment()
 
 
-from PyQt6.QtWidgets import QApplication
 from PyQt6.QtCore import QObject, pyqtSignal
+from PyQt6.QtWidgets import QApplication
 
+from core.smali_utils import JSON_FAST, RE_ENGINE
 from ui.main_window import MainWindow
 from ui.styles import MATERIAL_DARK_STYLE
-from core.smali_utils import RE_ENGINE, JSON_FAST
 
 
 def setup_logging() -> None:
@@ -134,9 +134,9 @@ def _check_for_updates(bridge: _UpdaterBridge, window: MainWindow) -> None:
 def _show_update_dialog(window: MainWindow, info) -> None:
     if info is None:
         return
-    from PyQt6.QtWidgets import QMessageBox
-    from PyQt6.QtGui import QDesktopServices
     from PyQt6.QtCore import QUrl
+    from PyQt6.QtGui import QDesktopServices
+    from PyQt6.QtWidgets import QMessageBox
 
     msg = QMessageBox(window)
     msg.setWindowTitle("🎉 Có bản cập nhật mới")

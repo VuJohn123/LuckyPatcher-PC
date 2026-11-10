@@ -5,10 +5,8 @@ Mock controller.load_device_apps() để tránh ADB.
 """
 from __future__ import annotations
 
-from unittest.mock import MagicMock
-
 import pytest
-from PyQt6.QtCore import Qt, QMimeData, QUrl
+from PyQt6.QtCore import QMimeData, QUrl
 
 from ui.main_window import MainWindow
 

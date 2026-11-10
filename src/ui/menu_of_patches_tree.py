@@ -9,12 +9,16 @@ v2 (2026):
 """
 from __future__ import annotations
 
-from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QTreeWidget, QTreeWidgetItem,
-    QLabel, QPushButton, QHBoxLayout,
-)
 from PyQt6.QtCore import Qt, pyqtSignal
-
+from PyQt6.QtWidgets import (
+    QDialog,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QTreeWidget,
+    QTreeWidgetItem,
+    QVBoxLayout,
+)
 
 _COLOR_LABELS = {
     "green": "🟢 License",
