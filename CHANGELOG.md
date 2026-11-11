@@ -1,7 +1,7 @@
 # Changelog
 
 ## Unreleased
-- perf(iap): `iap:dex` prefilter now scans smali files with a bounded thread pool (IAPDexPatcher), overlapping Windows Defender first-touch scans; the cached-tree benchmark went from ~18.8ms to ~6.5-7.6ms per file (serial ≈992s → ≈342-404s projected for 52.8k files) with identical patch coverage.
+- perf(iap): `iap:dex` prefilter now scans smali files with a bounded thread pool (IAPDexPatcher), overlapping Windows Defender first-touch scans. E2E on the 84 MB PairIP APK: scan 1457.6s → 417.9s, whole run 2688s → 998.3s, with an identical result (same 53 pattern keys, 43 files patched, 52,845 scanned, 0 skipped).
 - fix(safety): sustained RAM pressure in CLI mode now hard-aborts the pipeline instead of auto-muting and resuming full load; new `auto_tune.safety.cli_abort_reasons` (default `[ram]`) overrides `cli_mode_action` per reason, and the pipeline checks the abort flag again after recompile before signing.
 - chore(ci): pin `ruff==0.16.8` / `mypy==2.3.1`; CI now also enforces `mypy src`.
 - chore: `ruff check src` and `mypy src` are both clean (0 findings / 0 errors).
