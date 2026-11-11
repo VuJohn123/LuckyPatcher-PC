@@ -1,6 +1,7 @@
 """Hàng đợi xử lý APK hàng loạt — chạy tuần tự nền."""
 from __future__ import annotations
 
+import contextlib
 import logging
 import threading
 from queue import Queue
@@ -40,10 +41,8 @@ class BatchQueue:
                 continue
             self.log(f"[*] [Batch] Processing {done + 1}/{total}: {apk}")
             if self.progress_cb:
-                try:
+                with contextlib.suppress(Exception):
                     self.progress_cb(done, total, apk)
-                except Exception:
-                    pass
             try:
                 self.cb(apk, mode)
             except Exception as e:

@@ -42,9 +42,8 @@ class AppClassifier:
         colors = []
         if self._has_license():
             colors.append("green")
-        if self._has_iap():
-            if "green" not in colors:
-                colors.append("green")
+        if self._has_iap() and "green" not in colors:
+            colors.append("green")
         if self._has_ads():
             colors.append("blue")
         if self._is_system():
@@ -75,6 +74,8 @@ class AppClassifier:
         return False
 
     def _has_ads(self) -> bool:
+        if self.apk is None:
+            return False
         try:
             for act in self.apk.get_activities():
                 if re.search(
@@ -88,6 +89,8 @@ class AppClassifier:
         return False
 
     def _is_system(self) -> bool:
+        if self.apk is None:
+            return False
         try:
             pkg = self.apk.get_package()
             return pkg.startswith(("com.android.", "com.google.android."))
@@ -95,6 +98,8 @@ class AppClassifier:
             return False
 
     def _get_dex_bytes(self) -> bytes | None:
+        if self.apk_path is None:
+            return None
         try:
             with zipfile.ZipFile(self.apk_path, "r") as z:
                 dex_files = [n for n in z.namelist() if n.endswith(".dex")]
@@ -124,6 +129,8 @@ class AppClassifier:
         return False
 
     def _has_packer(self) -> bool:
+        if self.apk_path is None:
+            return False
         try:
             with zipfile.ZipFile(self.apk_path, "r") as z:
                 for name in z.namelist():

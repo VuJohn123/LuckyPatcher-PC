@@ -31,7 +31,7 @@ class TestRegistry:
             assert name in _TOOL_REGISTRY
 
     def test_all_entries_have_repo_and_jar(self):
-        for name, cfg in _TOOL_REGISTRY.items():
+        for cfg in _TOOL_REGISTRY.values():
             assert "repo" in cfg
             assert "jar" in cfg
             assert cfg["jar"].endswith(".jar")

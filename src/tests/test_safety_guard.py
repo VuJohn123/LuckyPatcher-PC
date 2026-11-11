@@ -162,7 +162,7 @@ class TestGetOwnTreeCpuTime:
         total = g._get_own_tree_cpu_time(ps)
         assert total >= 17.0
 
-    def test_baseline_java_NOT_double_counted(self):
+    def test_baseline_java_not_double_counted(self):
         """Java process CÓ trong baseline → không đếm."""
         g = SafetyGuard()
         g._own_process = self._make_proc(100, user=0.1, system=0.1)
@@ -211,10 +211,10 @@ class TestGetOwnTreeCpuTime:
         g._own_process = own
         ps = MagicMock()
 
-        class NoSuchProcess(Exception):
+        class NoSuchProcessError(Exception):
             pass
 
-        ps.NoSuchProcess = NoSuchProcess
+        ps.NoSuchProcess = NoSuchProcessError
         ps.AccessDenied = Exception
         ps.process_iter.return_value = iter([])
         total = g._get_own_tree_cpu_time(ps)
@@ -300,7 +300,7 @@ class TestHandleViolation:
         logs = []
         g = SafetyGuard(log_callback=logs.append)
         g._handle_violation("cpu", {"used_pct": 99, "threshold": 98})
-        assert any("CPU #1" in l and "used_pct" in l for l in logs)
+        assert any("CPU #1" in line and "used_pct" in line for line in logs)
         assert g._consecutive["cpu"] == 1
 
     def test_grace_no_throttle_first(self):
@@ -345,7 +345,7 @@ class TestCliFallback:
         assert "cpu" in g._muted
         assert g._consecutive["cpu"] == 0
         on_mute.assert_called_once_with("cpu")
-        assert any("auto-MUTE" in l for l in logs)
+        assert any("auto-MUTE" in line for line in logs)
 
     def test_abort_mode(self):
         logs = []
@@ -355,7 +355,7 @@ class TestCliFallback:
         )
         g._cli_fallback("cpu", {}, 5)
         assert g.abort_flag is True
-        assert any("ABORT" in l for l in logs)
+        assert any("ABORT" in line for line in logs)
 
     def test_continue_mode(self):
         logs = []
@@ -369,7 +369,7 @@ class TestCliFallback:
 
         assert g.limits.max_cpu_pct > initial
         assert g._consecutive["cpu"] == 0
-        assert any("nâng ngưỡng" in l for l in logs)
+        assert any("nâng ngưỡng" in line for line in logs)
 
     def test_invalid_action_falls_back_to_mute(self):
         logs = []
@@ -379,7 +379,7 @@ class TestCliFallback:
         )
         g._cli_fallback("cpu", {}, 5)
         assert "cpu" in g._muted
-        assert any("không hợp lệ" in l for l in logs)
+        assert any("không hợp lệ" in line for line in logs)
 
 
 # ============================================================
@@ -430,7 +430,7 @@ class TestPromptGui:
         g._prompt_gui("cpu", {}, 5)
         assert g.abort_flag is True
         assert "cpu" not in g._muted
-        assert any("DỪNG" in l for l in logs)
+        assert any("DỪNG" in line for line in logs)
 
     def test_prompt_exception_isolated(self):
         def bad(*a, **k):
@@ -512,7 +512,7 @@ class TestLifecycle:
         )
         g.start()
         assert g._thread is None
-        assert any("Disabled" in l for l in logs)
+        assert any("Disabled" in line for line in logs)
 
     def test_stop_idempotent(self):
         logs = []

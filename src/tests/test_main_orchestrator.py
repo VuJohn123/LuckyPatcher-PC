@@ -28,7 +28,7 @@ def test_emit_step_without_signals():
     from main import _emit_step
     logs = []
     _emit_step(None, "Test step", 50, logs.append)
-    assert any("50" in l and "Test step" in l for l in logs)
+    assert any("50" in line and "Test step" in line for line in logs)
 
 
 def test_emit_step_with_signals():
@@ -37,7 +37,7 @@ def test_emit_step_with_signals():
     logs = []
     _emit_step(signals, "Test", 75, logs.append)
     signals.step.emit.assert_called_once_with("Test", 75)
-    assert any("Test" in l for l in logs)
+    assert any("Test" in line for line in logs)
 
 
 def test_emit_step_signal_failure_isolated():
@@ -47,7 +47,7 @@ def test_emit_step_signal_failure_isolated():
     signals.step.emit.side_effect = RuntimeError("signal broken")
     logs = []
     _emit_step(signals, "Test", 50, logs.append)
-    assert any("Test" in l for l in logs)
+    assert any("Test" in line for line in logs)
 
 
 # ============================================================

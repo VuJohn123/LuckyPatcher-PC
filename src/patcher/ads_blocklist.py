@@ -223,7 +223,7 @@ class AdsBlocklistPatcher(BasePatcher):
 
         def _transform(content: str, filepath: str) -> str | None:
             original = content
-            for method, regex in _OFFLINE_REGEX.items():
+            for regex in _OFFLINE_REGEX.values():
                 for match in regex.finditer(content):
                     full = match.group(0)
                     # Skip method có annotation phức tạp

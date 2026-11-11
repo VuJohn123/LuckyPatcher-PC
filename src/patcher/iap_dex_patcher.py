@@ -14,6 +14,7 @@ import logging
 import random
 import re
 import string
+from typing import Any
 
 from core.smali_utils import (
     REGEX_IAP_BILLING_METHOD,
@@ -177,7 +178,7 @@ class IAPDexPatcher:
 
     def patch_with_report(self) -> dict:
         self.log("[*] [IAPDexPatcher] Starting smart silent patch...")
-        report = {
+        report: dict[str, Any] = {
             "patterns": {},
             "total_patched": 0,
             "skipped_files": 0,

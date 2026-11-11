@@ -1,6 +1,7 @@
 """Theo dõi logcat để phát hiện lỗi runtime + đề xuất patch."""
 from __future__ import annotations
 
+import contextlib
 import logging
 import re
 import subprocess
@@ -70,16 +71,12 @@ class RuntimeDebugger:
             if pattern.search(line):
                 self.log(f"[!] {suggestion}")
                 if self.suggest:
-                    try:
+                    with contextlib.suppress(Exception):
                         self.suggest(suggestion)
-                    except Exception:
-                        pass
                 return
 
     def stop(self) -> None:
         self._stop.set()
         if self._proc:
-            try:
+            with contextlib.suppress(OSError):
                 self._proc.terminate()
-            except OSError:
-                pass

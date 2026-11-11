@@ -174,9 +174,11 @@ def _detect_ssd() -> bool:
     try:
         for dev in Path("/sys/block").iterdir():
             rotational = dev / "queue" / "rotational"
-            if rotational.exists():
-                if rotational.read_text().strip() == "1":
-                    return False
+            if (
+                rotational.exists()
+                and rotational.read_text().strip() == "1"
+            ):
+                return False
         return True
     except Exception:
         return True

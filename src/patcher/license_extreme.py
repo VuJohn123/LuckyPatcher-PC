@@ -150,7 +150,7 @@ class LicenseExtremePatcher(BasePatcher):
 
         from core.regex_safe import safe_search
 
-        LVL_BIND_PATTERN = (
+        lvl_bind_pattern = (
             r"\.method\s+(?:(?:public|private|protected|static|final)"
             r"\s+)+(\S+)\s*\([^)]*\)Z\s+"
             r"\.registers\s+\d+\s+"
@@ -165,7 +165,7 @@ class LicenseExtremePatcher(BasePatcher):
             if "bindService" not in content:
                 return None
             m = safe_search(
-                LVL_BIND_PATTERN, content,
+                lvl_bind_pattern, content,
                 flags=re.DOTALL,
             )
             if not m:

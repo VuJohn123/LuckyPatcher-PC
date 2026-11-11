@@ -118,7 +118,7 @@ def test_file_cache_flush_error_isolated(tmp_path):
     cache.flush(logs.append)  # Không raise
 
     assert good.read_text() == "modified-good"
-    assert any("FileCache" in l for l in logs)
+    assert any("FileCache" in line for line in logs)
     # Cache đã clear
     assert cache._modified == {}
 

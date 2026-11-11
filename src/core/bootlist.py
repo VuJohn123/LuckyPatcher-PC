@@ -30,6 +30,7 @@ Cách hoạt động:
 """
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import logging
@@ -111,10 +112,8 @@ class BootListManager:
             os.replace(tmp, self.bootlist_path)
         except Exception:
             if os.path.exists(tmp):
-                try:
+                with contextlib.suppress(OSError):
                     os.remove(tmp)
-                except OSError:
-                    pass
             raise
 
     # ============================================================
@@ -148,10 +147,10 @@ class BootListManager:
             entries = data.get("entries", [])
 
             existing = None
-            for e in entries:
-                if (e.get("package") == package
-                        and e.get("apk_path") == apk_path):
-                    existing = e
+            for entry in entries:
+                if (entry.get("package") == package
+                        and entry.get("apk_path") == apk_path):
+                    existing = entry
                     break
 
             now = time.time()
@@ -213,10 +212,9 @@ class BootListManager:
             return list(self._load().get("entries", []))
 
     def has_package(self, package: str) -> bool:
-        for e in self.get_entries():
-            if e.get("package") == package:
-                return True
-        return False
+        return any(
+            e.get("package") == package for e in self.get_entries()
+        )
 
     # ============================================================
     # RE-APPLY PIPELINE

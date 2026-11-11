@@ -107,7 +107,7 @@ def check_iap(apk, get_all_dex_bytes, findings, available_patches) -> None:
             available_patches.append("iap")
         return
 
-    for dex_name, dex_bytes in get_all_dex_bytes():
+    for _dex_name, dex_bytes in get_all_dex_bytes():
         if not dex_bytes:
             continue
 

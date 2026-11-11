@@ -8,6 +8,7 @@ v3 (2026):
 """
 from __future__ import annotations
 
+import contextlib
 import logging
 import os
 import re
@@ -47,10 +48,8 @@ def _get_tree_cpu_seconds(pid: int) -> float:
         return 0.0
     try:
         procs = [proc]
-        try:
+        with contextlib.suppress(Exception):
             procs.extend(proc.children(recursive=True))
-        except Exception:
-            pass
         for p in procs:
             try:
                 ct = p.cpu_times()
@@ -151,10 +150,8 @@ def run_java_with_heartbeat(
                 log_callback(f"[!] [{label}] Timeout {timeout_sec}s — kill")
                 killed["flag"] = True
                 killed["reason"] = "timeout"
-                try:
+                with contextlib.suppress(OSError):
                     proc.kill()
-                except OSError:
-                    pass
                 return
 
             now = time.monotonic()
@@ -176,10 +173,8 @@ def run_java_with_heartbeat(
                 )
                 killed["flag"] = True
                 killed["reason"] = "stall-idle"
-                try:
+                with contextlib.suppress(OSError):
                     proc.kill()
-                except OSError:
-                    pass
                 return
 
             if silent >= _HEARTBEAT_QUIET_SEC:
@@ -240,10 +235,8 @@ def run_java_with_heartbeat(
     except subprocess.TimeoutExpired:
         killed["flag"] = True
         killed["reason"] = "timeout"
-        try:
+        with contextlib.suppress(OSError):
             proc.kill()
-        except OSError:
-            pass
         rc = -1
 
     stop_hb.set()

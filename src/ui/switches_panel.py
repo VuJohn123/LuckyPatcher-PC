@@ -1,6 +1,8 @@
 """Panel công tắc — toggle switch kiểu Lucky Patcher (i18n)."""
 from __future__ import annotations
 
+import contextlib
+
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QHBoxLayout, QPushButton, QWidget
 
@@ -56,8 +58,10 @@ class ToggleSwitch(QPushButton):
         state = t("switches.on") if on else t("switches.off")
         self.setText(f"{self._label}: {state}")
         self.setProperty("state", "on" if on else "off")
-        self.style().unpolish(self)
-        self.style().polish(self)
+        style = self.style()
+        if style is not None:
+            style.unpolish(self)
+            style.polish(self)
         self.update()
 
 
@@ -140,16 +144,12 @@ class SwitchesPanel(QWidget):
             pass
 
     def _toggle_autorepeat(self, on: bool) -> None:
-        try:
+        with contextlib.suppress(Exception):
             self.iap.auto_repeat_enabled = on
-        except Exception:
-            pass
 
     def _toggle_save(self, on: bool) -> None:
-        try:
+        with contextlib.suppress(Exception):
             self.iap.save_for_restore_enabled = on
-        except Exception:
-            pass
 
     def _reset(self) -> None:
         self.btn_billing.setChecked(True)

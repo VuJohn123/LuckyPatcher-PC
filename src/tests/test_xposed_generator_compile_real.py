@@ -21,6 +21,7 @@ Catch:
 """
 from __future__ import annotations
 
+import contextlib
 import shutil
 import subprocess
 from pathlib import Path
@@ -203,10 +204,8 @@ def _assemble_smali(smali_dir: Path, out_dex: Path) -> tuple[bool, str]:
         cmd = [str(_JAVA), "-jar", str(_SMALI_JAR), *args]
         # Cleanup trước mỗi variant
         if out_dex.exists():
-            try:
+            with contextlib.suppress(OSError):
                 out_dex.unlink()
-            except OSError:
-                pass
 
         try:
             proc = subprocess.run(

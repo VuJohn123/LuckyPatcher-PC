@@ -6,6 +6,7 @@ v2: `safe_copytree` thêm mode="copy" — never junction (dùng cho cache_load
 """
 from __future__ import annotations
 
+import contextlib
 import logging
 import os
 import shutil
@@ -37,10 +38,8 @@ def remove_dst(dst: str) -> None:
     if os.path.isdir(dst) and not os.path.islink(dst):
         shutil.rmtree(dst, ignore_errors=True)
         return
-    try:
+    with contextlib.suppress(OSError):
         os.remove(dst)
-    except OSError:
-        pass
 
 
 def is_link_to(src: str, dst: str) -> bool:

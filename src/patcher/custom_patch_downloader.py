@@ -10,6 +10,7 @@ v2 fixes:
 """
 from __future__ import annotations
 
+import contextlib
 import logging
 import os
 
@@ -152,10 +153,8 @@ class CustomPatchDownloader:
                             f"{self.max_download_mb} MB — abort"
                         )
                         f.close()
-                        try:
+                        with contextlib.suppress(OSError):
                             os.remove(dest)
-                        except OSError:
-                            pass
                         return None
                     f.write(chunk)
 

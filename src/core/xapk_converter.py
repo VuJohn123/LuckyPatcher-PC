@@ -4,6 +4,7 @@ Chuyển đổi .xapk → .apk an toàn.
 """
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import os
@@ -167,7 +168,5 @@ def _safe_extract(zip_file: zipfile.ZipFile, dest_dir: str) -> None:
 
 def _cleanup_failed_output(path: str) -> None:
     if os.path.exists(path):
-        try:
+        with contextlib.suppress(OSError):
             os.remove(path)
-        except OSError:
-            pass

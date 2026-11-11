@@ -112,7 +112,8 @@ class TestPatchLogic:
         result = p.patch()
         assert result == 1
 
-        content = open(manifest, encoding="utf-8").read()
+        with open(manifest, encoding="utf-8") as f:
+            content = f.read()
         assert "android.permission.CAMERA" not in content
         assert "android.permission.READ_SMS" not in content
         assert "android.permission.INTERNET" in content
@@ -139,7 +140,8 @@ class TestPatchLogic:
         dec, manifest = fake_manifest
         p = PermissionChanger(dec, log_callback=lambda *a: None)
         p.patch()
-        content = open(manifest, encoding="utf-8").read()
+        with open(manifest, encoding="utf-8") as f:
+            content = f.read()
         assert "android.permission.CAMERA" not in content
 
 
@@ -153,7 +155,7 @@ class TestPermissionDatabase:
 
     def test_db_entries_shape(self):
         from ui.permission_picker_dialog import _PERMISSION_DB
-        for name, entry in _PERMISSION_DB.items():
+        for entry in _PERMISSION_DB.values():
             assert isinstance(entry, tuple)
             assert len(entry) == 3
             emoji, cat, desc = entry

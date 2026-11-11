@@ -251,8 +251,10 @@ class AppListWidget(QListWidget):
             w = self.itemWidget(it)
             if w is not None:
                 w.setProperty("selected", it is current)
-                w.style().unpolish(w)
-                w.style().polish(w)
+                style = w.style()
+                if style is not None:
+                    style.unpolish(w)
+                    style.polish(w)
                 w.update()
 
     # ------------------------------------------------------------------

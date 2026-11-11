@@ -35,7 +35,7 @@ import os
 import uuid
 from collections.abc import Callable
 from concurrent.futures import Executor, Future
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -77,10 +77,8 @@ def set_trace_id(trace_id: str) -> contextvars.Token:
 
 def reset_trace_id(token: contextvars.Token) -> None:
     """Reset về giá trị trước đó."""
-    try:
+    with suppress(ValueError, LookupError):
         _trace_id_var.reset(token)
-    except (ValueError, LookupError):
-        pass
 
 
 @contextmanager

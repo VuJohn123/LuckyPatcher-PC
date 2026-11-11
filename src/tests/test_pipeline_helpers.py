@@ -67,7 +67,7 @@ def test_normalize_input_apk_passthrough(tmp_path):
     logs = []
     result = normalize_input(str(apk), {}, logs.append)
     assert result == str(apk)
-    assert any("bỏ qua conversion" in l for l in logs)
+    assert any("bỏ qua conversion" in line for line in logs)
 
 
 # ============================================================

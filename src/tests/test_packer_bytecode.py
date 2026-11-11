@@ -517,7 +517,7 @@ class TestEntropyWindowAnalysis:
 
     def test_partial_encryption_detected(self):
         """
-        Dex-like: 3 windows zero + 2 windows random → 
+        Dex-like: 3 windows zero + 2 windows random →
         has_encrypted_region phải phát hiện.
         """
         from scanner.checks.packer_bytecode import (

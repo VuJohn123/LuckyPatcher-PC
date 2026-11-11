@@ -8,13 +8,13 @@ import logging
 import os
 import zipfile
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
 
-class SizeClass(str, Enum):
+class SizeClass(StrEnum):
     TINY = "tiny"
     SMALL = "small"
     MEDIUM = "medium"
@@ -23,7 +23,7 @@ class SizeClass(str, Enum):
     MASSIVE = "massive"
 
 
-class WorkloadType(str, Enum):
+class WorkloadType(StrEnum):
     UNITY_GAME = "unity_game"
     NATIVE_GAME = "native_game"
     CASUAL_APP = "casual_app"
@@ -32,7 +32,7 @@ class WorkloadType(str, Enum):
     UNKNOWN = "unknown"
 
 
-class Strategy(str, Enum):
+class Strategy(StrEnum):
     FAST = "fast"           # max speed, min safety
     BALANCED = "balanced"   # default
     CAREFUL = "careful"     # slow but safe

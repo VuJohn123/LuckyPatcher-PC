@@ -423,11 +423,11 @@ def _get_application_class(apk) -> str | None:
     """Đọc android:name của thẻ <application>."""
     # Cách 1: parse manifest XML
     try:
-        import xml.etree.ElementTree as _ET
+        from xml.etree import ElementTree
         raw = apk.get_android_manifest_axml().get_xml()
         if isinstance(raw, str):
             raw = raw.encode("utf-8")
-        root = _ET.fromstring(raw)
+        root = ElementTree.fromstring(raw)
         app = root.find("application")
         if app is not None:
             cls = app.get(f"{_ANDROID_NS}name")

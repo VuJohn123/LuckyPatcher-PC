@@ -85,7 +85,7 @@ class TestSafeSub:
         )
         assert ok is False
         assert new == "aaaa"
-        assert any("Reject" in l for l in logs)
+        assert any("Reject" in line for line in logs)
 
     def test_invalid_syntax_returns_original(self):
         logs = []
@@ -94,7 +94,7 @@ class TestSafeSub:
         )
         assert ok is False
         assert new == "content"
-        assert any("Syntax" in l for l in logs)
+        assert any("Syntax" in line for line in logs)
 
     def test_dotall_flag(self):
         new, ok = safe_sub(

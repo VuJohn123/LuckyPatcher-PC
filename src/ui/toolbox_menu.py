@@ -7,7 +7,10 @@ v2 (2026):
 """
 from __future__ import annotations
 
+from typing import cast
+
 from PyQt6.QtCore import pyqtSignal
+from PyQt6.QtGui import QAction
 from PyQt6.QtWidgets import QMenu, QMessageBox
 
 
@@ -24,19 +27,22 @@ class ToolboxMenu(QMenu):
 
     def _build(self) -> None:
         # Patch to Android
-        android = self.addMenu("🔧 Patch to Android")
-        self.act_sig_true = android.addAction(
-            "Signature Verification always True"
+        android = cast(QMenu, self.addMenu("🔧 Patch to Android"))
+        self.act_sig_true = cast(
+            QAction,
+            android.addAction("Signature Verification always True"),
         )
         self.act_sig_true.setCheckable(True)
 
-        self.act_disable_apk_sig = android.addAction(
-            "Disable .apk Signature Verification"
+        self.act_disable_apk_sig = cast(
+            QAction,
+            android.addAction("Disable .apk Signature Verification"),
         )
         self.act_disable_apk_sig.setCheckable(True)
 
-        self.act_disable_zip_sig = android.addAction(
-            "Disable Zip Signature Verification"
+        self.act_disable_zip_sig = cast(
+            QAction,
+            android.addAction("Disable Zip Signature Verification"),
         )
         self.act_disable_zip_sig.setCheckable(True)
 
@@ -59,7 +65,7 @@ class ToolboxMenu(QMenu):
         )
 
         # Xposed
-        xposed = self.addMenu("🧩 Xposed Settings")
+        xposed = cast(QMenu, self.addMenu("🧩 Xposed Settings"))
         xposed.addAction(
             "Support IAP & LVL Emulation",
             lambda: self.system_tool_requested.emit("xposed_iap"),
@@ -72,7 +78,7 @@ class ToolboxMenu(QMenu):
         self.addSeparator()
 
         # Batch
-        batch = self.addMenu("📚 Batch Operations")
+        batch = cast(QMenu, self.addMenu("📚 Batch Operations"))
         batch.addAction(
             "💾 Backup selected APK",
             lambda: self.system_tool_requested.emit("backup"),
@@ -83,7 +89,7 @@ class ToolboxMenu(QMenu):
         )
 
         # Tools
-        tools = self.addMenu("🛠 Tools")
+        tools = cast(QMenu, self.addMenu("🛠 Tools"))
         tools.addAction(
             "Install SuperSU",
             lambda: self.system_tool_requested.emit("install_supersu"),

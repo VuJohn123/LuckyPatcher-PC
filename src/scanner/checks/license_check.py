@@ -138,7 +138,7 @@ def check_license(
     """Populate findings + available_patches với license info."""
     pairip_hit: str | None = None
 
-    for dex_name, dex_bytes in get_all_dex_bytes():
+    for _dex_name, dex_bytes in get_all_dex_bytes():
         if not dex_bytes:
             continue
 

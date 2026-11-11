@@ -65,7 +65,7 @@ class TestAddApp:
         data = widget.item(0).data(Qt.ItemDataRole.UserRole)
         assert data["is_patched"] is True
 
-    def test_sizeHint_set(self, widget):
+    def test_size_hint_set(self, widget):
         widget.add_app("A", "com.a", ["green"])
         item = widget.item(0)
         # item sizeHint phản ánh widget's minimumHeight (64) qua layout

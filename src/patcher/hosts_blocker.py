@@ -22,10 +22,12 @@ class HostsBlocker(BasePatcher):
         for line in lines:
             d = line.strip()
             if d and not d.startswith("#") and d not in seen:
-                seen.add(d); entries.append(f"0.0.0.0 {d}")
+                seen.add(d)
+                entries.append(f"0.0.0.0 {d}")
         try:
             out.write_text("# LP-PC hosts block\n" + "\n".join(entries) + "\n", encoding="utf-8")
         except OSError as e:
-            self._log_traced(f"[!] hosts write fail: {e}"); return 0
+            self._log_traced(f"[!] hosts write fail: {e}")
+            return 0
         self._log_traced(f"[✔] Hosts block: {len(entries)} entries")
         return len(entries)

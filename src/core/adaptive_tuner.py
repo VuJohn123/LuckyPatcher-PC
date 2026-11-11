@@ -13,12 +13,12 @@ import logging
 import threading
 import time
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 
 logger = logging.getLogger(__name__)
 
 
-class TuneMode(str, Enum):
+class TuneMode(StrEnum):
     DAILY = "daily"
     GAMING = "gaming"
     STRESS = "stress"

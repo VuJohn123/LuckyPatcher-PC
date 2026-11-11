@@ -286,13 +286,14 @@ class TestCacheLoad:
         (cache / "apktool.yml").write_text("v:3")
         dst = tmp_path / "dst"
 
-        with patch(
-            "core.cache_manager.has_robocopy", return_value=True
-        ), patch(
-            "core.cache_manager.robocopy_copy", return_value=True
-        ) as mock_rc, patch("core.cache_manager.remove_dst"):
-            with patch("os.path.isdir", return_value=True):
-                ok = cache_load(str(cache), str(dst), lambda *_: None)
+        with (
+            patch("core.cache_manager.has_robocopy", return_value=True),
+            patch("core.cache_manager.robocopy_copy", return_value=True)
+            as mock_rc,
+            patch("core.cache_manager.remove_dst"),
+            patch("os.path.isdir", return_value=True),
+        ):
+            ok = cache_load(str(cache), str(dst), lambda *_: None)
         assert ok is True
         mock_rc.assert_called_once()
 

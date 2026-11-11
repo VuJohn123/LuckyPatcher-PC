@@ -29,7 +29,7 @@ from .preview_dialog import PreviewDialog
 class RebuildDialog(QDialog):
     rebuild_requested = pyqtSignal(str)
 
-    PATCHES = [
+    PATCHES: list[dict] = [
         {
             "name": "license",
             "label": "🔑 Gỡ xác minh giấy phép (License)",

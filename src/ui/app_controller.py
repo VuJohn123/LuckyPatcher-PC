@@ -15,6 +15,7 @@ import os
 import sys
 import threading
 from pathlib import Path
+from typing import Any
 
 from PyQt6.QtCore import QObject, Qt, pyqtSignal
 from PyQt6.QtWidgets import (
@@ -287,6 +288,7 @@ class AppController(QObject):
         use_tree: bool = False,
     ) -> None:
         findings = findings or []
+        dlg: Any
         if use_tree:
             from .menu_of_patches_tree import MenuOfPatchesTreeDialog
             dlg = MenuOfPatchesTreeDialog(

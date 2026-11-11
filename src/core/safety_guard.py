@@ -20,6 +20,7 @@ v2 fixes (own_pct bug):
 """
 from __future__ import annotations
 
+import contextlib
 import logging
 import os
 import threading
@@ -83,7 +84,7 @@ class SafetyGuard:
     ):
         self.limits = limits or GuardLimits()
         self.on_violation = on_violation
-        self.on_prompt = on_prompt
+        self.on_prompt: Callable[[str, dict, int], bool] | None = on_prompt
         self.on_mute = on_mute
         self.prompt_after_n = max(1, prompt_after_n_violations)
         self.threshold_raise_pct = threshold_raise_pct
@@ -474,8 +475,12 @@ class SafetyGuard:
     def _prompt_gui(self, reason: str, details: dict, count: int) -> None:
         self._prompting.add(reason)
         self.log(f"[!] [SafetyGuard] {count} vi phạm — hỏi user...")
+        callback = self.on_prompt
         try:
-            user_continue = self.on_prompt(reason, details, count)
+            if callback is None:
+                user_continue = True
+            else:
+                user_continue = callback(reason, details, count)
         except Exception as e:
             logger.warning("on_prompt callback failed: %s", e)
             user_continue = True
@@ -493,10 +498,8 @@ class SafetyGuard:
         self._consecutive[reason] = 0
         self._ok_streak[reason] = 0
         if self.on_mute:
-            try:
+            with contextlib.suppress(Exception):
                 self.on_mute(reason)
-            except Exception:
-                pass
         self.log(
             f"[i] [SafetyGuard] User continue — mute {reason}, "
             f"ngưỡng mới {self._get_threshold(reason):.1f}%"
@@ -509,10 +512,8 @@ class SafetyGuard:
             self._consecutive[reason] = 0
             self._ok_streak[reason] = 0
             if self.on_mute:
-                try:
+                with contextlib.suppress(Exception):
                     self.on_mute(reason)
-                except Exception:
-                    pass
             self.log(
                 f"[i] [SafetyGuard] CLI mode — auto-MUTE {reason} sau "
                 f"{count} vi phạm → dùng full resources. "

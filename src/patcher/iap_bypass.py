@@ -7,6 +7,7 @@ import logging
 import socket
 import threading
 import time
+from typing import Any
 
 from patcher.iap_dex_patcher import IAPDexPatcher
 from patcher.iap_proxy_server import IAPProxyServer
@@ -24,8 +25,8 @@ class IAPBypass:
         self.proxy_port = proxy_port
         self.log = log_callback
         self.file_cache = file_cache
-        self.proxy_server = None
-        self.proxy_thread = None
+        self.proxy_server: IAPProxyServer | None = None
+        self.proxy_thread: threading.Thread | None = None
 
     def _wait_for_proxy(self, timeout: float = 10.0) -> bool:
         """Poll cho đến khi proxy server ready."""
@@ -59,10 +60,11 @@ class IAPBypass:
 
         # 2. Start proxy server
         self.proxy_server = IAPProxyServer(port=self.proxy_port)
-        self.proxy_thread = threading.Thread(
+        thread = threading.Thread(
             target=self.proxy_server.start, daemon=True
         )
-        self.proxy_thread.start()
+        self.proxy_thread = thread
+        thread.start()
 
         if not self._wait_for_proxy(timeout=10.0):
             self.log("[!] Proxy server không khởi động kịp")
@@ -98,7 +100,7 @@ class IAPBypass:
             return False
 
     def execute_with_report(self) -> dict:
-        report = {"patterns": {}, "total_patched": 0}
+        report: dict[str, Any] = {"patterns": {}, "total_patched": 0}
         try:
             if self.mode == "dex":
                 patcher = IAPDexPatcher(

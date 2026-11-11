@@ -27,18 +27,22 @@ class FastAPKPatcher:
 
         tmp = tempfile.mkdtemp(prefix="fast_")
         try:
-            with zipfile.ZipFile(self.apk_path, "r") as zin:
-                with zipfile.ZipFile(output_apk, "w", zipfile.ZIP_DEFLATED) as zout:
-                    for item in zin.infolist():
-                        data = zin.read(item.filename)
-                        if item.filename == entry_name:
-                            try:
-                                text = data.decode("utf-8", errors="ignore")
-                                text = re.sub(pattern, replacement, text)
-                                data = text.encode("utf-8")
-                            except Exception as e:
-                                logger.warning("Patch entry failed: %s", e)
-                        zout.writestr(item, data)
+            with (
+                zipfile.ZipFile(self.apk_path, "r") as zin,
+                zipfile.ZipFile(
+                    output_apk, "w", zipfile.ZIP_DEFLATED
+                ) as zout,
+            ):
+                for item in zin.infolist():
+                    data = zin.read(item.filename)
+                    if item.filename == entry_name:
+                        try:
+                            text = data.decode("utf-8", errors="ignore")
+                            text = re.sub(pattern, replacement, text)
+                            data = text.encode("utf-8")
+                        except Exception as e:
+                            logger.warning("Patch entry failed: %s", e)
+                    zout.writestr(item, data)
             return output_apk
         except (zipfile.BadZipFile, OSError) as e:
             self.log(f"[!] FastAPKPatcher failed: {e}")

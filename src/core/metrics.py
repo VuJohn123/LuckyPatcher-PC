@@ -12,6 +12,7 @@ Schema:
 """
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import os
@@ -148,7 +149,7 @@ class _MetricsManager:
             entry["count"] += 1
             entry["total_sec"] += float(d.get("duration_sec", 0.0))
 
-        for s, entry in by_stage.items():
+        for entry in by_stage.values():
             entry["avg_sec"] = (
                 entry["total_sec"] / entry["count"]
                 if entry["count"] else 0.0
@@ -177,10 +178,8 @@ class _MetricsManager:
     def clear(self) -> None:
         with self._lock:
             if os.path.exists(self.metrics_file):
-                try:
+                with contextlib.suppress(OSError):
                     os.remove(self.metrics_file)
-                except OSError:
-                    pass
 
 
 # ============================================================

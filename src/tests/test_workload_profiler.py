@@ -16,7 +16,9 @@ from core.workload_profiler import (
 )
 
 
-def _make_apk(tmp_path, name: str = "test.apk", files: dict = None) -> str:
+def _make_apk(
+    tmp_path, name: str = "test.apk", files: dict | None = None
+) -> str:
     apk = tmp_path / name
     files = files or {"AndroidManifest.xml": b"<manifest/>"}
     with zipfile.ZipFile(apk, "w") as z:

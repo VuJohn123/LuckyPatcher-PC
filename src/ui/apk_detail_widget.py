@@ -280,6 +280,8 @@ class APKDetailWidget(QWidget):
 
     def _make_feature_row(self, finding: dict) -> QFrame:
         color = finding.get("color")
+        if not isinstance(color, str):
+            color = ""
         bg = _ROW_BG.get(color, "#161b22")
         border = _COLOR_MAP.get(color, ("", "#30363d"))[1]
 

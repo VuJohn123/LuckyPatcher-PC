@@ -29,7 +29,9 @@ from .preview_dialog import PreviewDialog
 class RebuildTreeDialog(QDialog):
     rebuild_requested = pyqtSignal(str)
 
-    TREE_STRUCTURE = [
+    TREE_STRUCTURE: list[
+        tuple[str, list[tuple[str, str, str | None]]]
+    ] = [
         ("🔑 License", [
             ("Chế độ tự động", "license", "auto"),
             ("Chế độ tự động (dex)", "license", "dex"),

@@ -25,7 +25,7 @@ def install_gui_exception_hook(
     """
     if getattr(sys, "_lp_exception_hook_installed", False):
         return
-    sys._lp_exception_hook_installed = True
+    sys._lp_exception_hook_installed = True  # type: ignore[attr-defined]
 
     def _hook(exc_type, exc_value, exc_tb):
         # Bỏ qua KeyboardInterrupt — user muốn thoát

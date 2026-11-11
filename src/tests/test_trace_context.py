@@ -97,8 +97,10 @@ class TestTraceContext:
 
     def test_nested_contexts(self):
         with trace_context("outer001") as outer:
+            assert outer == "outer001"
             assert get_trace_id() == "outer001"
             with trace_context("inner002") as inner:
+                assert inner == "inner002"
                 assert get_trace_id() == "inner002"
             assert get_trace_id() == "outer001"
         assert get_trace_id() == "-"
@@ -214,9 +216,11 @@ class TestContextThreadPoolExecutor:
         def worker():
             captured.append(get_trace_id())
 
-        with trace_context("wrapper01"):
-            with ContextThreadPoolExecutor(max_workers=2) as ex:
-                ex.submit(worker).result()
+        with (
+            trace_context("wrapper01"),
+            ContextThreadPoolExecutor(max_workers=2) as ex,
+        ):
+            ex.submit(worker).result()
 
         assert captured == ["wrapper01"]
 
@@ -226,11 +230,13 @@ class TestContextThreadPoolExecutor:
         def worker(n: int):
             captured.append(get_trace_id())
 
-        with trace_context("multi001"):
-            with ContextThreadPoolExecutor(max_workers=2) as ex:
-                futures = [ex.submit(worker, i) for i in range(3)]
-                for f in futures:
-                    f.result()
+        with (
+            trace_context("multi001"),
+            ContextThreadPoolExecutor(max_workers=2) as ex,
+        ):
+            futures = [ex.submit(worker, i) for i in range(3)]
+            for f in futures:
+                f.result()
 
         assert captured == ["multi001"] * 3
 

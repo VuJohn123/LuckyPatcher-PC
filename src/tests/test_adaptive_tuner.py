@@ -174,7 +174,7 @@ def test_tune_jobs_throttled_on_high_cpu():
     env = MagicMock(cpu_count=8, cpu_count_physical=4)
     runtime = _make_runtime(cpu=95.0)
     reasoning = []
-    jobs = t._tune_jobs(env, None, runtime, TuneMode.DAILY, reasoning)
+    t._tune_jobs(env, None, runtime, TuneMode.DAILY, reasoning)
     # CPU throttle halved
     assert any("halved" in r for r in reasoning)
 

@@ -100,8 +100,11 @@ class APKSigner:
         self, apk_path: str, p12: str, alias: str, log
     ) -> str:
         signed = apk_path.replace(".apk", "_signed.apk")
+        apksigner = self._apksigner
+        if apksigner is None:
+            raise RuntimeError("apksigner không khả dụng")
         cmd = [
-            self._apksigner,
+            apksigner,
             "sign",
             "--ks", p12,
             "--ks-type", "PKCS12",

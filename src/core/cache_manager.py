@@ -6,6 +6,7 @@ v2: cache_load KHÔNG dùng junction (tránh cache pollution khi patches
 """
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import logging
 import os
@@ -84,10 +85,8 @@ def decide_cache_format(src_dir: str) -> str:
         for root, _dirs, files in os.walk(src_dir):
             for f in files:
                 file_count += 1
-                try:
+                with contextlib.suppress(OSError):
                     total_bytes += os.path.getsize(os.path.join(root, f))
-                except OSError:
-                    pass
                 if (file_count > _CACHE_ARCHIVE_THRESHOLD_FILES
                         or total_bytes > _CACHE_ARCHIVE_THRESHOLD_MB * 1024 * 1024):
                     return "archive"
@@ -111,11 +110,9 @@ def find_existing_archive(cache_dir: str) -> str | None:
 def cache_is_valid(cache_dir: str) -> bool:
     if not os.path.isdir(cache_dir):
         return False
-    if find_existing_archive(cache_dir):
-        return True
-    if os.path.exists(os.path.join(cache_dir, "apktool.yml")):
-        return True
-    return False
+    return find_existing_archive(cache_dir) is not None or os.path.exists(
+        os.path.join(cache_dir, "apktool.yml")
+    )
 
 
 def cache_mtime(cache_dir: str) -> float:

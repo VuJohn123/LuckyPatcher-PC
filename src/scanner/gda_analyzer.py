@@ -8,6 +8,7 @@ Security note:
 """
 from __future__ import annotations
 
+import contextlib
 import logging
 import os
 import re
@@ -28,7 +29,9 @@ class GDAAnalyzer:
         self.gda_exe = gda_path
 
     def analyze(self, apk_path: str, timeout: int = 120) -> dict:
-        findings = {"license_classes": [], "iap_classes": [], "ad_urls": []}
+        findings: dict[str, list[str]] = {
+            "license_classes": [], "iap_classes": [], "ad_urls": []
+        }
 
         if not os.path.exists(self.gda_exe):
             logger.debug("GDA không tìm thấy: %s", self.gda_exe)
@@ -78,9 +81,7 @@ class GDAAnalyzer:
             logger.warning("GDA error: %s", e)
         finally:
             if os.path.exists(report):
-                try:
+                with contextlib.suppress(OSError):
                     os.remove(report)
-                except OSError:
-                    pass
 
         return findings

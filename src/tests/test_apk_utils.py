@@ -178,7 +178,7 @@ def test_merge_split_apks_skips_bad_split(tmp_path):
 
     with zipfile.ZipFile(out, "r") as z:
         assert "main.xml" in z.namelist()
-    assert any("Bỏ qua split lỗi" in l for l in logs)
+    assert any("Bỏ qua split lỗi" in line for line in logs)
 
 
 # ============================================================
@@ -219,13 +219,15 @@ def test_recompile_apk_retry_with_aapt2(tmp_path):
 
 def test_recompile_apk_all_fail(tmp_path):
     fail_proc = _mock_popen(returncode=1, stdout_lines=["error"])
-    with patch("subprocess.Popen", return_value=fail_proc):
-        with pytest.raises(RuntimeError, match="Recompile failed"):
-            recompile_apk(
-                str(tmp_path), str(tmp_path / "out.apk"),
-                log_callback=lambda *_: None,
-                max_retries=1,
-            )
+    with (
+        patch("subprocess.Popen", return_value=fail_proc),
+        pytest.raises(RuntimeError, match="Recompile failed"),
+    ):
+        recompile_apk(
+            str(tmp_path), str(tmp_path / "out.apk"),
+            log_callback=lambda *_: None,
+            max_retries=1,
+        )
 
 
 def test_recompile_apk_invalid_smali_fails_fast(tmp_path):
@@ -285,13 +287,15 @@ def test_sign_apk_testkey_failure(tmp_path):
     mock_proc = _mock_popen(
         returncode=1, stdout_lines=["sign failed"],
     )
-    with patch("subprocess.Popen", return_value=mock_proc):
-        with pytest.raises(RuntimeError, match="Signing failed"):
-            sign_apk(
-                str(tmp_path / "app.apk"),
-                key_type="testkey",
-                log_callback=lambda *_: None,
-            )
+    with (
+        patch("subprocess.Popen", return_value=mock_proc),
+        pytest.raises(RuntimeError, match="Signing failed"),
+    ):
+        sign_apk(
+            str(tmp_path / "app.apk"),
+            key_type="testkey",
+            log_callback=lambda *_: None,
+        )
 
 
 def test_sign_apk_platform_delegates(tmp_path):

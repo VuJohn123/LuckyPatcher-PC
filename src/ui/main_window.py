@@ -9,6 +9,8 @@ v4 (2026):
 """
 from __future__ import annotations
 
+import contextlib
+
 from PyQt6.QtCore import QSize, Qt
 from PyQt6.QtGui import QFont, QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
@@ -615,12 +617,12 @@ class MainWindow(QMainWindow):
             QMessageBox.StandardButton.Yes
             | QMessageBox.StandardButton.No
         )
-        msg.button(QMessageBox.StandardButton.Yes).setText(
-            t("dialog.continue")
-        )
-        msg.button(QMessageBox.StandardButton.No).setText(
-            t("dialog.stop")
-        )
+        yes_btn = msg.button(QMessageBox.StandardButton.Yes)
+        if yes_btn is not None:
+            yes_btn.setText(t("dialog.continue"))
+        no_btn = msg.button(QMessageBox.StandardButton.No)
+        if no_btn is not None:
+            no_btn.setText(t("dialog.stop"))
         msg.setDefaultButton(QMessageBox.StandardButton.No)
         msg.setWindowModality(Qt.WindowModality.ApplicationModal)
 
@@ -631,10 +633,8 @@ class MainWindow(QMainWindow):
             f"{'CONTINUE' if user_continue else 'STOP'}"
         )
 
-        try:
+        with contextlib.suppress(Exception):
             callback(user_continue)
-        except Exception:
-            pass
 
     # ============================================================
     # LOG PANEL — collapse toggle
@@ -673,17 +673,17 @@ class MainWindow(QMainWindow):
                 return True
         return False
 
-    def dragEnterEvent(self, event) -> None:
+    def dragEnterEvent(self, event) -> None:  # noqa: N802
         if self._is_valid_drop(event.mimeData()):
             event.acceptProposedAction()
         else:
             event.ignore()
 
-    def dragMoveEvent(self, event) -> None:
+    def dragMoveEvent(self, event) -> None:  # noqa: N802
         if self._is_valid_drop(event.mimeData()):
             event.acceptProposedAction()
 
-    def dropEvent(self, event) -> None:
+    def dropEvent(self, event) -> None:  # noqa: N802
         for url in event.mimeData().urls():
             p = url.toLocalFile()
             if p.lower().endswith(self._DROP_EXTS):
@@ -696,6 +696,6 @@ class MainWindow(QMainWindow):
     # ============================================================
     # CLOSE
     # ============================================================
-    def closeEvent(self, event) -> None:
+    def closeEvent(self, event) -> None:  # noqa: N802
         self._on_log("[i] Đóng LP-PC Suite")
         event.accept()

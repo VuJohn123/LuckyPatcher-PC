@@ -52,7 +52,9 @@ class UpdateInfo:
         if self.min_python:
             lines.append("")
             lines.append(f"Yêu cầu Python ≥ {self.min_python}")
-        return "<br>".join(l for l in lines if l is not None)
+        return "<br>".join(
+            line for line in lines if line is not None
+        )
 
 
 def _parse_version(v: str) -> tuple[int, int, int, int]:

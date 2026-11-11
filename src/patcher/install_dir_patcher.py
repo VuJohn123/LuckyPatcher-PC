@@ -24,15 +24,18 @@ class InstallDirPatcher(BasePatcher):
                 with open(path, "w", encoding="utf-8") as f:
                     f.write(f"install_dir: {self.install_dir}\n")
             except OSError as e:
-                self._log_traced(f"[!] apk.yml write fail: {e}"); return 0
+                self._log_traced(f"[!] apk.yml write fail: {e}")
+                return 0
             self._log_traced(f"[✔] Install dir → {self.install_dir}")
             return 1
         if "install_dir:" in content:
-            self._log_traced("[i] install_dir already set"); return 0
+            self._log_traced("[i] install_dir already set")
+            return 0
         try:
             with open(path, "a", encoding="utf-8") as f:
                 f.write(f"\ninstall_dir: {self.install_dir}\n")
         except OSError as e:
-            self._log_traced(f"[!] apk.yml append fail: {e}"); return 0
+            self._log_traced(f"[!] apk.yml append fail: {e}")
+            return 0
         self._log_traced(f"[✔] Install dir → {self.install_dir}")
         return 1

@@ -117,7 +117,7 @@ def t(key: str, **fmt) -> str:
 def _lookup(data: dict, key: str):
     """Lookup nested key. Return None nếu không có."""
     parts = key.split(".")
-    current = data
+    current: dict | None = data
     for p in parts:
         if not isinstance(current, dict):
             return None

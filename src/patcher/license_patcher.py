@@ -97,12 +97,11 @@ class LicensePatcher(BasePatcher):
             has_signal = any(
                 s in content for s in _CONTENT_SIGNALS
             )
-            if not has_signal:
-                # Fallback: match bằng method name trong file nhỏ
-                if not any(
-                    kw in content.lower() for kw in LICENSE_KEYWORDS
-                ):
-                    return None
+            # Fallback: match method name in small files
+            if not has_signal and not any(
+                kw in content.lower() for kw in LICENSE_KEYWORDS
+            ):
+                return None
 
             modified = False
             for match in REGEX_BOOLEAN_METHOD.finditer(content):
@@ -159,7 +158,7 @@ class LicensePatcher(BasePatcher):
             lines = header_block.split("\n")
             method_header = lines[0]
             registers = next(
-                (l.strip() for l in lines if ".registers" in l),
+                (line.strip() for line in lines if ".registers" in line),
                 "    .registers 1",
             )
             replacement = (

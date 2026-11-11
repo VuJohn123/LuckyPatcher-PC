@@ -36,7 +36,7 @@ def _make_fake_proc(rc=0, stdout_lines=None, delay=0.0):
 
     if stdout_lines is not None:
         # Use iter for stdout
-        proc.stdout = iter([f"{l}\n" for l in stdout_lines])
+        proc.stdout = iter([f"{line}\n" for line in stdout_lines])
     else:
         proc.stdout = iter([])
 
@@ -66,7 +66,7 @@ class TestRunJavaWithHeartbeat:
         assert rc == 0
         assert "line1" in output
         assert "line2" in output
-        assert any("Xong" in l for l in logs)
+        assert any("Xong" in line for line in logs)
 
     def test_failure_rc_nonzero(self):
         logs = []
@@ -96,7 +96,7 @@ class TestRunJavaWithHeartbeat:
             )
         assert rc == -1
         assert out == ""
-        assert any("Không chạy" in l for l in logs)
+        assert any("Không chạy" in line for line in logs)
 
     def test_timeout_kills_proc(self):
         logs = []
@@ -136,8 +136,8 @@ class TestRunJavaWithHeartbeat:
             )
 
         # Each line prefixed with spaces from _stream
-        assert any("    a" in l for l in logs)
-        assert any("    b" in l for l in logs)
+        assert any("    a" in line for line in logs)
+        assert any("    b" in line for line in logs)
 
     def test_empty_output_lines_ignored(self):
         logs = []

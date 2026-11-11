@@ -150,7 +150,7 @@ class TestFindingRendering:
         )
         qtbot.addWidget(dlg)
         from PyQt6.QtWidgets import QLabel
-        labels = [l.text() for l in dlg.findChildren(QLabel)]
+        labels = [line.text() for line in dlg.findChildren(QLabel)]
         assert any("License XYZ" in t for t in labels)
 
     def test_no_findings_no_crash(self, qtbot):

@@ -1,6 +1,7 @@
 """Entry point cho GUI — chạy LP-PC Suite với giao diện đồ họa."""
 from __future__ import annotations
 
+import contextlib
 import logging
 import os
 import sys
@@ -26,10 +27,8 @@ def _ensure_utf8_console() -> None:
         reconfigure = getattr(stream, "reconfigure", None)
         if reconfigure is None:
             continue
-        try:
+        with contextlib.suppress(Exception):
             reconfigure(encoding="utf-8", errors="replace")
-        except Exception:
-            pass
 
 
 def _silence_androguard() -> None:
@@ -100,12 +99,12 @@ def _setup_environment() -> None:
 _setup_environment()
 
 
-from PyQt6.QtCore import QObject, pyqtSignal
-from PyQt6.QtWidgets import QApplication
+from PyQt6.QtCore import QObject, pyqtSignal  # noqa: E402
+from PyQt6.QtWidgets import QApplication  # noqa: E402
 
-from core.smali_utils import JSON_FAST, RE_ENGINE
-from ui.main_window import MainWindow
-from ui.styles import MATERIAL_DARK_STYLE
+from core.smali_utils import JSON_FAST, RE_ENGINE  # noqa: E402
+from ui.main_window import MainWindow  # noqa: E402
+from ui.styles import MATERIAL_DARK_STYLE  # noqa: E402
 
 
 def setup_logging() -> None:
@@ -134,19 +133,23 @@ def _check_for_updates(bridge: _UpdaterBridge, window: MainWindow) -> None:
 def _show_update_dialog(window: MainWindow, info) -> None:
     if info is None:
         return
-    from PyQt6.QtCore import QUrl
+    from PyQt6.QtCore import Qt, QUrl
     from PyQt6.QtGui import QDesktopServices
     from PyQt6.QtWidgets import QMessageBox
 
     msg = QMessageBox(window)
     msg.setWindowTitle("🎉 Có bản cập nhật mới")
-    msg.setTextFormat(0x0004)
+    msg.setTextFormat(Qt.TextFormat.RichText)
     msg.setText(info.to_html())
     msg.setStandardButtons(
         QMessageBox.StandardButton.Open | QMessageBox.StandardButton.Close
     )
-    msg.button(QMessageBox.StandardButton.Open).setText("Mở trang tải")
-    msg.button(QMessageBox.StandardButton.Close).setText("Để sau")
+    open_btn = msg.button(QMessageBox.StandardButton.Open)
+    if open_btn is not None:
+        open_btn.setText("Mở trang tải")
+    close_btn = msg.button(QMessageBox.StandardButton.Close)
+    if close_btn is not None:
+        close_btn.setText("Để sau")
 
     if msg.exec() == QMessageBox.StandardButton.Open and info.download_url:
         QDesktopServices.openUrl(QUrl(info.download_url))

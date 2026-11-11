@@ -240,10 +240,10 @@ class TestDragEvents:
                 self.accepted = False
                 self.ignored = False
 
-            def mimeData(self):
+            def mimeData(self):  # noqa: N802
                 return self._m
 
-            def acceptProposedAction(self):
+            def acceptProposedAction(self):  # noqa: N802
                 self.accepted = True
 
             def ignore(self):

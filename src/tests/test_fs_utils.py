@@ -208,7 +208,7 @@ class TestRobocopyCopy:
                 log_callback=logs.append,
             )
         assert result is True  # handled (fail logged)
-        assert any("rc=8" in str(l) for l in logs)
+        assert any("rc=8" in str(line) for line in logs)
 
     def test_timeout(self, tmp_path):
         import subprocess
@@ -225,7 +225,7 @@ class TestRobocopyCopy:
                 log_callback=logs.append,
             )
         assert result is True
-        assert any("timeout" in l.lower() for l in logs)
+        assert any("timeout" in line.lower() for line in logs)
 
 
 # ============================================================
@@ -279,7 +279,7 @@ class TestSafeCopytree:
             mode="read",
         )
         assert ok is True
-        assert any("Already linked" in l for l in logs)
+        assert any("Already linked" in line for line in logs)
 
     def test_mode_read_uses_junction_when_possible(self, tmp_path):
         src = self._make_src(tmp_path, 1)
@@ -294,7 +294,7 @@ class TestSafeCopytree:
                 mode="read",
             )
         assert ok is True
-        assert any("Linked" in l for l in logs)
+        assert any("Linked" in line for line in logs)
 
     def test_mode_read_falls_back_to_copy(self, tmp_path):
         src = self._make_src(tmp_path, 2)
@@ -327,7 +327,7 @@ class TestSafeCopytree:
                 mode="write",
             )
         assert ok is False
-        assert any("Disk còn" in l for l in logs)
+        assert any("Disk còn" in line for line in logs)
 
     def test_fail_tolerance_raise(self, tmp_path):
         """Nếu > fail_tolerance file lỗi → RuntimeError."""

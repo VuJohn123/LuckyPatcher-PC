@@ -37,7 +37,7 @@ class TestSmaliLabelsUnique:
             / "xposed" / "hooks" / f"{cls}.smali"
         )
         labels = _extract_labels(path.read_text())
-        dupes = {l for l in labels if labels.count(l) > 1}
+        dupes = {line for line in labels if labels.count(line) > 1}
         assert not dupes, (
             f"{hook}: duplicate labels would break smali.jar: "
             f"{sorted(dupes)}"
@@ -56,7 +56,7 @@ class TestSmaliLabelsUnique:
         for cls in _HOOK_CLASS_NAMES.values():
             path = hooks_dir / f"{cls}.smali"
             labels = _extract_labels(path.read_text())
-            dupes = {l for l in labels if labels.count(l) > 1}
+            dupes = {line for line in labels if labels.count(line) > 1}
             assert not dupes, f"{cls}: {sorted(dupes)}"
 
     def test_try_start_labels_are_indexed(self, tmp_path):

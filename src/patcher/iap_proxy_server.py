@@ -4,6 +4,7 @@ HTTP proxy server giả mạo Google Play Billing.
 from __future__ import annotations
 
 import base64
+import contextlib
 import hashlib
 import json
 import logging
@@ -119,7 +120,5 @@ class IAPProxyServer:
 
     def stop(self):
         if self.server:
-            try:
+            with contextlib.suppress(Exception):
                 self.server.shutdown()
-            except Exception:
-                pass

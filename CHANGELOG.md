@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+- chore(ci): pin `ruff==0.16.8` / `mypy==2.3.1`; CI now also enforces `mypy src`.
+- chore: `ruff check src` and `mypy src` are both clean (0 findings / 0 errors).
 - fix(cache): decompile cache is now keyed by decode profile (`_full` / `_nores`), so a no-res tree can never be reused by resource-requiring modes; the save path records the profile actually decoded.
 - fix(iap): `IAPDexPatcher` skips `abstract`/`native` method headers — injecting instructions there made apktool fail with `An abstract method cannot have any instructions`.
 - fix(pipeline): invalid patcher smali now raises `SmaliAssemblyError` with the offending file; the pipeline no longer wastes a full re-decompile/repatch on it.

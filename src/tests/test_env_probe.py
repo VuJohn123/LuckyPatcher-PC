@@ -21,21 +21,21 @@ from core.env_probe import (
 
 
 def _make_spec(**overrides) -> EnvSpec:
-    defaults = dict(
-        os_name="windows",
-        cpu_count=8,
-        cpu_count_physical=4,
-        ram_total_mb=16384,
-        ram_available_mb=8192,
-        disk_free_mb=100000,
-        disk_total_mb=500000,
-        is_ssd=True,
-        python_version=(3, 11),
-        has_java=True,
-        has_adb=False,
-        has_re2=False,
-        has_orjson=True,
-    )
+    defaults = {
+        "os_name": "windows",
+        "cpu_count": 8,
+        "cpu_count_physical": 4,
+        "ram_total_mb": 16384,
+        "ram_available_mb": 8192,
+        "disk_free_mb": 100000,
+        "disk_total_mb": 500000,
+        "is_ssd": True,
+        "python_version": (3, 11),
+        "has_java": True,
+        "has_adb": False,
+        "has_re2": False,
+        "has_orjson": True,
+    }
     defaults.update(overrides)
     return EnvSpec(**defaults)
 

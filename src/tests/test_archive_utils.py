@@ -138,7 +138,7 @@ class TestRun7zWithProgress:
                 ["7z", "a"], logs.append, "Label", timeout_sec=5,
             )
         assert rc == -1
-        assert any("không chạy" in l for l in logs)
+        assert any("không chạy" in line for line in logs)
 
     def test_success_rc_0(self):
         logs = []
@@ -179,7 +179,7 @@ class TestRun7zWithProgress:
             )
 
         # Phải có ít nhất 1 log chứa %
-        assert any("%" in l for l in logs)
+        assert any("%" in line for line in logs)
 
 
 # ============================================================
@@ -211,7 +211,7 @@ class TestArchiveVia7z:
                 logs.append,
             )
         assert result is True
-        assert any("Disk còn" in l for l in logs)
+        assert any("Disk còn" in line for line in logs)
 
     def test_creates_archive(self, tmp_path):
         src = tmp_path / "src"
@@ -248,7 +248,7 @@ class TestArchiveVia7z:
             )
         assert result is True
         assert archive_path.exists()
-        assert any("Archive" in l for l in logs)
+        assert any("Archive" in line for line in logs)
 
 
 # ============================================================
@@ -332,7 +332,7 @@ class TestExtractViaPython:
         logs = []
         ok = extract_via_python(str(bad), str(dst), logs.append)
         assert ok is False
-        assert any("fail" in l.lower() for l in logs)
+        assert any("fail" in line.lower() for line in logs)
 
 
 # ============================================================

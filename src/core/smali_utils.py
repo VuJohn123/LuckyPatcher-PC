@@ -202,12 +202,14 @@ class FileContentCache:
         try:
             size = os.path.getsize(filepath)
             if size > 1024 * 1024:
-                with open(filepath, "r+b") as f:
-                    with mmap.mmap(f.fileno(), 0) as mm:
-                        return mm.read().decode("utf-8", errors="ignore")
+                with (
+                    open(filepath, "r+b") as f,
+                    mmap.mmap(f.fileno(), 0) as mm,
+                ):
+                    return mm.read().decode("utf-8", errors="ignore")
             with open(filepath, encoding="utf-8",
-                      errors="ignore") as f:
-                return f.read()
+                      errors="ignore") as fh:
+                return fh.read()
         except (OSError, ValueError):
             return ""
 

@@ -39,8 +39,8 @@ def create_magisk_module(services_jar_path: str, output_zip: str) -> str | None:
 
         with zipfile.ZipFile(output_zip, "w", zipfile.ZIP_DEFLATED) as z:
             for root, _, files in os.walk(tmp):
-                for f in files:
-                    full = os.path.join(root, f)
+                for fn in files:
+                    full = os.path.join(root, fn)
                     rel = os.path.relpath(full, tmp)
                     z.write(full, arcname=rel)
         return output_zip

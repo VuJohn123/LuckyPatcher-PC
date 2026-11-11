@@ -269,10 +269,12 @@ def _find_pattern(
     i = start
     while i < end:
         # Quick check on first fixed byte (skip most positions)
-        if first_fixed >= 0:
-            if data[i + first_fixed] != pattern[first_fixed]:
-                i += 1
-                continue
+        if (
+            first_fixed >= 0
+            and data[i + first_fixed] != pattern[first_fixed]
+        ):
+            i += 1
+            continue
 
         # Verify full pattern
         ok = True

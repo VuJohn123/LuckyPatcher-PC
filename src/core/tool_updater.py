@@ -36,7 +36,7 @@ _DISABLE = os.environ.get(
 _CACHE_HOURS = int(os.environ.get("LP_TOOL_UPDATER_CACHE_HOURS", "24") or "24")
 
 # Registry: tool name → GitHub repo + cách detect version local
-_TOOL_REGISTRY = {
+_TOOL_REGISTRY: dict[str, dict] = {
     "apktool": {
         "repo": "iBotPeaches/Apktool",
         "jar": "apktool.jar",

@@ -5,6 +5,7 @@ Fallback (không có PyQt6): thread-safe emit với lock.
 """
 from __future__ import annotations
 
+import contextlib
 import logging
 import threading
 
@@ -34,10 +35,8 @@ class _FallbackSignal:
             if callback is None:
                 self._cbs.clear()
             else:
-                try:
+                with contextlib.suppress(ValueError):
                     self._cbs.remove(callback)
-                except ValueError:
-                    pass
 
     def emit(self, *args) -> None:
         with self._lock:
@@ -74,7 +73,7 @@ try:
 except ImportError:
     _HAS_QT = False
 
-    class PipelineSignals:
+    class PipelineSignals:  # type: ignore[no-redef]
         """Fallback cho môi trường không có PyQt6."""
 
         def __init__(self):

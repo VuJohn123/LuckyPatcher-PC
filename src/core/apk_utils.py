@@ -290,7 +290,9 @@ def _verify_recompiled_apk(
                 raise RuntimeError(f"APK có entry corrupt: {bad}")
             names = z.namelist()
     except zipfile.BadZipFile as e:
-        raise RuntimeError(f"APK không phải ZIP hợp lệ: {e}")
+        raise RuntimeError(
+            f"APK không phải ZIP hợp lệ: {e}"
+        ) from e
 
     if "AndroidManifest.xml" not in names:
         raise RuntimeError("APK thiếu AndroidManifest.xml — recompile fail")
@@ -370,7 +372,7 @@ def _verify_signed_apk(apk_path: str, log_callback) -> None:
                 for n in names
             )
     except zipfile.BadZipFile as e:
-        raise RuntimeError(f"Signed APK corrupt: {e}")
+        raise RuntimeError(f"Signed APK corrupt: {e}") from e
 
     if not has_v1:
         log_callback(

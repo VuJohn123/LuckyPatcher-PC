@@ -8,6 +8,7 @@ Format quyết định dựa trên disk free:
 """
 from __future__ import annotations
 
+import contextlib
 import logging
 import os
 import shutil
@@ -45,9 +46,9 @@ def find_7zip() -> str | None:
         if os.path.exists(p):
             return p
     for name in ("7z", "7z.exe", "7za", "7zr"):
-        p = shutil.which(name)
-        if p:
-            return p
+        found = shutil.which(name)
+        if found:
+            return found
     for p in (
         r"C:\Program Files\7-Zip\7z.exe",
         r"C:\Program Files (x86)\7-Zip\7z.exe",
@@ -111,10 +112,8 @@ def run_7z_with_progress(
             if time.monotonic() - start > timeout_sec:
                 killed["flag"] = True
                 killed["reason"] = "timeout"
-                try:
+                with contextlib.suppress(OSError):
                     proc.kill()
-                except OSError:
-                    pass
                 return
             if time.monotonic() - last_emit_ts > 60:
                 log_callback(
@@ -127,8 +126,9 @@ def run_7z_with_progress(
     hb.start()
 
     try:
-        while True:
-            chunk = proc.stdout.read(256)
+        stdout = proc.stdout
+        while stdout is not None:
+            chunk = stdout.read(256)
             if not chunk:
                 break
             output_buf += chunk
@@ -171,10 +171,8 @@ def run_7z_with_progress(
 
         rc = proc.wait(timeout=30)
     except subprocess.TimeoutExpired:
-        try:
+        with contextlib.suppress(OSError):
             proc.kill()
-        except OSError:
-            pass
         rc = -1
     finally:
         stop.set()
@@ -231,10 +229,8 @@ def archive_via_7z(
         for root, _dirs, files in os.walk(src_dir):
             for f in files:
                 total += 1
-                try:
+                with contextlib.suppress(OSError):
                     total_bytes += os.path.getsize(os.path.join(root, f))
-                except OSError:
-                    pass
     except OSError:
         pass
 

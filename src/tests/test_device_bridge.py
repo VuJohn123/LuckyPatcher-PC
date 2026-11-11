@@ -38,8 +38,8 @@ class TestAdbAvailable:
 # ============================================================
 class TestExtractPackage:
     def test_via_androguard(self):
-        with patch("androguard.core.apk.APK") as MockAPK:
-            MockAPK.return_value.get_package.return_value = (
+        with patch("androguard.core.apk.APK") as mock_apk:
+            mock_apk.return_value.get_package.return_value = (
                 "com.example.app"
             )
             pkg = _extract_package_from_apk("/fake.apk")
@@ -103,10 +103,14 @@ class TestDoInstall:
                 _do_install("/tmp/app.apk", 60)
 
     def test_timeout(self):
-        with patch("core.device_bridge.subprocess.run",
-                   side_effect=subprocess.TimeoutExpired("adb", 60)):
-            with pytest.raises(RuntimeError, match="timeout"):
-                _do_install("/tmp/app.apk", 60)
+        with (
+            patch(
+                "core.device_bridge.subprocess.run",
+                side_effect=subprocess.TimeoutExpired("adb", 60),
+            ),
+            pytest.raises(RuntimeError, match="timeout"),
+        ):
+            _do_install("/tmp/app.apk", 60)
 
 
 # ============================================================
@@ -130,10 +134,14 @@ class TestInstallApk:
     def test_failure_propagates(self, monkeypatch):
         monkeypatch.setattr("core.device_bridge._adb_available",
                            lambda: True)
-        with patch("core.device_bridge._do_install",
-                   side_effect=RuntimeError("some other error")):
-            with pytest.raises(RuntimeError, match="some other"):
-                install_apk("/tmp/x.apk")
+        with (
+            patch(
+                "core.device_bridge._do_install",
+                side_effect=RuntimeError("some other error"),
+            ),
+            pytest.raises(RuntimeError, match="some other"),
+        ):
+            install_apk("/tmp/x.apk")
 
     def test_auto_uninstall_on_signature_mismatch(
         self, monkeypatch, tmp_path

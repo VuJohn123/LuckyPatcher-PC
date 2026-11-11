@@ -48,6 +48,7 @@ v3.6 fixes (Hex pattern integration):
 from __future__ import annotations
 
 import argparse
+import contextlib
 import gc
 import logging
 import os
@@ -83,10 +84,8 @@ def _ensure_utf8_console() -> None:
         reconfigure = getattr(stream, "reconfigure", None)
         if reconfigure is None:
             continue
-        try:
+        with contextlib.suppress(Exception):
             reconfigure(encoding="utf-8", errors="replace")
-        except Exception:
-            pass
 
 
 def _silence_androguard() -> None:
@@ -156,10 +155,8 @@ def _coerce_str(v) -> str:
 
 def _emit_step(signals, name: str, pct: int, log_callback) -> None:
     if signals:
-        try:
+        with contextlib.suppress(Exception):
             signals.step.emit(name, pct)
-        except Exception:
-            pass
     log_callback(f"[*] [{pct:3d}%] {name}")
 
 
@@ -573,10 +570,8 @@ def _run_pipeline_body(
         _record_metric(apk_path, mode, False, time.monotonic() - t0,
                        error=str(e))
         if signals:
-            try:
+            with contextlib.suppress(Exception):
                 signals.finished.emit(False, "")
-            except Exception:
-                pass
         return False, None, {}
 
     _log(f"[*] Processing: {os.path.basename(apk_path)}")
@@ -591,10 +586,8 @@ def _run_pipeline_body(
         _record_metric(apk_path, mode, False,
                        time.monotonic() - t0, error="No modes")
         if signals:
-            try:
+            with contextlib.suppress(Exception):
                 signals.finished.emit(False, "")
-            except Exception:
-                pass
         return False, None, {}
 
     from core.mode_registry import MODE_MAP
@@ -918,10 +911,8 @@ def _run_pipeline_body(
 
         if os.path.abspath(signed_apk) != os.path.abspath(final_apk):
             if os.path.exists(final_apk):
-                try:
+                with contextlib.suppress(OSError):
                     os.remove(final_apk)
-                except OSError:
-                    pass
             os.replace(signed_apk, final_apk)
 
         _cleanup_intermediates(
@@ -971,10 +962,8 @@ def _run_pipeline_body(
         )
 
         if signals:
-            try:
+            with contextlib.suppress(Exception):
                 signals.finished.emit(True, final_apk)
-            except Exception:
-                pass
 
         return True, final_apk, patch_reports
 
@@ -997,10 +986,8 @@ def _run_pipeline_body(
         _record_metric(apk_path, mode, False, elapsed, error=str(e))
 
         if signals:
-            try:
+            with contextlib.suppress(Exception):
                 signals.finished.emit(False, "")
-            except Exception:
-                pass
 
         return False, None, {}
 
@@ -1021,19 +1008,15 @@ def _run_pipeline_body(
         _record_metric(apk_path, mode, False, elapsed, error=str(e))
 
         if signals:
-            try:
+            with contextlib.suppress(Exception):
                 signals.finished.emit(False, "")
-            except Exception:
-                pass
 
         return False, None, {}
 
     finally:
         if guard:
-            try:
+            with contextlib.suppress(Exception):
                 guard.stop()
-            except Exception:
-                pass
 
         if gc_was_enabled:
             gc.enable()

@@ -39,7 +39,7 @@ def test_add_single():
     q = BatchQueue(lambda *_: None, logs.append)
     q.add("test.apk")
     assert q.queue.qsize() == 1
-    assert any("Queued" in l for l in logs)
+    assert any("Queued" in line for line in logs)
 
 
 def test_add_with_mode():

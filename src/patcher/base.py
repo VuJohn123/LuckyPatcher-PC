@@ -7,6 +7,7 @@ v2 (2026) — trace_id prefix:
 """
 from __future__ import annotations
 
+import contextlib
 import logging
 import time
 from abc import ABC, abstractmethod
@@ -50,10 +51,8 @@ class BasePatcher(ABC):
 
     def _log_traced(self, message: str) -> None:
         """Log kèm trace prefix — wrap self.log."""
-        try:
+        with contextlib.suppress(Exception):
             self.log(self._trace_prefix() + message)
-        except Exception:
-            pass
 
     # ============================================================
     # READ/WRITE

@@ -15,7 +15,7 @@ class MultiPatchCombiner:
         self.file_cache = file_cache
 
     def apply_patches(self, modes: list[str]) -> dict:
-        result = {"success": [], "failed": []}
+        result: dict[str, list[str]] = {"success": [], "failed": []}
         for mode in modes:
             cls = get_patcher_class(mode)
             if cls is None:

@@ -225,10 +225,13 @@ class TestJarsigner:
 class TestRunHelper:
     def test_missing_command(self, tmp_path):
         signer = APKSigner(str(tmp_path), log_callback=lambda *a: None)
-        with patch("core.sign_with_key.shutil.which", return_value=None):
-            with pytest.raises(RuntimeError, match="Không tìm thấy"):
-                signer._run(["nonexistent_cmd", "arg"], lambda *a: None,
-                            "test")
+        with (
+            patch("core.sign_with_key.shutil.which", return_value=None),
+            pytest.raises(RuntimeError, match="Không tìm thấy"),
+        ):
+            signer._run(
+                ["nonexistent_cmd", "arg"], lambda *a: None, "test"
+            )
 
     def test_success(self, tmp_path):
         signer = APKSigner(str(tmp_path), log_callback=lambda *a: None)
