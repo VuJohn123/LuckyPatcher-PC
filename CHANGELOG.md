@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- perf(iap): `iap:dex` prefilter now scans smali files with a bounded thread pool (IAPDexPatcher), overlapping Windows Defender first-touch scans; the cached-tree benchmark went from ~18.8ms to ~6.5-7.6ms per file (serial ≈992s → ≈342-404s projected for 52.8k files) with identical patch coverage.
 - fix(safety): sustained RAM pressure in CLI mode now hard-aborts the pipeline instead of auto-muting and resuming full load; new `auto_tune.safety.cli_abort_reasons` (default `[ram]`) overrides `cli_mode_action` per reason, and the pipeline checks the abort flag again after recompile before signing.
 - chore(ci): pin `ruff==0.16.8` / `mypy==2.3.1`; CI now also enforces `mypy src`.
 - chore: `ruff check src` and `mypy src` are both clean (0 findings / 0 errors).
@@ -14,7 +15,7 @@
 - fix(iap): `INAPP_PURCHASE_DATA_LIST` is published as a `StringArrayList` (was `putInt`, breaking `getStringArrayList`).
 - fix(iap): proxy-mode `IAPSmaliPatcher` accepts and writes through the pipeline `FileContentCache`.
 - fix(pipeline): IAP runs surface `execute_with_report()` metrics in the pipeline summary (previously shadowed by `patch()`).
-- test: full suite 1876 passed / 8 skipped; E2E `license:auto,iap:dex` on the 88 MB PairIP APK patched 43 IAP smali files (52,802 untouched), recompiled `rc=0`, signed `[v2, v3]`.
+- test: full suite 1877 passed / 8 skipped; E2E `license:auto,iap:dex` on the 88 MB PairIP APK patched 43 IAP smali files (52,802 untouched), recompiled `rc=0`, signed `[v2, v3]`.
 
 ## 1.5.0
 - CLI + GUI patcher (license/ads/IAP/signature/resign modes)

@@ -11,9 +11,11 @@ v3 (2026):
 from __future__ import annotations
 
 import logging
+import os
 import random
 import re
 import string
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 from core.smali_utils import (
@@ -173,6 +175,27 @@ class IAPDexPatcher:
             strong in content_lower for strong in STRONG_IAP_METHODS_LOWER
         )
 
+    def _scan_file(self, filepath: str) -> tuple[str, str | None, bool]:
+        """
+        Đọc + prefilter 1 file (chạy trong thread pool).
+
+        Trả về `(path, content, read_ok)`:
+          - `read_ok=False`: lỗi đọc → caller tăng `skipped`.
+          - `content is None`: không phải IAP → caller tăng `scanned`.
+          - `content`: candidate cần patch (đã qua TARGET_METHODS + path/class
+            + strong-method checks) — giữ nguyên semantics của scan tuần tự.
+        """
+        try:
+            content = self._read(filepath)
+        except OSError:
+            return filepath, None, False
+
+        if not any(m in content for m in TARGET_METHODS):
+            return filepath, None, True
+        if not self._is_iap_class(filepath, content):
+            return filepath, None, True
+        return filepath, content, True
+
     def patch(self) -> int:
         return self.patch_with_report()["total_patched"]
 
@@ -190,60 +213,63 @@ class IAPDexPatcher:
 
         target_lower = [m.lower() for m in TARGET_METHODS]
 
-        for filepath in get_all_smali_files(self.decompiled_path):
-            if len(filepath) > 250:
-                skipped += 1
-                continue
+        all_paths = get_all_smali_files(self.decompiled_path)
+        paths = [f for f in all_paths if len(f) <= 250]
+        skipped += len(all_paths) - len(paths)
 
-            try:
-                content = self._read(filepath)
-            except OSError:
-                skipped += 1
-                continue
-
-            scanned += 1
-
-            if not any(m in content for m in TARGET_METHODS):
-                continue
-
-            if not self._is_iap_class(filepath, content):
-                continue
-
-            original = content
-            for match in REGEX_IAP_BILLING_METHOD.finditer(content):
-                full = match.group(0)
-                method_sig = match.group(1)
-                return_type = match.group(2)
-                header = full.split("\n")[0]
-
-                # Abstract/native methods have no body; injecting
-                # instructions makes apktool fail with
-                # "An abstract method cannot have any instructions".
-                modifiers = header.split()
-                if "abstract" in modifiers or "native" in modifiers:
-                    continue
-
-                if not any(
-                    m in method_sig.lower() for m in target_lower
-                ):
-                    continue
-
-                if return_type == "V":
-                    replacement = self._void_method(header)
-                else:
-                    replacement = self._bundle_method(header)
-
-                content = content.replace(full, replacement)
-                report["patterns"][method_sig] = True
-
-            if content != original:
-                try:
-                    self._write(filepath, content)
-                    patched_files += 1
-                    short = filepath.split("/")[-1].split(chr(92))[-1]
-                    self.log(f"[+] [IAPDexPatcher] {short}")
-                except OSError:
+        # Reading is I/O-bound on Windows: Defender scans every first-touch
+        # smali file, so serial reads dominate the stage (~20ms/file). A
+        # bounded thread pool overlaps those scans (~3x on 8 cores).
+        workers = min(32, max(4, (os.cpu_count() or 4) * 2))
+        with ThreadPoolExecutor(
+            max_workers=workers, thread_name_prefix="iap-scan",
+        ) as pool:
+            for filepath, content, read_ok in pool.map(
+                self._scan_file, paths
+            ):
+                if not read_ok:
                     skipped += 1
+                    continue
+
+                scanned += 1
+                if content is None:
+                    continue
+
+                original = content
+                for match in REGEX_IAP_BILLING_METHOD.finditer(content):
+                    full = match.group(0)
+                    method_sig = match.group(1)
+                    return_type = match.group(2)
+                    header = full.split("\n")[0]
+
+                    # Abstract/native methods have no body; injecting
+                    # instructions makes apktool fail with
+                    # "An abstract method cannot have any instructions".
+                    modifiers = header.split()
+                    if "abstract" in modifiers or "native" in modifiers:
+                        continue
+
+                    if not any(
+                        m in method_sig.lower() for m in target_lower
+                    ):
+                        continue
+
+                    if return_type == "V":
+                        replacement = self._void_method(header)
+                    else:
+                        replacement = self._bundle_method(header)
+
+                    content = content.replace(full, replacement)
+                    report["patterns"][method_sig] = True
+
+                if content != original:
+                    try:
+                        self._write(filepath, content)
+                        patched_files += 1
+                        short = filepath.split("/")[-1].split(chr(92))[-1]
+                        self.log(f"[+] [IAPDexPatcher] {short}")
+                    except OSError:
+                        skipped += 1
 
         report["total_patched"] = patched_files
         report["skipped_files"] = skipped

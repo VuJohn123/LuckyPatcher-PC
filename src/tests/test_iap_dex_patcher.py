@@ -115,6 +115,39 @@ def test_patch_with_report():
         assert "patterns" in report
 
 
+def test_parallel_scan_preserves_results_and_counts():
+    with tempfile.TemporaryDirectory() as tmp:
+        candidates = []
+        for i in range(12):
+            path = os.path.join(tmp, "smali", f"C{i}.smali")
+            _write(path, (
+                f".class public LC{i};\n"
+                ".method public static launchBillingFlow()V\n"
+                "    invoke-static {}, Lcom/x;->launchBillingFlow()V\n"
+                ".end method\n"
+            ))
+            candidates.append(path)
+        for i in range(30):
+            _write(os.path.join(tmp, "smali", f"U{i}.smali"), (
+                ".class public LU;\n"
+                ".method public static foo()V\n"
+                "    return-void\n"
+                ".end method\n"
+            ))
+
+        patcher = IAPDexPatcher(tmp, log_callback=lambda *_: None)
+        report = patcher.patch_with_report()
+
+        assert report["total_patched"] == 12
+        assert report["scanned_files"] == 42
+        assert report["skipped_files"] == 0
+        for path in candidates:
+            with open(path, encoding="utf-8") as f:
+                content = f.read()
+            assert ".locals 0" in content
+            assert content.count("return-void") == 1
+
+
 def test_no_patch_for_unrelated():
     with tempfile.TemporaryDirectory() as tmp:
         smali = os.path.join(tmp, "smali", "A.smali")
