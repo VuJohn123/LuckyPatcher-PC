@@ -562,11 +562,16 @@ Machine: 4 logical CPUs, 7.9 GB RAM, Windows Defender first-touch scans.
 
 | Change | Before | After | Notes |
 |---|---|---|---|
-| Cache load into existing workspace | 159.5 s delete + copy | 12.4 s `/PURGE` mirror | 54,508 files; restores modified files, removes stale ones |
-| License path filter | 6,308 files | 1,907 files | 5,134 removed by `pro` boundary fix |
-| IAP blacklist paths | read then reject | reject before read | 2,350 / 52,830 files |
+| Cache load into existing workspace | 159.5 s delete + copy | 12.4 s `/PURGE` mirror | 54,508 files; E2E steady state 112.1 s → 2.7 s |
+| License path filter | 6,308 files | 1,907 files | 5,134 removed by `pro` boundary fix; E2E 363.8 s → 78.8 s |
+| IAP blacklist paths | read then reject | reject before read | 2,350 / 52,830 files; E2E scan 417.9 s → 144.8 s |
 | IAP scan workers (4 CPUs) | 8 | 32 | 8.5 ms → 5.4 ms per cold file |
-| Recompile jobs | 4 (323.3 s / 280.4 s) | 8 (249.4 s / 236.3 s) | pristine builds, no `build/` reuse |
+| Recompile jobs | 4 (323.3 s / 280.4 s) | 8 (249.4 s / 236.3 s) | pristine builds, no `build/` reuse; E2E 359.8 s → 278.3 s |
+| Full E2E `license:auto,iap:dex` | 998.3 s | 469.7 s | reused patched workspace; stale-workspace run 847.7 s |
+
+E2E contract unchanged: 53 pattern keys, 43 files patched, 52,845 scanned,
+0 skipped, 84.8 MB output signed `[v2, v3]`. The stale-workspace run paid a
+full 132.3 s recopy; the steady-state run mirrored 54,482 files in 2.7 s.
 
 `apktool b` writes a `build/` directory inside the decompiled tree. Benchmark
 from a copy, never from the cache; `/PURGE` removes it from reused workspaces
