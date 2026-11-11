@@ -76,6 +76,37 @@ def test_license_patcher_patches_allow():
         assert "const/4 v0, 0x0" not in content
 
 
+def test_license_patcher_path_prefilter_excludes_proxy_keeps_promanager():
+    with tempfile.TemporaryDirectory() as tmp:
+        decoy = os.path.join(
+            tmp, "smali", "com", "x", "LicenseValidator.smali",
+        )
+        _write(decoy, ".class public Lcom/x/LicenseValidator;\n")
+
+        method = (
+            ".class public Lcom/x/{};\n"
+            ".field public static isProUser:Z\n"
+            ".method public static allow()Z\n"
+            "    .locals 1\n"
+            "    const/4 v0, 0x0\n"
+            "    return v0\n"
+            ".end method\n"
+        )
+        proxy = os.path.join(tmp, "smali", "com", "x", "Proxy.smali")
+        _write(proxy, method.format("Proxy"))
+        pro = os.path.join(tmp, "smali", "com", "x", "ProManager.smali")
+        _write(pro, method.format("ProManager"))
+
+        patcher = LicensePatcher(tmp)
+        count = patcher.patch_license_check()
+
+        assert count == 1
+        with open(proxy) as f:
+            assert "const/4 v0, 0x0" in f.read()
+        with open(pro) as f:
+            assert "const/4 v0, 0x1" in f.read()
+
+
 def test_license_patcher_skips_unrelated_file():
     """File không có LicenseValidator/LicenseCheckerCallback phải bị skip."""
     with tempfile.TemporaryDirectory() as tmp:

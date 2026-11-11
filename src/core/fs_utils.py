@@ -77,8 +77,13 @@ def robocopy_copy(
     dst: str,
     log_callback: Callable[[str], None],
     label: str = "Cache save",
+    purge: bool = False,
 ) -> bool:
-    """Copy src → dst dùng robocopy /MT:32. Return True nếu handled."""
+    """Copy src → dst dùng robocopy /MT:32. Return True nếu handled.
+
+    purge=True: mirror mode (/PURGE) — xoá file trong dst không có ở src.
+    Dùng khi load cache vào workspace cũ để chỉ copy file thay đổi.
+    """
     if not has_robocopy():
         return False
 
@@ -94,8 +99,13 @@ def robocopy_copy(
         "/NFL", "/NDL", "/NJH", "/NJS", "/NC", "/NS", "/NP",
         "/R:0", "/W:0",
     ]
+    if purge:
+        cmd.append("/PURGE")
 
-    log_callback(f"[*] [{label}] robocopy /MT:32 → {os.path.basename(dst)}")
+    log_callback(
+        f"[*] [{label}] robocopy /MT:32"
+        f"{' /PURGE' if purge else ''} → {os.path.basename(dst)}"
+    )
     start = time.monotonic()
     try:
         result = subprocess.run(

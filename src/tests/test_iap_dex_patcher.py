@@ -148,6 +148,41 @@ def test_parallel_scan_preserves_results_and_counts():
             assert content.count("return-void") == 1
 
 
+def test_scan_skips_blacklisted_paths_before_read():
+    class CountingPatcher(IAPDexPatcher):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.read_paths: list[str] = []
+
+        def _read(self, path: str) -> str:
+            self.read_paths.append(path)
+            return super()._read(path)
+
+    method = (
+        ".class public Lcom/x/NAME;\n"
+        ".method public static launchBillingFlow()V\n"
+        "    invoke-static {}, Lcom/x;->launchBillingFlow()V\n"
+        ".end method\n"
+    )
+    with tempfile.TemporaryDirectory() as tmp:
+        tracker = os.path.join(
+            tmp, "smali", "com", "x", "analytics", "Tracker.smali",
+        )
+        _write(tracker, method.replace("NAME", "Tracker"))
+        billing = os.path.join(
+            tmp, "smali", "com", "x", "billing", "Billing.smali",
+        )
+        _write(billing, method.replace("NAME", "Billing"))
+
+        patcher = CountingPatcher(tmp, log_callback=lambda *_: None)
+        report = patcher.patch_with_report()
+
+        assert report["total_patched"] == 1
+        assert report["scanned_files"] == 2
+        assert billing in patcher.read_paths
+        assert tracker not in patcher.read_paths
+
+
 def test_no_patch_for_unrelated():
     with tempfile.TemporaryDirectory() as tmp:
         smali = os.path.join(tmp, "smali", "A.smali")

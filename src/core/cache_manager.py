@@ -237,18 +237,30 @@ def cache_load(
         return False
 
     # Raw cache — copy (NO junction)
-    # Remove any stale junction/symlink from previous runs
-    if os.path.islink(output_dir) or (
-        os.path.exists(output_dir) and os.path.isdir(output_dir)
-    ):
+    # Reuse an existing workspace with an incremental /PURGE mirror: deleting
+    # and re-copying 54k files costs >100s, while robocopy only rewrites files
+    # that differ (typically the few patched ones) and removes stale files.
+    is_link = os.path.islink(output_dir) or (
+        os.path.isdir(output_dir)
+        and os.path.realpath(output_dir) != os.path.abspath(output_dir)
+    )
+    has_rc = has_robocopy()
+    reuse_workspace = has_rc and os.path.isdir(output_dir) and not is_link
+
+    if is_link or (os.path.exists(output_dir) and not reuse_workspace):
         remove_dst(output_dir)
 
-    if has_robocopy():
+    if has_rc:
         log_callback(
-            "[i] [Cache load] robocopy (no junction — cache stays clean)"
+            "[i] [Cache load] incremental robocopy /PURGE "
+            "(workspace reused)"
+            if reuse_workspace
+            else "[i] [Cache load] robocopy (no junction — cache stays clean)"
         )
-        if robocopy_copy(cache_dir, output_dir, log_callback,
-                         label="Cache load"):
+        if robocopy_copy(
+            cache_dir, output_dir, log_callback,
+            label="Cache load", purge=reuse_workspace,
+        ):
             return os.path.isdir(output_dir)
 
     # Python copy fallback — mode="copy" (no junction)

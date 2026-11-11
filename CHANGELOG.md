@@ -1,6 +1,11 @@
 # Changelog
 
 ## Unreleased
+- perf(recompile): `recompile_apk()` accepts an explicit `jobs` value; the pipeline now builds with `min(16, max(4, cpu×2))` (8 on the 4-core audit machine) instead of apktool's 1-per-CPU default. Pristine-tree builds with no `build/` reuse (the real pipeline always purges it): 4 jobs 323.3s / 280.4s (mean 301.9s) → 8 jobs 249.4s / 236.3s (mean 242.9s), same 84.7 MB / 9 dex output. SafetyGuard throttling still applies.
+- perf(cache): loading a cache into an existing workspace now uses an incremental `robocopy /PURGE` mirror instead of delete + full copy. On the 54,508-file tree: 159.5s → 12.4s (12.9x); all 43 modified files were restored, the stale file removed, and file counts matched. `/PURGE` also discards stale apktool `build/` artifacts. Default config keeps the workspace (`pipeline.keep_workspace: true`).
+- perf(license): path prefilter no longer uses `pro` as a substring — 5,134 of 6,308 candidates were `$proxy`/provider files. Boundary/CamelCase regexes keep `ProManager` while excluding `Proxy`: candidates on the 84 MB test APK drop to 1,907 (3.3x fewer cold reads).
+- perf(iap): `iap:dex` rejects blacklist-only paths before reading (2,350 of 52,830 smali files on the test APK) and uses 16–32 scan workers (32 on 4 CPUs) instead of 8. Cold-read benchmark: 8.5ms → 5.4ms per file.
+- test: regression coverage for license `Proxy` vs `ProManager`, IAP pre-read blacklist skip, robocopy `/PURGE`, incremental vs fresh cache load, and recompile `--jobs`; focused run 115 passed / 3 skipped.
 - perf(iap): `iap:dex` prefilter now scans smali files with a bounded thread pool (IAPDexPatcher), overlapping Windows Defender first-touch scans. E2E on the 84 MB PairIP APK: scan 1457.6s → 417.9s, whole run 2688s → 998.3s, with an identical result (same 53 pattern keys, 43 files patched, 52,845 scanned, 0 skipped).
 - fix(safety): sustained RAM pressure in CLI mode now hard-aborts the pipeline instead of auto-muting and resuming full load; new `auto_tune.safety.cli_abort_reasons` (default `[ram]`) overrides `cli_mode_action` per reason, and the pipeline checks the abort flag again after recompile before signing.
 - chore(ci): pin `ruff==0.16.8` / `mypy==2.3.1`; CI now also enforces `mypy src`.

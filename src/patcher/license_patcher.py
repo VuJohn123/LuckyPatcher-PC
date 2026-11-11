@@ -75,8 +75,16 @@ _BLACKLIST = (
 
 _PATH_HINTS = (
     "license", "licensing", "lvl", "validator", "vending",
-    "purchase", "billing", "iap", "pro", "premium",
+    "purchase", "billing", "iap", "premium",
     "amazon", "samsung", "store",
+)
+
+# "pro" không dùng như substring: "proxy"/"provider"/"product" chiếm ~5k file
+# và gần như không bao giờ là license. Chỉ match token "pro" hoặc CamelCase
+# "ProX" (ProManager, ProUser) — tránh bỏ sót class Pro thật.
+_PATH_PATTERNS = (
+    r"(?<![A-Za-z0-9])[Pp]ro(?![A-Za-z0-9])",
+    r"Pro[A-Z0-9]",
 )
 
 
@@ -129,6 +137,7 @@ class LicensePatcher(BasePatcher):
             _transform,
             prefilter_keywords=_PREFILTER_KEYWORDS,
             path_hints=_PATH_HINTS,
+            path_patterns=_PATH_PATTERNS,
             label="LicensePatcher",
         )
 
@@ -173,5 +182,6 @@ class LicensePatcher(BasePatcher):
             _transform,
             prefilter_keywords=("ServerManagedPolicy",),
             path_hints=_PATH_HINTS,
+            path_patterns=_PATH_PATTERNS,
             label="LicensePatcher-Rev",
         )

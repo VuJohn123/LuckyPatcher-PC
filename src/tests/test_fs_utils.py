@@ -227,6 +227,22 @@ class TestRobocopyCopy:
         assert result is True
         assert any("timeout" in line.lower() for line in logs)
 
+    def test_purge_flag_added_to_command(self, tmp_path):
+        mock_result = MagicMock()
+        mock_result.returncode = 1
+        mock_result.stdout = ""
+
+        with patch("core.fs_utils.has_robocopy", return_value=True), \
+             patch("core.fs_utils.subprocess.run",
+                   return_value=mock_result) as mock_run:
+            robocopy_copy(
+                str(tmp_path), str(tmp_path / "dst"),
+                log_callback=lambda *_: None, purge=True,
+            )
+        cmd = mock_run.call_args.args[0]
+        assert "/PURGE" in cmd
+        assert "/E" in cmd
+
 
 # ============================================================
 # safe_copytree

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import contextlib
 import logging
+import re
 import time
 from abc import ABC, abstractmethod
 from collections.abc import Callable
@@ -87,6 +88,7 @@ class BasePatcher(ABC):
         label: str = "Patcher",
         show_progress: bool = True,
         path_hints: tuple[str, ...] = (),
+        path_patterns: tuple[str, ...] = (),
     ) -> int:
         """
         Iterate smali files, apply transform(content, filepath).
@@ -94,6 +96,8 @@ class BasePatcher(ABC):
         path_hints: chỉ scan file có path chứa hint. Fallback FULL nếu
                     prefilter không match file nào → tránh miss app
                     obfuscated / structure bất thường.
+        path_patterns: regex (case-sensitive, trên path gốc) cho các hint
+                    ngắn dễ nhiễu như "pro" → tránh match "proxy"/"product".
         """
         try:
             all_files = list(get_all_smali_files(self.decompiled_path))
@@ -107,11 +111,19 @@ class BasePatcher(ABC):
 
         # ---- Path prefilter ----
         candidates = all_files
-        if path_hints:
+        if path_hints or path_patterns:
+            compiled = [re.compile(p) for p in path_patterns]
             filt = [
                 f for f in all_files
-                if any(
-                    h in f.replace("\\", "/").lower() for h in path_hints
+                if (
+                    any(
+                        h in f.replace("\\", "/").lower()
+                        for h in path_hints
+                    )
+                    or any(
+                        p.search(f.replace("\\", "/"))
+                        for p in compiled
+                    )
                 )
             ]
             if filt:

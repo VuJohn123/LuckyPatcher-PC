@@ -266,6 +266,34 @@ def test_recompile_apk_forced_package_id(tmp_path):
         assert "42" in cmd
 
 
+def test_recompile_apk_passes_explicit_jobs(tmp_path):
+    mock_proc = _mock_popen(returncode=0)
+    with patch(
+        "subprocess.Popen", return_value=mock_proc
+    ) as mock_popen, \
+         patch("core.apk_utils._verify_recompiled_apk"):
+        recompile_apk(
+            str(tmp_path), str(tmp_path / "out.apk"),
+            log_callback=lambda *_: None,
+            jobs=8,
+        )
+        cmd = mock_popen.call_args[0][0]
+        assert cmd[cmd.index("--jobs") + 1] == "8"
+
+
+def test_recompile_apk_omits_jobs_when_unset(tmp_path):
+    mock_proc = _mock_popen(returncode=0)
+    with patch(
+        "subprocess.Popen", return_value=mock_proc
+    ) as mock_popen, \
+         patch("core.apk_utils._verify_recompiled_apk"):
+        recompile_apk(
+            str(tmp_path), str(tmp_path / "out.apk"),
+            log_callback=lambda *_: None,
+        )
+        assert "--jobs" not in mock_popen.call_args[0][0]
+
+
 # ============================================================
 # sign_apk — mock Popen + verify
 # ============================================================

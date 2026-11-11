@@ -5,7 +5,7 @@ source or LP 12.10.4 research** (`Freezdy413485/LP-DeCodes`, `Freezdy413485/LP-G
 Cross-reference `HANDOFF*.txt` for project state, `src/tests/` for behavioural
 contracts (tests are the spec).
 
-**Test baseline**: 1841 passed, 8 skipped, 0 failed. Cache v10.
+**Test baseline**: 1884 passed, 8 skipped, 0 failed. Cache v10.
 
 ---
 
@@ -466,9 +466,11 @@ Detected via `Lcom/pairip/application/Application;` in ASCII blob (2.34 s for
 [3] AppDeepAnalyzer     30 d cache; packer→license→ads→iap→misc→security
 [4] workspace           workspace/output/<sanitized_pkg>/
 [5] SafetyGuard         system_cpu − own_tree_cpu; T=98% / RAM 85% / disk 10%
-[6] decompile_apk()     7 d cache; robocopy /MT:32 (54k files ≈ 93 s vs 7z 1070 s)
+[6] decompile_apk()     7 d cache; robocopy /MT:32; existing workspace → incremental
+                        /PURGE mirror (54.5k files: 12.4 s vs 159.5 s full copy)
 [7] execute_modes()     ThreadPool + submit_with_context + path_hints
-[8] recompile_apk()     retry --use-aapt2 on fail; verify ZIP+manifest+dex
+[8] recompile_apk()     jobs=min(16, max(4, cpu×2)); resource-decode retry on fail;
+                        verify ZIP+manifest+dex
 [9] sign_apk()          testkey→uber-apk-signer; platform/media/shared→apksigner
 [10] install_apk()      ADB auto-uninstall on signature mismatch
 ```
@@ -506,9 +508,15 @@ v9 reconstruct `packer_info` on cache hit, v10 packer v4 window analysis.
 ### 9.4 path_hints prefilter (perf)
 | Patcher | hints | Reduction |
 |---|---|---|
-| License | `license`, `licensing`, `lvl`, `vending` | 52,845 → 56 |
+| License | `license`, `licensing`, `lvl`, `validator`, `vending`, `purchase`, `billing`, `iap`, `premium`, `amazon`, `samsung`, `store` + `pro` token/CamelCase regex | 52,830 → 1,907 (84 MB PairIP APK) |
 | Signature | `security`, `signature` | 52,845 → 722 |
 | IAP | `billing`, `iap`, `purchase`, `unity` | 52,845 → 1,848 |
+
+`pro` is not a substring hint: `$proxy`/provider classes made 5,134 of 6,308
+license candidates. `_PATH_PATTERNS` matches token `pro`/`ProX` instead, so
+`ProManager` still scans while `Proxy` does not. `IAPDexPatcher` scans all
+files but rejects blacklist-only paths (2,350 of 52,830 on the test APK)
+**before** reading.
 
 Fallback FULL if 0 match (obfuscated APK), logged as
 `[i] [{label}] Path prefilter 0 match — FULL scan N files`.
@@ -547,6 +555,22 @@ accepts 6 alias kwargs (`history_file`, `file`, `path`, `storage_file`,
 `core/mode_registry.MODE_MAP` + `PluginManager.get_all_modes()` merge. Modes
 with same `group` → sequential; no group → parallel. Prefix `multi:` in mode
 string → strip prefix then split `,`.
+
+### 9.8 Performance audit (2026-11)
+
+Machine: 4 logical CPUs, 7.9 GB RAM, Windows Defender first-touch scans.
+
+| Change | Before | After | Notes |
+|---|---|---|---|
+| Cache load into existing workspace | 159.5 s delete + copy | 12.4 s `/PURGE` mirror | 54,508 files; restores modified files, removes stale ones |
+| License path filter | 6,308 files | 1,907 files | 5,134 removed by `pro` boundary fix |
+| IAP blacklist paths | read then reject | reject before read | 2,350 / 52,830 files |
+| IAP scan workers (4 CPUs) | 8 | 32 | 8.5 ms → 5.4 ms per cold file |
+| Recompile jobs | 4 (323.3 s / 280.4 s) | 8 (249.4 s / 236.3 s) | pristine builds, no `build/` reuse |
+
+`apktool b` writes a `build/` directory inside the decompiled tree. Benchmark
+from a copy, never from the cache; `/PURGE` removes it from reused workspaces
+so every pipeline build is a clean build.
 
 ---
 

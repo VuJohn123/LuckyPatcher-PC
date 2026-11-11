@@ -782,6 +782,21 @@ def _run_pipeline_body(
                 f"→ {effective_jobs}"
             )
 
+        # Build is a different workload from decode: smaling mixes CPU with
+        # first-touch reads, so give it 2x CPU (verified faster: 301.9s ->
+        # 242.9s mean on 4 cores). SafetyGuard throttling still applies.
+        recompile_jobs = min(
+            16, max(4, (os.cpu_count() or 4) * 2)
+        )
+        if guard_state and guard_state["throttled"]:
+            recompile_jobs = max(
+                1,
+                int(
+                    recompile_jobs
+                    * guard_state.get("throttle_factor", 1.0)
+                ),
+            )
+
         with _StageTimer(apk_path, mode, "decompile", _log):
             decompile_apk(
                 apk_path, decompiled_dir,
@@ -847,6 +862,7 @@ def _run_pipeline_body(
                     log_callback=_log,
                     verify=True,
                     input_apk_for_delta=apk_path,
+                    jobs=recompile_jobs,
                 )
             except SmaliAssemblyError as smali_err:
                 _log(f"[!] {smali_err}")
@@ -890,6 +906,7 @@ def _run_pipeline_body(
                         log_callback=_log,
                         verify=True,
                         input_apk_for_delta=apk_path,
+                        jobs=recompile_jobs,
                     )
                 else:
                     raise

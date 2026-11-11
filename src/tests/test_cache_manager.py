@@ -297,6 +297,46 @@ class TestCacheLoad:
         assert ok is True
         mock_rc.assert_called_once()
 
+    def test_existing_workspace_uses_incremental_purge(self, tmp_path):
+        cache = tmp_path / "cache"
+        cache.mkdir()
+        (cache / "apktool.yml").write_text("v:3")
+        dst = tmp_path / "dst"
+        dst.mkdir()
+        (dst / "stale.smali").write_text("old")
+
+        with (
+            patch("core.cache_manager.has_robocopy", return_value=True),
+            patch("core.cache_manager.robocopy_copy", return_value=True)
+            as mock_rc,
+            patch("core.cache_manager.remove_dst") as mock_rm,
+        ):
+            ok = cache_load(str(cache), str(dst), lambda *_: None)
+
+        assert ok is True
+        mock_rm.assert_not_called()
+        assert mock_rc.call_args.kwargs["purge"] is True
+
+    def test_fresh_workspace_does_not_purge(self, tmp_path):
+        cache = tmp_path / "cache"
+        cache.mkdir()
+        (cache / "apktool.yml").write_text("v:3")
+        dst = tmp_path / "dst"
+
+        def _fake_copy(*_args, **_kwargs):
+            dst.mkdir(exist_ok=True)
+            return True
+
+        with (
+            patch("core.cache_manager.has_robocopy", return_value=True),
+            patch("core.cache_manager.robocopy_copy",
+                  side_effect=_fake_copy) as mock_rc,
+        ):
+            ok = cache_load(str(cache), str(dst), lambda *_: None)
+
+        assert ok is True
+        assert mock_rc.call_args.kwargs["purge"] is False
+
     def test_no_archive_returns_raw_copy(self, tmp_path):
         cache = tmp_path / "cache"
         cache.mkdir()

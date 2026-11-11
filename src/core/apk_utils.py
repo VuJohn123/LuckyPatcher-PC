@@ -224,11 +224,17 @@ def recompile_apk(
     max_retries: int = 1,
     verify: bool = True,
     input_apk_for_delta: str | None = None,
+    jobs: int | None = None,
 ) -> str:
     outputs: list[str] = []
     for attempt in range(max_retries + 1):
         cmd = _java_cmd("apktool.jar")
         cmd += ["b", decompiled_path, "-o", output_apk]
+        if jobs is not None:
+            # apktool defaults to one job per logical CPU. Builds mix CPU
+            # (smaling) with first-touch reads, so 2x CPU measured faster
+            # on the 4-core audit machine (301.9s -> 242.9s mean).
+            cmd += ["--jobs", str(jobs)]
         if forced_package_id is not None:
             cmd += ["--forced-package-id", str(forced_package_id)]
         # NOTE: apktool 3.x defaults to aapt2; --use-aapt2 was removed (error: Unrecognized option)
