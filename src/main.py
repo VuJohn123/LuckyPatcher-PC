@@ -369,6 +369,19 @@ def _build_safety_guard(config: dict, log_callback, signals=None):
 
     safety_cfg = config.get("auto_tune", {}).get("safety", {})
 
+    # Reasons that must hard-abort in CLI mode (default: ram). Accept a single
+    # string for convenience; an explicitly empty list disables hard abort.
+    raw_abort_reasons = safety_cfg.get("cli_abort_reasons", ("ram",))
+    cli_abort_reasons: tuple[str, ...]
+    if isinstance(raw_abort_reasons, str):
+        cli_abort_reasons = (raw_abort_reasons.strip().lower(),)
+    elif isinstance(raw_abort_reasons, (list, tuple)):
+        cli_abort_reasons = tuple(
+            str(r).strip().lower() for r in raw_abort_reasons if str(r).strip()
+        )
+    else:
+        cli_abort_reasons = ("ram",)
+
     limits = GuardLimits(
         max_ram_pct=safety_cfg.get("throttle_ram_pct", 85.0),
         max_cpu_pct=safety_cfg.get("throttle_cpu_pct", 98.0),
@@ -381,6 +394,7 @@ def _build_safety_guard(config: dict, log_callback, signals=None):
             safety_cfg.get("reset_after_ok_checks", 3)
         ),
         cli_mode_action=safety_cfg.get("cli_mode_action", "mute"),
+        cli_abort_reasons=cli_abort_reasons,
     )
 
     if limits.max_cpu_pct < 95:
@@ -395,7 +409,9 @@ def _build_safety_guard(config: dict, log_callback, signals=None):
         f"RAM>{limits.max_ram_pct}%, Disk<{limits.min_disk_free_pct}%, "
         f"interval={limits.check_interval_sec}s, "
         f"reset_ok={limits.reset_after_ok_checks}, "
-        f"cli={limits.cli_mode_action}, enabled={limits.enabled}"
+        f"cli={limits.cli_mode_action}, "
+        f"abort_on={','.join(limits.cli_abort_reasons) or '-'}, "
+        f"enabled={limits.enabled}"
     )
 
     prompt_after_n = int(safety_cfg.get("prompt_after_n_violations", 5))
@@ -467,8 +483,11 @@ def _build_safety_guard(config: dict, log_callback, signals=None):
 
 def _check_safety_abort(guard, log_callback) -> None:
     if guard is not None and getattr(guard, "abort_flag", False):
-        log_callback("[!] Pipeline stopped by user (SafetyGuard)")
-        raise RuntimeError("Pipeline aborted by user via SafetyGuard")
+        log_callback(
+            "[!] Pipeline aborted by SafetyGuard "
+            "(RAM pressure or user request)"
+        )
+        raise RuntimeError("Pipeline aborted by SafetyGuard")
 
 
 # =============================================================
@@ -876,6 +895,9 @@ def _run_pipeline_body(
                     raise
 
         _emit_step(signals, "Recompile xong", 86, _log)
+        # RAM hard-abort (or user abort) can land while apktool is running;
+        # never spend minutes signing an artifact we are about to discard.
+        _check_safety_abort(guard, _log)
 
         # ============================================================
         # HEX PATCH — apply LP-format hex patches (post-recompile)

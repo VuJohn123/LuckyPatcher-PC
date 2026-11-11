@@ -25,6 +25,7 @@ class TestGuardLimits:
         assert lim.enabled is True
         assert lim.reset_after_ok_checks == 3
         assert lim.cli_mode_action == "mute"
+        assert lim.cli_abort_reasons == ("ram",)
 
     def test_overrides(self):
         lim = GuardLimits(
@@ -380,6 +381,83 @@ class TestCliFallback:
         g._cli_fallback("cpu", {}, 5)
         assert "cpu" in g._muted
         assert any("không hợp lệ" in line for line in logs)
+
+    def test_ram_aborts_despite_mute(self):
+        logs = []
+        on_mute = MagicMock()
+        g = SafetyGuard(
+            limits=GuardLimits(cli_mode_action="mute"),
+            on_mute=on_mute,
+            log_callback=logs.append,
+        )
+        g._cli_fallback("ram", {}, 5)
+
+        assert g.abort_flag is True
+        assert "ram" not in g._muted
+        on_mute.assert_not_called()
+        assert any("ABORT" in line and "hard-abort" in line for line in logs)
+
+    def test_cpu_still_mutes_with_default_abort_reasons(self):
+        on_mute = MagicMock()
+        g = SafetyGuard(
+            limits=GuardLimits(cli_mode_action="mute"),
+            on_mute=on_mute,
+            log_callback=lambda *_: None,
+        )
+        g._cli_fallback("cpu", {}, 5)
+
+        assert g.abort_flag is False
+        assert "cpu" in g._muted
+        on_mute.assert_called_once_with("cpu")
+
+    def test_empty_abort_reasons_disables_hard_abort(self):
+        on_mute = MagicMock()
+        g = SafetyGuard(
+            limits=GuardLimits(
+                cli_mode_action="mute", cli_abort_reasons=(),
+            ),
+            on_mute=on_mute,
+            log_callback=lambda *_: None,
+        )
+        g._cli_fallback("ram", {}, 5)
+
+        assert g.abort_flag is False
+        assert "ram" in g._muted
+        on_mute.assert_called_once_with("ram")
+
+    def test_abort_reason_match_is_case_insensitive(self):
+        g = SafetyGuard(
+            limits=GuardLimits(cli_abort_reasons=("RAM",)),
+            log_callback=lambda *_: None,
+        )
+        g._cli_fallback("ram", {}, 5)
+        assert g.abort_flag is True
+
+    def test_ram_aborts_before_continue_action(self):
+        g = SafetyGuard(
+            limits=GuardLimits(cli_mode_action="continue"),
+            log_callback=lambda *_: None,
+        )
+        initial = g.limits.max_ram_pct
+        g._cli_fallback("ram", {}, 5)
+
+        assert g.abort_flag is True
+        assert g.limits.max_ram_pct == initial
+
+    def test_handle_violation_ram_aborts_without_muting(self):
+        on_mute = MagicMock()
+        g = SafetyGuard(
+            limits=GuardLimits(cli_mode_action="mute"),
+            on_mute=on_mute,
+            prompt_after_n_violations=2,
+            log_callback=lambda *_: None,
+        )
+        g._handle_violation("ram", {"used_pct": 90.0})
+        g._handle_violation("ram", {"used_pct": 90.0})
+
+        assert g.abort_flag is True
+        assert "ram" not in g._muted
+        on_mute.assert_not_called()
 
 
 # ============================================================

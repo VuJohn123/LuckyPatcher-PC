@@ -518,8 +518,12 @@ Fallback FULL if 0 match (obfuscated APK), logged as
 descendants`, `external = system − own_tree`. Prevents Defender scans from
 triggering "you are overloading the system". Threshold breach → halve apktool
 jobs (`throttle_factor`). `reset_after_ok_checks=3` → restore. After
-`prompt_after_n_violations=5` → GUI dialog or auto-continue in CLI. Continue
-raises threshold `+5%`. Config under `auto_tune.safety`.
+`prompt_after_n_violations=5` → GUI dialog, or CLI fallback per
+`cli_mode_action` (`mute`/`continue`/`abort`). Continue raises threshold `+5%`.
+`cli_abort_reasons` (default `[ram]`) always hard-aborts in CLI mode regardless
+of `cli_mode_action` — sustained RAM pressure must never mute/resume full load.
+`main` re-checks `abort_flag` after recompile, before signing. Config under
+`auto_tune.safety`.
 
 ### 9.6 Persistence schemas
 

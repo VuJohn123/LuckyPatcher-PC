@@ -98,6 +98,10 @@ _DEFAULTS: dict[str, Any] = {
             # "continue" : nâng ngưỡng + reset counter
             # "abort"    : dừng pipeline
             "cli_mode_action": "mute",
+            # Reason LUÔN hard-abort ở CLI mode, bất kể cli_mode_action.
+            # RAM cạn mà mute = chạy full tải → dễ treo máy.
+            # [] = tắt hard-abort (RAM theo cli_mode_action).
+            "cli_abort_reasons": ["ram"],
         },
 
         # ---- Workload classification ----

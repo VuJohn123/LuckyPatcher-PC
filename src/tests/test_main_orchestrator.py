@@ -311,3 +311,59 @@ def test_main_verbose_sets_debug(tmp_path):
         # Verify config có level DEBUG
         call_kwargs = mock_run.call_args.kwargs
         assert call_kwargs["config"]["logging"]["level"] == "DEBUG"
+
+
+# ============================================================
+# _build_safety_guard — cli_abort_reasons wiring
+# ============================================================
+def test_build_safety_guard_default_cli_abort_reasons():
+    from main import _build_safety_guard
+    logs = []
+    guard, _ = _build_safety_guard({"auto_tune": {"safety": {}}}, logs.append)
+
+    assert guard.limits.cli_abort_reasons == ("ram",)
+    assert any("abort_on=ram" in line for line in logs)
+
+
+def test_build_safety_guard_normalizes_config_reasons():
+    from main import _build_safety_guard
+    logs = []
+    guard, _ = _build_safety_guard(
+        {"auto_tune": {"safety": {
+            "cli_abort_reasons": ["RAM", " disk "],
+        }}},
+        logs.append,
+    )
+
+    assert guard.limits.cli_abort_reasons == ("ram", "disk")
+    assert any("abort_on=ram,disk" in line for line in logs)
+
+
+def test_build_safety_guard_accepts_single_string():
+    from main import _build_safety_guard
+    guard, _ = _build_safety_guard(
+        {"auto_tune": {"safety": {"cli_abort_reasons": "Ram"}}},
+        lambda *_: None,
+    )
+    assert guard.limits.cli_abort_reasons == ("ram",)
+
+
+def test_build_safety_guard_empty_list_disables_hard_abort():
+    from main import _build_safety_guard
+    logs = []
+    guard, _ = _build_safety_guard(
+        {"auto_tune": {"safety": {"cli_abort_reasons": []}}},
+        logs.append,
+    )
+
+    assert guard.limits.cli_abort_reasons == ()
+    assert any("abort_on=-" in line for line in logs)
+
+
+def test_build_safety_guard_invalid_type_falls_back_to_ram():
+    from main import _build_safety_guard
+    guard, _ = _build_safety_guard(
+        {"auto_tune": {"safety": {"cli_abort_reasons": 42}}},
+        lambda *_: None,
+    )
+    assert guard.limits.cli_abort_reasons == ("ram",)

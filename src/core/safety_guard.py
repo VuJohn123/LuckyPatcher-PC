@@ -11,6 +11,8 @@ lần check OK liên tiếp.
 Grace: violation #1 KHÔNG throttle — tránh false positive do burst ngắn.
 
 CLI mode: sau N vi phạm → fallback theo `cli_mode_action` (mute/continue/abort).
+Riêng các reason trong `cli_abort_reasons` (mặc định: ram) → LUÔN abort,
+kể cả khi `cli_mode_action=mute` — tránh treo máy do RAM cạn.
 
 v2 fixes (own_pct bug):
   - Baseline PID tracking → detect NEW java processes spawned after start.
@@ -67,6 +69,8 @@ class GuardLimits:
     enabled: bool = True
     reset_after_ok_checks: int = 3
     cli_mode_action: str = "mute"
+    # Reasons that always abort in CLI mode, even when cli_mode_action=mute.
+    cli_abort_reasons: tuple[str, ...] = ("ram",)
 
 
 class SafetyGuard:
@@ -507,6 +511,22 @@ class SafetyGuard:
 
     def _cli_fallback(self, reason: str, details: dict, count: int) -> None:
         action = self.limits.cli_mode_action
+
+        # Hard-abort reasons ignore cli_mode_action: sustained RAM pressure must
+        # stop the pipeline instead of muting — mute would resume FULL load on
+        # an already starved machine.
+        abort_reasons = {
+            r.strip().lower() for r in self.limits.cli_abort_reasons
+        }
+        if reason.strip().lower() in abort_reasons:
+            with self._abort_lock:
+                self.abort_flag = True
+            self.log(
+                f"[!] [SafetyGuard] CLI mode — ABORT sau {count} vi phạm "
+                f"({reason} hard-abort; bỏ qua cli_mode_action='{action}')"
+            )
+            return
+
         if action == "mute":
             self._muted.add(reason)
             self._consecutive[reason] = 0
