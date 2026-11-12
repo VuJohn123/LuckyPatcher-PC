@@ -1,8 +1,0 @@
-perf: defer GUI imports, chunk ads regex, share E2E analyzer scan
-
-- startup: lazy AppDeepAnalyzer/APKDownloader -> warm import run_gui 1493ms to 574ms
-- ads: group blocklist into alternation chunks, 69->2 URL and 16->1 string passes
-  (3,000 real smali files: 3.95s->0.55s URL, 1.19s->0.18s strings, same digest)
-- tests: module-scoped analyzed_apk fixture -> full suite 1230s to 280.3s
-  (1886 passed, 8 skipped)
-- typing: guard bs4 Tag before href access (mypy 241 files clean)
