@@ -25,6 +25,41 @@ def test_remove_ad_urls():
             assert "doubleclick.net" not in f.read()
 
 
+def test_remove_ad_urls_multiple_domains_single_pass():
+    with tempfile.TemporaryDirectory() as tmp:
+        smali = os.path.join(tmp, "smali", "A.smali")
+        _write(smali, (
+            '.class public LA;\n'
+            '    const-string v0, "https://googlesyndication.com/a"\n'
+            '    const-string v1, "https://applovin.com/b"\n'
+            '    const-string v2, "https://example.com/keep"\n'
+        ))
+        patcher = AdsBlocklistPatcher(tmp)
+        assert patcher.remove_ad_urls_from_smali() == 1
+        with open(smali) as f:
+            content = f.read()
+        assert "googlesyndication.com" not in content
+        assert "applovin.com" not in content
+        assert '"https://example.com/keep"' in content
+        assert content.count('"http://127.0.0.1"') == 2
+
+
+def test_remove_ad_strings_exact_literals():
+    with tempfile.TemporaryDirectory() as tmp:
+        smali = os.path.join(tmp, "smali", "A.smali")
+        _write(smali, (
+            '.class public LA;\n'
+            '    const-string v0, "doubleclick.net"\n'
+            '    const-string v1, "example.com"\n'
+        ))
+        patcher = AdsBlocklistPatcher(tmp)
+        assert patcher.remove_ad_strings() == 1
+        with open(smali) as f:
+            content = f.read()
+        assert '"doubleclick.net"' not in content
+        assert '"example.com"' in content
+
+
 def test_make_ads_offline():
     with tempfile.TemporaryDirectory() as tmp:
         smali = os.path.join(tmp, "smali", "A.smali")

@@ -26,15 +26,27 @@ pytestmark = pytest.mark.skipif(
 )
 
 
+@pytest.fixture(scope="module")
+def analyzed_apk():
+    """One full analysis shared by the read-only E2E assertions.
+
+    A full scan of the 84 MB PairIP APK takes ~50-90 s; these checks used
+    to repeat it once per test. Cache round-trip tests still run their own
+    full scans because they measure the cache.
+    """
+    from scanner.analyzer import AppDeepAnalyzer
+
+    analyzer = AppDeepAnalyzer(str(_TEST_APK))
+    findings = analyzer.analyze(force_reanalyze=True)
+    return analyzer, findings
+
+
 # ============================================================
 # Full analyzer E2E
 # ============================================================
 class TestAnalyzerE2E:
-    def test_analyze_returns_findings_and_summary(self):
-        from scanner.analyzer import AppDeepAnalyzer
-
-        analyzer = AppDeepAnalyzer(str(_TEST_APK))
-        findings = analyzer.analyze(force_reanalyze=True)
+    def test_analyze_returns_findings_and_summary(self, analyzed_apk):
+        analyzer, findings = analyzed_apk
 
         assert isinstance(findings, list)
         assert len(findings) > 0
@@ -44,32 +56,23 @@ class TestAnalyzerE2E:
         assert summary.get("package"), "package name missing"
         assert isinstance(summary.get("app_name"), str)
 
-    def test_summary_has_real_package(self):
-        from scanner.analyzer import AppDeepAnalyzer
-
-        analyzer = AppDeepAnalyzer(str(_TEST_APK))
-        analyzer.analyze(force_reanalyze=True)
+    def test_summary_has_real_package(self, analyzed_apk):
+        analyzer, _ = analyzed_apk
         summary = analyzer.get_summary()
 
         pkg = summary.get("package", "")
         assert "." in pkg, f"Invalid package: {pkg}"
 
-    def test_findings_have_required_shape(self):
-        from scanner.analyzer import AppDeepAnalyzer
-
-        analyzer = AppDeepAnalyzer(str(_TEST_APK))
-        findings = analyzer.analyze(force_reanalyze=True)
+    def test_findings_have_required_shape(self, analyzed_apk):
+        _, findings = analyzed_apk
 
         for f in findings:
             assert "type" in f, f"Finding missing 'type': {f}"
             assert "title" in f, f"Finding missing 'title': {f}"
             assert "color" in f
 
-    def test_colors_returned(self):
-        from scanner.analyzer import AppDeepAnalyzer
-
-        analyzer = AppDeepAnalyzer(str(_TEST_APK))
-        analyzer.analyze(force_reanalyze=True)
+    def test_colors_returned(self, analyzed_apk):
+        analyzer, _ = analyzed_apk
         colors = analyzer.get_colors()
 
         assert isinstance(colors, list)
@@ -86,14 +89,11 @@ class TestAnalyzerE2E:
 # Packer detection specific
 # ============================================================
 class TestPackerE2E:
-    def test_pairip_detected_in_test_apk(self):
+    def test_pairip_detected_in_test_apk(self, analyzed_apk):
         """
         Test.apk là PairIP-protected. Verify detection end-to-end.
         """
-        from scanner.analyzer import AppDeepAnalyzer
-
-        analyzer = AppDeepAnalyzer(str(_TEST_APK))
-        analyzer.analyze(force_reanalyze=True)
+        analyzer, _ = analyzed_apk
 
         packer = getattr(analyzer, "packer_info", None)
         assert packer is not None, "packer_info missing"
@@ -103,11 +103,8 @@ class TestPackerE2E:
         )
         assert packer.get("patchable") is False
 
-    def test_packer_finding_in_findings_list(self):
-        from scanner.analyzer import AppDeepAnalyzer
-
-        analyzer = AppDeepAnalyzer(str(_TEST_APK))
-        findings = analyzer.analyze(force_reanalyze=True)
+    def test_packer_finding_in_findings_list(self, analyzed_apk):
+        _, findings = analyzed_apk
 
         packer_findings = [
             f for f in findings if f.get("type") == "packer"
@@ -154,13 +151,12 @@ class TestAnalyzerCacheE2E:
             f"(expected ≥5×)"
         )
 
-    def test_cache_returns_same_packer_result(self):
+    def test_cache_returns_same_packer_result(self, analyzed_apk):
         """Cache hit phải trả cùng packer_info như full scan."""
         from scanner.analyzer import AppDeepAnalyzer
 
-        a1 = AppDeepAnalyzer(str(_TEST_APK))
-        a1.analyze(force_reanalyze=True)
-        full_packer = getattr(a1, "packer_info", None)
+        full_analyzer, _ = analyzed_apk
+        full_packer = getattr(full_analyzer, "packer_info", None)
 
         a2 = AppDeepAnalyzer(str(_TEST_APK))
         a2.analyze(force_reanalyze=False)
@@ -176,22 +172,16 @@ class TestAnalyzerCacheE2E:
 # Security check E2E
 # ============================================================
 class TestSecurityE2E:
-    def test_root_detection_finding_present(self):
-        from scanner.analyzer import AppDeepAnalyzer
-
-        analyzer = AppDeepAnalyzer(str(_TEST_APK))
-        findings = analyzer.analyze(force_reanalyze=True)
+    def test_root_detection_finding_present(self, analyzed_apk):
+        _, findings = analyzed_apk
 
         root_findings = [
             f for f in findings if f.get("type") == "root_detection"
         ]
         assert root_findings, "No root_detection finding"
 
-    def test_lp_detection_finding_present(self):
-        from scanner.analyzer import AppDeepAnalyzer
-
-        analyzer = AppDeepAnalyzer(str(_TEST_APK))
-        findings = analyzer.analyze(force_reanalyze=True)
+    def test_lp_detection_finding_present(self, analyzed_apk):
+        _, findings = analyzed_apk
 
         lp_findings = [
             f for f in findings if f.get("type") == "lp_detection"

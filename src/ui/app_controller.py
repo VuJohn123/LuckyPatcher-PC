@@ -31,10 +31,8 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
 )
 
-from core.apk_downloader import APKDownloader
 from core.pipeline_signals import PipelineSignals
 from patcher.iap_manager import IAPManager
-from scanner.app_classifier import AppDeepAnalyzer
 from scanner.installed_apps import get_installed_apps
 
 logger = logging.getLogger(__name__)
@@ -150,6 +148,7 @@ class AppController(QObject):
 
     def _analyze_worker(self, file: str) -> None:
         try:
+            from scanner.app_classifier import AppDeepAnalyzer
             analyzer = AppDeepAnalyzer(file)
             findings = analyzer.analyze()
             summary = analyzer.get_summary()
@@ -835,6 +834,7 @@ class AppController(QObject):
         package = pkg_input.text().strip()
         if not package:
             return
+        from core.apk_downloader import APKDownloader
         downloader = APKDownloader(log_callback=self.log_message.emit)
         info = downloader.get_google_play_app_info(package)
         info_text = dialog.findChild(
@@ -867,6 +867,7 @@ class AppController(QObject):
             )
             return
 
+        from core.apk_downloader import APKDownloader
         downloader = APKDownloader(log_callback=self.log_message.emit)
         dialog.accept()
 

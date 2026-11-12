@@ -160,15 +160,16 @@ class APKDownloader:
             resp = self.session.get(url, timeout=self.timeout)
             resp.raise_for_status()
             try:
-                from bs4 import BeautifulSoup
+                from bs4 import BeautifulSoup, Tag
             except ImportError:
                 self.log("[!] beautifulsoup4 chưa cài")
                 return None
             soup = BeautifulSoup(resp.text, "html.parser")
             link = soup.find("a", {"class": "download-btn"})
-            if link and link.get("href"):
+            href = link.get("href") if isinstance(link, Tag) else None
+            if isinstance(href, str) and href:
                 return self._download(
-                    link["href"],
+                    href,
                     output_path or self._out_path(package_name, "apkmody"),
                 )
             self.log("[!] APKMody: không tìm thấy link tải")

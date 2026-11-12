@@ -48,6 +48,28 @@ _METHOD_MODS = (
     r"(?:(?:public|private|protected|static|final|synthetic|abstract)\s+)+"
 )
 
+# safe_sub rejects patterns longer than 1000 chars. Group alternations into
+# chunks so a large blocklist still fits, while scanning each file only once
+# per chunk instead of once per pattern.
+_MAX_ALTERNATION_CHUNK = 800
+
+
+def _chunk_alternation(parts: list[str]) -> list[str]:
+    """Group escaped literals into `(?:a|b|...)` chunks under the limit."""
+    chunks: list[str] = []
+    current: list[str] = []
+    for part in parts:
+        candidate_len = len("|".join([*current, part])) + 4
+        if current and candidate_len > _MAX_ALTERNATION_CHUNK:
+            chunks.append("(?:" + "|".join(current) + ")")
+            current = [part]
+        else:
+            current.append(part)
+    if current:
+        chunks.append("(?:" + "|".join(current) + ")")
+    return chunks
+
+
 # Compile sẵn regex offline method
 _OFFLINE_REGEX = {
     m: re.compile(
@@ -184,13 +206,14 @@ class AdsBlocklistPatcher(BasePatcher):
         """
         self.log("[*] [AdsBlocklist] Removing ad URLs")
 
-        # Prebuild patterns — escape domain rồi build regex
-        patterns: list[str] = []
-        for domain in self.http_patterns:
-            escaped = re.escape(domain)
-            patterns.append(
-                r'"https?://[^"]*' + escaped + r'[^"]*"'
+        # Prebuild patterns — escape domains, then group into alternations so
+        # each file is regex-scanned once per chunk instead of once per domain.
+        patterns = [
+            r'"https?://[^"]*' + chunk + r'[^"]*"'
+            for chunk in _chunk_alternation(
+                [re.escape(domain) for domain in self.http_patterns]
             )
+        ]
 
         replacement = '"http://127.0.0.1"'
 
@@ -258,11 +281,15 @@ class AdsBlocklistPatcher(BasePatcher):
             return 0
         self.log("[*] [AdsBlocklist] Removing ad strings")
 
-        # Prebuild patterns cho từng string
-        string_patterns: list[str] = []
-        for s in self.all_strings:
-            escaped = re.escape(s)
-            string_patterns.append(r'"' + escaped + r'"')
+        # Prebuild patterns — group exact literals into alternations (one
+        # regex pass per chunk instead of one pass per string).
+        string_patterns = [
+            r'"' + chunk + r'"'
+            for chunk in _chunk_alternation(
+                [re.escape(s) for s in self.all_strings]
+            )
+        ]
+        string_prefilter = tuple(self.all_strings)
 
         def _transform(content: str, filepath: str) -> str | None:
             original = content
@@ -277,6 +304,7 @@ class AdsBlocklistPatcher(BasePatcher):
 
         return self.patch_files(
             _transform,
+            prefilter_keywords=string_prefilter,
             label="AdsBlocklist-Strings",
         )
 

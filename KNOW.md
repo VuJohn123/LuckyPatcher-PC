@@ -567,11 +567,21 @@ Machine: 4 logical CPUs, 7.9 GB RAM, Windows Defender first-touch scans.
 | IAP blacklist paths | read then reject | reject before read | 2,350 / 52,830 files; E2E scan 417.9 s → 144.8 s |
 | IAP scan workers (4 CPUs) | 8 | 32 | 8.5 ms → 5.4 ms per cold file |
 | Recompile jobs | 4 (323.3 s / 280.4 s) | 8 (249.4 s / 236.3 s) | pristine builds, no `build/` reuse; E2E 359.8 s → 278.3 s |
+| GUI startup import | 1,493 ms | 574 ms | warm `import run_gui`, 3 runs each; CLI `import main` 573 → 549 ms (noise) |
+| Ads URL / string transform | 3.95 s / 1.19 s | 0.55 s / 0.18 s | 3,000 files; 69 → 2 URL chunks, 16 → 1 string chunk; same output digest |
+| Full test suite | 1,230 s (1,884 pass) | 280.3 s (1,886 pass) | module-scoped real-APK analyzer fixture; cache tests still scan |
 | Full E2E `license:auto,iap:dex` | 998.3 s | 469.7 s | reused patched workspace; stale-workspace run 847.7 s |
 
 E2E contract unchanged: 53 pattern keys, 43 files patched, 52,845 scanned,
 0 skipped, 84.8 MB output signed `[v2, v3]`. The stale-workspace run paid a
 full 132.3 s recopy; the steady-state run mirrored 54,482 files in 2.7 s.
+
+Parallel smali reads were evaluated and **not shipped**: cold first-touch reads
+on 3,000 files dropped 24.9 → 7.2 ms/file with 8 threads, but after decompile
+or cache load the tree is warm (0.4–1.2 ms/file), `SignaturePatcher` stayed at
+10.28 → 10.23 s, and `SigIntegrity` regressed 3.42 → 10.78 s. The license
+stage's 78.8 s E2E time is contention with the concurrent 52,845-file IAP
+scan, not per-file read cost. `BasePatcher.patch_files()` remains sequential.
 
 `apktool b` writes a `build/` directory inside the decompiled tree. Benchmark
 from a copy, never from the cache; `/PURGE` removes it from reused workspaces
