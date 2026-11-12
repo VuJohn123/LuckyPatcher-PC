@@ -592,7 +592,7 @@ class MainWindow(QMainWindow):
     ) -> None:
         msg = QMessageBox(self)
         msg.setIcon(QMessageBox.Icon.Warning)
-        msg.setWindowTitle(t("dialog.warning_title"))
+        msg.setWindowTitle(t("dialog.common.warning_title"))
         msg.setTextFormat(Qt.TextFormat.RichText)
 
         msg.setText(
@@ -608,9 +608,9 @@ class MainWindow(QMainWindow):
             "<b>Chi tiết:</b><br>"
             + "<br>".join(detail_lines)
             + "<br><br>"
-            f"<b>{t('dialog.continue')}</b>: nâng ngưỡng +5% "
+            f"<b>{t('dialog.common.continue')}</b>: nâng ngưỡng +5% "
             f"và tiếp tục<br>"
-            f"<b>{t('dialog.stop')}</b>: dừng pipeline an toàn"
+            f"<b>{t('dialog.common.stop')}</b>: dừng pipeline an toàn"
         )
 
         msg.setStandardButtons(
@@ -619,10 +619,10 @@ class MainWindow(QMainWindow):
         )
         yes_btn = msg.button(QMessageBox.StandardButton.Yes)
         if yes_btn is not None:
-            yes_btn.setText(t("dialog.continue"))
+            yes_btn.setText(t("dialog.common.continue"))
         no_btn = msg.button(QMessageBox.StandardButton.No)
         if no_btn is not None:
-            no_btn.setText(t("dialog.stop"))
+            no_btn.setText(t("dialog.common.stop"))
         msg.setDefaultButton(QMessageBox.StandardButton.No)
         msg.setWindowModality(Qt.WindowModality.ApplicationModal)
 

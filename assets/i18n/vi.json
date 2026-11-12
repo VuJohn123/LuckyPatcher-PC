@@ -121,6 +121,16 @@
         "license_extreme": "🔑 Dùng app trả phí miễn phí",
         "multi_full": "⭐ Full patch (tất cả)"
       }
+    },
+    "ads_patch": {
+      "title": "Xóa quảng cáo - {name}",
+      "choose_mode": "<b>Chọn chế độ Ads:</b>",
+      "opt_remove": "Xóa activity quảng cáo khỏi manifest",
+      "opt_offline": "Làm module nghĩ rằng offline",
+      "opt_links": "Xóa URL quảng cáo trong smali",
+      "opt_full_offline": "Full offline (kết hợp)",
+      "btn_apply": "Áp dụng",
+      "btn_cancel": "Hủy"
     }
   }
 }

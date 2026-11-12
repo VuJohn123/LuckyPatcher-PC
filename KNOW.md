@@ -798,4 +798,40 @@ guards.
 
 ---
 
-**End of KNOW.md (v5)**
+## 17. Known issues / gotchas (post-audit 2026-11)
+
+### 17.1 Signing keys are placeholders
+**`tools/keys/*.pk8|*.pem` are 9-17 byte placeholders (filenames as content).**
+
+```
+media.pk8:           9 bytes  - "media.pk8"
+platform.pk8:       12 bytes  - "platform.pk8"
+shared.pk8:         10 bytes  - "shared.pk8"
+testkey.pk8:        11 bytes  - "testkey.pk8"
+media.x509.pem:     14 bytes  - "media.x509.pem"
+platform.x509.pem:  17 bytes  - "platform.x509.pem"
+shared.x509.pem:    15 bytes  - "shared.x509.pem"
+testkey.x509.pem:   17 bytes  - " testkey.x509.pem"
+```
+
+**Impact**: `sign_apk(..., key_type="platform|media|shared")` **will fail** until real
+AOSP keys are provided. The fallback logic in `src/core/sign_with_key.py`:
+- `testkey` → uses `uber-apk-signer.jar` (embedded testkey, works without pk8/pem)
+- `platform|media|shared` → requires `apksigner` + valid pk8/x509.pem
+
+**Resolution**: See `tools/README.md` for how to obtain/generate real keys.
+
+### 17.2 i18n key mismatch (fixed)
+Code was using `dialog.warning_title`, `dialog.continue`, `dialog.stop` but JSON
+had them under `dialog.common.*`. Fixed in `src/ui/main_window.py` (4 sites).
+
+### 17.3 Ads patch dialog hardcoded strings (fixed)
+`src/ui/ads_patch_dialog.py` had Vietnamese literals. Moved to
+`assets/i18n/*.json` under `dialog.ads_patch.*` + wrapped with `t()`.
+
+### 17.4 Scanner/Patcher deep audits
+Pending manual continuation (subagents exhausted). Key areas:
+- `scanner/analyzer.py` — packer detection thresholds, entropy window params
+- `scanner/checks/classifier.py` — heuristics confidence scoring
+- `patcher/*` — smali injection validity (register counts, `.locals`),
+  regex ReDoS safety, path prefilter false negatives

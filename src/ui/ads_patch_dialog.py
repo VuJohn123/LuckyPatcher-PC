@@ -12,40 +12,42 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
 )
 
+from core.i18n import t
+
 
 class AdsPatchDialog(QDialog):
     patch_requested = pyqtSignal(str)
 
     OPTIONS = [
-        ("remove", "Xóa activity quảng cáo khỏi manifest"),
-        ("offline", "Làm module nghĩ rằng offline"),
-        ("links", "Xóa URL quảng cáo trong smali"),
-        ("full_offline", "Full offline (kết hợp)"),
+        ("remove", "ads_patch.opt_remove"),
+        ("offline", "ads_patch.opt_offline"),
+        ("links", "ads_patch.opt_links"),
+        ("full_offline", "ads_patch.opt_full_offline"),
     ]
 
     def __init__(self, app_name: str = "", parent=None):
         super().__init__(parent)
-        self.setWindowTitle(f"Remove Ads - {app_name}")
+        self.setWindowTitle(t("ads_patch.title", name=app_name))
         self.setMinimumSize(450, 320)
         self._selected = "remove"
         self._init_ui()
 
     def _init_ui(self) -> None:
         layout = QVBoxLayout(self)
-        layout.addWidget(QLabel("<b>Chọn chế độ Ads:</b>"))
+        layout.addWidget(QLabel(t("ads_patch.choose_mode")))
 
         self._group = QButtonGroup(self)
-        for key, label in self.OPTIONS:
-            rb = QRadioButton(label)
+        for key, label_key in self.OPTIONS:
+            rb = QRadioButton(t(label_key))
             rb.setChecked(key == self._selected)
             rb.toggled.connect(lambda on, k=key: self._select(k) if on else None)
             self._group.addButton(rb)
             layout.addWidget(rb)
 
         btns = QHBoxLayout()
-        ok = QPushButton("Áp dụng")
+        ok = QPushButton(t("ads_patch.btn_apply"))
         ok.clicked.connect(self._apply)
-        cancel = QPushButton("Hủy")
+        cancel = QPushButton(t("ads_patch.btn_cancel"))
         cancel.clicked.connect(self.reject)
         btns.addStretch()
         btns.addWidget(cancel)
