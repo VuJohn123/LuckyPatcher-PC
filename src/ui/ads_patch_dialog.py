@@ -19,22 +19,22 @@ class AdsPatchDialog(QDialog):
     patch_requested = pyqtSignal(str)
 
     OPTIONS = [
-        ("remove", "ads_patch.opt_remove"),
-        ("offline", "ads_patch.opt_offline"),
-        ("links", "ads_patch.opt_links"),
-        ("full_offline", "ads_patch.opt_full_offline"),
+        ("remove", "dialog.ads_patch.opt_remove"),
+        ("offline", "dialog.ads_patch.opt_offline"),
+        ("links", "dialog.ads_patch.opt_links"),
+        ("full_offline", "dialog.ads_patch.opt_full_offline"),
     ]
 
     def __init__(self, app_name: str = "", parent=None):
         super().__init__(parent)
-        self.setWindowTitle(t("ads_patch.title", name=app_name))
+        self.setWindowTitle(t("dialog.ads_patch.title", name=app_name))
         self.setMinimumSize(450, 320)
         self._selected = "remove"
         self._init_ui()
 
     def _init_ui(self) -> None:
         layout = QVBoxLayout(self)
-        layout.addWidget(QLabel(t("ads_patch.choose_mode")))
+        layout.addWidget(QLabel(t("dialog.ads_patch.choose_mode")))
 
         self._group = QButtonGroup(self)
         for key, label_key in self.OPTIONS:
@@ -45,9 +45,9 @@ class AdsPatchDialog(QDialog):
             layout.addWidget(rb)
 
         btns = QHBoxLayout()
-        ok = QPushButton(t("ads_patch.btn_apply"))
+        ok = QPushButton(t("dialog.ads_patch.btn_apply"))
         ok.clicked.connect(self._apply)
-        cancel = QPushButton(t("ads_patch.btn_cancel"))
+        cancel = QPushButton(t("dialog.ads_patch.btn_cancel"))
         cancel.clicked.connect(self.reject)
         btns.addStretch()
         btns.addWidget(cancel)

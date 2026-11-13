@@ -4,7 +4,15 @@ from __future__ import annotations
 import pytest
 from PyQt6.QtWidgets import QPushButton, QRadioButton
 
+from core.i18n import set_language
 from ui.ads_patch_dialog import AdsPatchDialog
+
+
+@pytest.fixture(autouse=True)
+def _force_vi():
+    set_language("vi")
+    yield
+    set_language("vi")
 
 
 @pytest.fixture
@@ -58,7 +66,8 @@ class TestSelection:
 
 class TestApplySignal:
     def test_apply_emits_ads_prefix(self, dialog, qtbot):
-        btn = _find_button(dialog, "Áp dụng")
+        from core.i18n import t
+        btn = _find_button(dialog, t("dialog.ads_patch.btn_apply"))
         assert btn is not None
         with qtbot.waitSignal(
             dialog.patch_requested, timeout=500,
@@ -67,8 +76,9 @@ class TestApplySignal:
         assert blocker.args == ["ads:remove"]
 
     def test_apply_with_full_offline(self, dialog, qtbot):
+        from core.i18n import t
         dialog._select("full_offline")
-        btn = _find_button(dialog, "Áp dụng")
+        btn = _find_button(dialog, t("dialog.ads_patch.btn_apply"))
         with qtbot.waitSignal(
             dialog.patch_requested, timeout=500,
         ) as blocker:
@@ -76,11 +86,13 @@ class TestApplySignal:
         assert blocker.args == ["ads:full_offline"]
 
     def test_apply_accepts(self, dialog, qtbot):
-        btn = _find_button(dialog, "Áp dụng")
+        from core.i18n import t
+        btn = _find_button(dialog, t("dialog.ads_patch.btn_apply"))
         with qtbot.waitSignal(dialog.accepted, timeout=500):
             btn.click()
 
     def test_cancel_rejects(self, dialog, qtbot):
-        btn = _find_button(dialog, "Hủy")
+        from core.i18n import t
+        btn = _find_button(dialog, t("dialog.ads_patch.btn_cancel"))
         with qtbot.waitSignal(dialog.rejected, timeout=500):
             btn.click()

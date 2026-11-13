@@ -80,6 +80,15 @@ _REQUIRED_KEYS = [
     "dialog.wizard.opt.ads_full_offline",
     "dialog.wizard.opt.license_extreme",
     "dialog.wizard.opt.multi_full",
+    # Ads patch
+    "dialog.ads_patch.title",
+    "dialog.ads_patch.choose_mode",
+    "dialog.ads_patch.opt_remove",
+    "dialog.ads_patch.opt_offline",
+    "dialog.ads_patch.opt_links",
+    "dialog.ads_patch.opt_full_offline",
+    "dialog.ads_patch.btn_apply",
+    "dialog.ads_patch.btn_cancel",
 ]
 
 
@@ -140,4 +149,12 @@ class TestI18nRuntime:
         set_language("vi")
         out = t("dialog.patch_config.title", name="License")
         assert "License" in out
+        set_language("vi")
+
+    def test_t_ads_patch_title(self):
+        from core.i18n import set_language, t
+        set_language("vi")
+        out = t("dialog.ads_patch.title", name="MyApp")
+        assert "MyApp" in out
+        assert "ads_patch" not in out
         set_language("vi")
