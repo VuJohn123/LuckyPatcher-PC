@@ -38,6 +38,41 @@ LP-DeCodes confirms version 12.10.4 + standalone proxy server APK (covered by ou
 
 ---
 
+## LP-GUI + LP-DeCodes Deep Architecture Study (completed 2026-11-14)
+
+### Original LP 12.10.4 Architecture (4 Layers)
+
+| Layer | Description | Components | LP-PC Status |
+|-------|-------------|------------|--------------|
+| **0. OS / Framework** | Modifies `services.jar`, `framework.jar`, `android.policy.jar` | ODEX patching, Modified Play Store (replaces Play services), Patch to Android (system sig check), BootList (re-apply patches on boot), Widgets (home screen) | ❌ Requires ADB + root; **future work** |
+| **1. System / App** | Modified Play Store APK (signed with platform key), standalone billing proxy APK | `com.chelpus.lackypatch.LackyPatchService`, IAP proxy server | ✅ Layer 2 covered (DEX/AIDL proxy); Layer 1 needs ADB install |
+| **2. App / Static** | Smali-level patches: license (auto/reverse/extreme/amazon/samsung), IAP (support patch), Ads (blocklist/manifest/offline), Signature (disable/integrity/fake-archive), Custom patches (hex/structural), Fake pkg, Install dir, Hosts block | 39 modes implemented | ✅ **Complete parity** |
+| **3. Runtime / Hook** | Xposed/Zygisk module (min version 82), `XSupport` hooks | Signature (8), Install (3), IAP (4), License (3) = 19 hooks | ✅ Generator produces valid LSPosed module |
+
+### Key LP-DeCodes Findings (v12.10.4)
+
+- **Package**: `ru.aaaaaban.installer` → obfuscated to `ru.hhklsyty.wlkllqrcq` in release
+- **Keystore keys**: `tools/keys/{testkey,platform,shared,media}.{pk8,x509.pem}` — our placeholders must be replaced with real AOSP keys for platform/media/shared signing
+- **AIDL interfaces**: Full `IInAppBillingService` (8 methods) + licensing AIDL in `android/com/android/vending/licensing/`
+- **Xposed module meta-data**: `xposedmodule=true`, `xposedminversion=82`, `xposedscope` via `@array/xposed_scope`
+- **Custom patch cloud**: `patch.chelpus.com` — Apps/Games/Submit Patch endpoints (our `cloud_patch_downloader.py` covers protocol)
+- **BootList mechanism**: Writes to `/data/local/tmp/lp_bootlist.sh` executed via `init.d` or Magisk module — requires root
+- **ODEX patching**: `baksmali`/`smali` on `boot.oat` / `odex` files — live patching without rebuild, needs ADB shell
+
+### ADB-Based Port Plan (Future Work)
+
+| Feature | ADB Approach | Blockers |
+|---------|-------------|----------|
+| ODEX/Dalvik-cache patching | `adb shell` + `baksmali`/`smali` on device | Requires root, device-specific oat format |
+| Modified Play Store | `adb install -r` platform-signed APK | Needs platform key, signature verification |
+| Patch to Android (services.jar) | `adb pull` → patch → `adb push` + reboot | System partition r/w, SELinux, OTA survival |
+| BootList re-apply | `adb shell` script in `init.d` / Magisk | Root, persistent across OTA |
+| Widgets | `adb shell` broadcast to LP app | LP app must be installed |
+| lpzip (custom patch archive) | `adb push` + LP app intent | LP app dependency |
+| Xposed module install | `adb install` LSPosed module zip | LSPosed installed, scope config |
+
+---
+
 ## Low-end device optimization research (measured 2026-11-14)
 
 ### Measured costs on 4-core, Python 3.11, 84 MB / 9-dex Test.apk

@@ -1,0 +1,10 @@
+docs: update CHANGELOG/KNOW/RESEARCH with perf results and LP-GUI/LP-DeCodes architecture
+
+- CHANGELOG: add 1.6.0 entry with 17.3x perf fix (70.6s→4.1s), false positive fixes
+  (Adjust LicenseData, SDK root probes), regression tests, lint clean
+- KNOW: add Section 17 (LP-GUI/LP-DeCodes 4-layer architecture map) and Section 18
+  (ADB-based port plan for mobile-only features: ODEX patching, Modified Play Store,
+  Patch to Android, BootList, Widgets, lpzip, Xposed module install)
+- RESEARCH: add LP-GUI/LP-DeCodes deep study (v12.10.4 package obfuscation, keystore
+  keys, AIDL interfaces, Xposed meta-data, BootList mechanism, ODEX patching, cloud
+  patch protocol) + ADB-based future work table

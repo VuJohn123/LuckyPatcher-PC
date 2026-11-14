@@ -40,3 +40,20 @@
 - CLI + GUI patcher (license/ads/IAP/signature/resign modes)
 - Adaptive config, SafetyGuard, trace_id, pytest-qt UI tests
 - Tools autodownload, XAPK/APKS convert, AIDL proxy
+
+## 1.6.0 (2026-11-14)
+- fix(analyzer): license detection false positive on `Adjust` `LicenseData` DTO - requires real license-check method evidence (`checkLicense`, `isLicensed`, `checkAccess`, `allow`, `verify`, `licenseRequest`) for weakly named classes; strong names (`/licensing/`, `LicenseCheck`, `LicenseValidator`, `LicenseClient`, `LicenseActivity`, `LVLCheck`) accepted as-is.
+- fix(analyzer): root detection false positive on SDK-only probes (GameAnalytics `GAPlatform`, Firebase `CommonUtils`, Unity Ads `Device`, BidMachine `DeviceInfo`/`DeviceUtils`, `gatewayprotocol` `hasRooted`) - hits are now attributed by owner class; SDK-owned probes report informational (`color: None`) "No - app code does not check root; only bundled SDKs probe for it (BidMachine, Firebase/Crashlytics, GameAnalytics, Unity Ads, Unity Ads bidding)" instead of red alarm.
+- fix(analyzer): PairIP license finding now reports canonical package `com/pairip/licensecheck` instead of whichever inner class sorts first.
+- perf(analyzer): shared structural `DexIndex` (string_ids/type_ids/method_ids parsed once) replaces per-check ASCII regex sweeps. `analyze(force)` on 84 MB / 9-dex Test.apk: **70.6 s -> 4.1 s (17.3x)**.
+  - dex index build: 2.86 s (67,135 classes, 9 method owners)
+  - packer: 0.42 s (reuses index)
+  - license: 0.14 s (substring scan 22x faster than regex over 67k classes)
+  - root/LP: 0.00 s (index already has string hits)
+- perf(dex_index): candidate-name memoization in method_ids loop cuts 1.56 s -> 1.11 s; needle scan restricted to string-data region (25 MB of 62 MB) cuts 0.94 s -> 0.41 s; `classes_lower` precomputed eliminates repeated `.lower()` calls.
+- perf(license): `classes_containing_any(("licens","lvl"))` substring scan replaces `_LICENSE_RE` regex (0.69 s -> 0.03 s for 67k names).
+- test: regression tests for both false positives (4 license, 5 root attribution) + E2E guard relaxed from `full_scan_dt > 5.0` to `> 1.0` (old floor assumed slow path).
+- lint: `ruff check src` = 0, `mypy src` = 0.
+- test suite: 1918 passed, 1 failed (pre-existing UI flake in `test_ui_apk_detail_widget.py::TestRepopulate::test_populate_resets_scroll_to_top`, passes in isolation 1.69 s), 8 skipped, 182.7 s.
+- research: LP-GUI (27 UI screenshots, 4-layer architecture), LP-DeCodes (full v12.10.4 smali/manifest/keys) analyzed and mapped.
+- docs: CHANGELOG.md, KNOW.md, RESEARCH.md updated with perf numbers, low-end findings, and LP original architecture.
