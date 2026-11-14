@@ -23,6 +23,7 @@ from PyQt6.QtWidgets import (
     QMessageBox,
     QProgressBar,
     QPushButton,
+    QSizePolicy,
     QSplitter,
     QStackedWidget,
     QStatusBar,
@@ -32,6 +33,7 @@ from PyQt6.QtWidgets import (
 )
 
 from core.i18n import t
+from core.version import VERSION
 
 from .apk_detail_widget import APKDetailWidget
 from .app_controller import AppController
@@ -67,7 +69,7 @@ class MainWindow(QMainWindow):
         self._wire_toolbox()
         self._install_shortcuts()
 
-        self._on_log("[i] LP-PC Suite v4.0.0 khởi động")
+        self._on_log(f"[i] LP-PC Suite v{VERSION} khởi động")
         self._on_log(
             "[i] Sẵn sàng nhận APK hoặc kết nối thiết bị ADB"
         )
@@ -163,19 +165,32 @@ class MainWindow(QMainWindow):
         layout.addWidget(version)
 
         self.btn_apps.clicked.connect(
-            lambda: self.stacked.setCurrentIndex(0)
+            lambda: self._set_page(0)
         )
         self.btn_detail.clicked.connect(
-            lambda: self.stacked.setCurrentIndex(1)
+            lambda: self._set_page(1)
         )
         self.btn_tools.clicked.connect(
-            lambda: self.stacked.setCurrentIndex(2)
+            lambda: self._set_page(2)
         )
         return sidebar
+
+    def _set_page(self, index: int) -> None:
+        """Switch stacked page and keep sidebar highlight in sync.
+
+        Previously the page changed without touching the sidebar buttons, so
+        navigating via "back" or via the controller left a stale highlight.
+        """
+        self.stacked.setCurrentIndex(index)
+        for idx, btn in enumerate(
+            (self.btn_apps, self.btn_detail, self.btn_tools)
+        ):
+            btn.setChecked(idx == index)
 
     # ------------------------------------------------------------
     def _build_toolbar(self) -> QToolBar:
         tb = QToolBar()
+        tb.setObjectName("mainToolbar")
         tb.setMovable(False)
         tb.setIconSize(QSize(18, 18))
 
@@ -183,7 +198,13 @@ class MainWindow(QMainWindow):
         self.search_edit.setPlaceholderText(
             t("toolbar.search_placeholder")
         )
-        self.search_edit.setMinimumWidth(220)
+        # Let the search field shrink first when the window is narrow, so
+        # the action buttons stay visible instead of collapsing into the
+        # toolbar overflow menu.
+        self.search_edit.setMinimumWidth(160)
+        self.search_edit.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
+        )
         self.search_edit.textChanged.connect(
             lambda _: self._filter_apps()
         )
@@ -197,6 +218,12 @@ class MainWindow(QMainWindow):
             t("toolbar.filter_custom"),
             t("toolbar.filter_system"),
         ])
+        # Size to a fixed content length rather than the longest localized
+        # item ("Kiểm tra License"), which alone consumed 268px.
+        self.filter_combo.setSizeAdjustPolicy(
+            QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
+        )
+        self.filter_combo.setMinimumContentsLength(9)
         self.filter_combo.currentTextChanged.connect(
             lambda _: self._filter_apps()
         )
@@ -292,7 +319,7 @@ class MainWindow(QMainWindow):
             "QPushButton:hover { color: #79c0ff; }"
         )
         back_btn.clicked.connect(
-            lambda: self.stacked.setCurrentIndex(0)
+            lambda: self._set_page(0)
         )
         back_layout.addWidget(back_btn)
         back_layout.addStretch()
@@ -473,8 +500,7 @@ class MainWindow(QMainWindow):
 
     def _on_escape(self) -> None:
         if self.stacked.currentIndex() != 0:
-            self.stacked.setCurrentIndex(0)
-            self.btn_apps.setChecked(True)
+            self._set_page(0)
 
     def _on_app_context_menu(
         self, pkg: str, name: str,
@@ -581,8 +607,7 @@ class MainWindow(QMainWindow):
         self.progress_bar.setValue(0)
 
     def _show_detail_page(self) -> None:
-        self.btn_detail.setChecked(True)
-        self.stacked.setCurrentIndex(1)
+        self._set_page(1)
 
     # ============================================================
     # SAFETY PROMPT

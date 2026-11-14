@@ -73,6 +73,75 @@ class TestPageSwitching:
         window._on_escape()
         assert window.stacked.currentIndex() == 0
 
+    def test_sidebar_highlight_follows_back_button(self, window):
+        window._show_detail_page()
+        assert window.btn_detail.isChecked()
+        assert not window.btn_apps.isChecked()
+        back = _find_back_button(window)
+        assert back is not None
+        back.click()
+        assert window.stacked.currentIndex() == 0
+        assert window.btn_apps.isChecked()
+        assert not window.btn_detail.isChecked()
+
+    def test_sidebar_highlight_follows_show_detail_page(self, window):
+        window._show_detail_page()
+        assert window.btn_detail.isChecked()
+        assert not window.btn_apps.isChecked()
+        assert not window.btn_tools.isChecked()
+
+    def test_sidebar_highlight_follows_escape(self, window):
+        window.btn_tools.click()
+        window._on_escape()
+        assert window.btn_apps.isChecked()
+        assert not window.btn_tools.isChecked()
+
+
+# ============================================================
+# Toolbar layout
+# ============================================================
+class TestToolbarLayout:
+    def test_no_overflow_at_1280(self, window, qtbot):
+        from PyQt6.QtWidgets import QPushButton, QToolBar
+        window.resize(1280, 820)
+        window.show()
+        qtbot.waitExposed(window)
+        tb = window.findChild(QToolBar)
+        hidden = [
+            b.text() for b in tb.findChildren(QPushButton)
+            if not b.isVisible()
+        ]
+        assert not hidden, f"hidden toolbar buttons: {hidden}"
+
+    def test_search_field_can_shrink(self, window):
+        assert window.search_edit.minimumWidth() <= 160
+        from PyQt6.QtWidgets import QSizePolicy
+        assert (
+            window.search_edit.sizePolicy().horizontalPolicy()
+            == QSizePolicy.Policy.Expanding
+        )
+
+    def test_filter_combo_does_not_size_to_longest_item(self, window):
+        # "Kiểm tra License" alone is ~268px at default policy.
+        assert window.filter_combo.minimumContentsLength() == 9
+        assert window.filter_combo.minimumSizeHint().width() < 268
+
+
+# ============================================================
+# Version consistency
+# ============================================================
+class TestVersion:
+    def test_startup_log_uses_shared_version(self, window):
+        from core.version import VERSION
+        text = window.log.toPlainText()
+        assert f"v{VERSION}" in text
+        assert "v4.0.0" not in text
+
+    def test_i18n_sidebar_version_matches_shared_version(self):
+        from core.i18n import t
+        from core.version import VERSION
+        assert t("sidebar.version") == f"v{VERSION}"
+
 
 # ============================================================
 # Log panel
@@ -264,3 +333,14 @@ class TestDragEvents:
         e = self._mk_event(mime)
         window.dragEnterEvent(e)
         assert e.ignored
+
+
+# ============================================================
+# Helpers
+# ============================================================
+def _find_back_button(window):
+    from PyQt6.QtWidgets import QPushButton
+    for btn in window.findChildren(QPushButton):
+        if "Quay l" in btn.text() or "back" in btn.text().lower():
+            return btn
+    return None

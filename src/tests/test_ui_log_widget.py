@@ -79,3 +79,29 @@ class TestBlockCap:
             widget.append_log(f"line {i}")
         # maximumBlockCount enforces cap
         assert widget.blockCount() <= LogWidget.MAX_BLOCKS
+
+
+class TestAutoScroll:
+    def _fill(self, widget, qtbot, n=100):
+        widget.resize(400, 160)
+        widget.show()
+        qtbot.waitExposed(widget)
+        for i in range(n):
+            widget.append_log(f"line {i} " + "x" * 40)
+        qtbot.waitUntil(
+            lambda: widget.verticalScrollBar().maximum() > 0, timeout=3000
+        )
+        return widget.verticalScrollBar()
+
+    def test_follows_when_at_bottom(self, widget, qtbot):
+        bar = self._fill(widget, qtbot)
+        assert bar.value() == bar.maximum()
+        widget.append_log("another line")
+        assert bar.value() == bar.maximum()
+
+    def test_does_not_yank_while_reading(self, widget, qtbot):
+        bar = self._fill(widget, qtbot)
+        bar.setValue(0)
+        assert bar.value() == 0
+        widget.append_log("new line while reading")
+        assert bar.value() == 0, "log jumped to the bottom while reading"

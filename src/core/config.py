@@ -242,8 +242,8 @@ _DEFAULTS: dict[str, Any] = {
     "updater": {
         "check_on_startup": "auto",
         "update_url": (
-            "https://raw.githubusercontent.com/Freezdy413485/"
-            "LP-PC-Suite/main/version.json"
+            "https://raw.githubusercontent.com/VuJohn123/"
+            "LuckyPatcher-PC/main/version.json"
         ),
         "timeout": 8.0,
         "cache_check_hours": 24,

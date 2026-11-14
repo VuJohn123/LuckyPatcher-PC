@@ -91,9 +91,18 @@ class APKDetailWidget(QWidget):
         main_layout.setContentsMargins(0, 0, 0, 0)
 
         scroll = QScrollArea()
+        scroll.setObjectName("apkDetailScroll")
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self.scroll_area = scroll
         self.content_widget = QWidget()
+        self.content_widget.setObjectName("apkDetailContent")
+        # Fusion style paints QScrollArea viewport with palette Base (#ffffff)
+        # which ignores the global dark QSS. A local rule on the content
+        # widget is the only reliable way to cover it.
+        self.content_widget.setStyleSheet(
+            "QWidget#apkDetailContent { background-color: #0d1117; }"
+        )
         self.content_layout = QVBoxLayout(self.content_widget)
         self.content_layout.setContentsMargins(16, 16, 16, 16)
         self.content_layout.setSpacing(14)
@@ -106,8 +115,15 @@ class APKDetailWidget(QWidget):
     def clear(self) -> None:
         while self.content_layout.count():
             child = self.content_layout.takeAt(0)
-            if child.widget():
-                child.widget().deleteLater()
+            widget = child.widget()
+            if widget is None:
+                continue
+            # Hide immediately: deleteLater() leaves the widget as a visible
+            # child until the event loop runs, so a fast repopulate would
+            # briefly paint two overlapping copies.
+            widget.hide()
+            widget.setParent(None)
+            widget.deleteLater()
 
     def populate(self, analyzer_result: dict) -> None:
         self.clear()
@@ -122,6 +138,11 @@ class APKDetailWidget(QWidget):
         self._add_features(findings)
         self._add_quick_actions(findings)
         self.content_layout.addStretch()
+        # New content should start at the top; otherwise the previous
+        # scroll offset is kept and the header is scrolled out of view.
+        bar = self.scroll_area.verticalScrollBar()
+        if bar is not None:
+            bar.setValue(0)
 
     # ============================================================
     # HEADER
@@ -264,7 +285,10 @@ class APKDetailWidget(QWidget):
     # FEATURES — with colored rows
     # ============================================================
     def _add_features(self, findings: list[dict]) -> None:
-        if not findings:
+        # Packer findings already render in the dedicated warning box above.
+        # Re-listing them here duplicates the same row on screen.
+        rows = [f for f in findings if f.get("type") != "packer"]
+        if not rows:
             return
 
         group = QGroupBox(t("detail.features_title"))
@@ -272,7 +296,7 @@ class APKDetailWidget(QWidget):
         outer.setSpacing(6)
         outer.setContentsMargins(12, 20, 12, 12)
 
-        for f in findings:
+        for f in rows:
             row_widget = self._make_feature_row(f)
             outer.addWidget(row_widget)
 

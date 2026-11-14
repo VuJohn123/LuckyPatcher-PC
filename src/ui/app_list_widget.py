@@ -34,6 +34,20 @@ _COLOR_EMOJI = {
     "white": "📱",
 }
 
+# The toolbar combo shows localized labels, but the filter logic is keyed on
+# canonical English names. Map both spellings to the same key.
+_FILTER_ALIASES = {
+    "all": "All",
+    "tất cả": "All",
+    "license check": "License check",
+    "kiểm tra license": "License check",
+    "ads": "Ads",
+    "quảng cáo": "Ads",
+    "custom patch": "Custom patch",
+    "system": "System",
+    "hệ thống": "System",
+}
+
 
 class _AppItemWidget(QWidget):
     """Card-style item — stripe màu + icon + text vertical-center."""
@@ -229,8 +243,11 @@ class AppListWidget(QListWidget):
         findings = self._colors_to_findings(colors)
         item = QListWidgetItem()
         widget = _AppItemWidget(name, package, colors, is_patched)
-        # Đảm bảo sizeHint = minimum height của widget
-        item.setSizeHint(widget.sizeHint())
+        # sizeHint() ignores the widget's minimumHeight, so the row would be
+        # 58px while the card needs 64px and got clipped by 6px at the bottom.
+        hint = widget.sizeHint()
+        hint.setHeight(max(hint.height(), widget.minimumHeight()))
+        item.setSizeHint(hint)
         item.setData(Qt.ItemDataRole.UserRole, {
             "name": name,
             "package": package,
@@ -321,7 +338,17 @@ class AppListWidget(QListWidget):
 
     # ------------------------------------------------------------------
     def filter(self, text: str, filter_type: str = "All") -> None:
+        """Filter by free text + category.
+
+        `filter_type` may be a canonical English key ("All", "License check",
+        "Ads", "Custom patch", "System") or the localized label actually shown
+        in the toolbar combo. Comparing against raw combo text used to fail
+        for every non-English locale, leaving all rows visible.
+        """
         text = (text or "").lower()
+        key = _FILTER_ALIASES.get(
+            (filter_type or "").strip().lower(), (filter_type or "").strip()
+        )
         for item in self.all_items:
             data = item.data(Qt.ItemDataRole.UserRole)
             colors = data.get("colors", [])
@@ -332,14 +359,14 @@ class AppListWidget(QListWidget):
             if text and text not in name and text not in package:
                 visible = False
             if (
-                (filter_type == "License check" and "green" not in colors)
-                or (filter_type == "Ads" and "blue" not in colors)
+                (key == "License check" and "green" not in colors)
+                or (key == "Ads" and "blue" not in colors)
                 or (
-                    filter_type == "Custom patch"
+                    key == "Custom patch"
                     and "yellow" not in colors
                 )
                 or (
-                    filter_type == "System"
+                    key == "System"
                     and not ("purple" in colors or "orange" in colors)
                 )
             ):

@@ -4,13 +4,13 @@ Auto-updater qua GitHub raw.
 Fetch version.json từ raw.githubusercontent.com, so sánh version,
 emit signal nếu có update mới. Non-blocking, chạy trong thread riêng.
 
-Format version.json:
+Format version.json (served from this repo's main branch):
 {
-  "version": "4.1.0",
-  "release_date": "2026-10-01",
+  "version": "5.0.0",
+  "release_date": "2026-11-13",
   "min_python": "3.11",
   "changelog": ["Fix X", "Add Y"],
-  "download_url": "https://github.com/user/repo/releases/..."
+  "download_url": "https://github.com/VuJohn123/LuckyPatcher-PC/releases"
 }
 """
 from __future__ import annotations
@@ -20,14 +20,18 @@ import threading
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
+from core.version import VERSION
+
 logger = logging.getLogger(__name__)
 
 
-CURRENT_VERSION = "4.0.0"
+CURRENT_VERSION = VERSION
 
+# Points at this project's own repository. The old URL referenced
+# Freezdy413485/LP-PC-Suite, which does not exist (404 on every startup).
 DEFAULT_UPDATE_URL = (
-    "https://raw.githubusercontent.com/Freezdy413485/"
-    "LP-PC-Suite/main/version.json"
+    "https://raw.githubusercontent.com/VuJohn123/"
+    "LuckyPatcher-PC/main/version.json"
 )
 
 
@@ -113,6 +117,13 @@ class GitHubUpdater:
                 timeout=self.timeout,
                 headers={"User-Agent": f"LP-PC-Suite/{self.current_version}"},
             )
+            # A missing version.json is a deployment gap, not an error worth
+            # logging at INFO on every startup.
+            if resp.status_code == 404:
+                logger.debug(
+                    "Update manifest not found (%s)", self.update_url
+                )
+                return None
             resp.raise_for_status()
             data = resp.json()
         except Exception as e:

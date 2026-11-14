@@ -1,0 +1,13 @@
+{
+  "version": "5.0.0",
+  "release_date": "2026-11-13",
+  "min_python": "3.11",
+  "changelog": [
+    "GUI: fix white scroll-area background on the APK detail page",
+    "GUI: filter dropdown now works in Vietnamese",
+    "GUI: sidebar highlight follows page changes",
+    "GUI: log no longer jumps while you are reading",
+    "Fix startup update check hitting a non-existent repository"
+  ],
+  "download_url": "https://github.com/VuJohn123/LuckyPatcher-PC/releases"
+}

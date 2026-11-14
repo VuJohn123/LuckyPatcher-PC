@@ -22,8 +22,14 @@ class LogWidget(QPlainTextEdit):
     def append_log(self, message: str) -> None:
         if not message:
             return
+        # Only auto-scroll when the user is already at the bottom. Otherwise
+        # new log lines yank the viewport away while they read older output.
+        bar = self.verticalScrollBar()
+        at_bottom = bar is not None and bar.value() >= bar.maximum() - 1
+
         self.appendPlainText(message)
-        # Auto-scroll xuống cuối
+        if not at_bottom:
+            return
         cursor = self.textCursor()
         cursor.movePosition(QTextCursor.MoveOperation.End)
         self.setTextCursor(cursor)

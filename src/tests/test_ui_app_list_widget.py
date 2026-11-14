@@ -75,6 +75,14 @@ class TestAddApp:
         w = widget.itemWidget(item)
         assert w.minimumHeight() >= 60
 
+    def test_row_not_clipped_by_card_height(self, widget):
+        """The row must be at least as tall as the card, or it gets cut."""
+        widget.add_app("A", "com.a", ["green"])
+        item = widget.item(0)
+        w = widget.itemWidget(item)
+        assert w is not None
+        assert item.sizeHint().height() >= w.minimumHeight()
+
     def test_widget_attached(self, widget):
         widget.add_app("A", "com.a", ["green"])
         item = widget.item(0)
@@ -220,6 +228,52 @@ class TestFilterByType:
         widget.filter("", "All")
         assert not widget.item(0).isHidden()
         assert not widget.item(1).isHidden()
+
+
+# ============================================================
+# filter — localized labels (combo shows vi text)
+# ============================================================
+class TestFilterByLocalizedLabel:
+    """Toolbar combo passes its localized text straight to filter()."""
+
+    def _populate(self, widget):
+        widget.add_app("LicApp", "com.a", ["green"])
+        widget.add_app("AdsApp", "com.b", ["blue"])
+        widget.add_app("SysApp", "com.c", ["purple"])
+
+    def test_vietnamese_license(self, widget):
+        self._populate(widget)
+        widget.filter("", "Kiểm tra License")
+        assert [not widget.item(i).isHidden() for i in range(3)] == [
+            True, False, False,
+        ]
+
+    def test_vietnamese_ads(self, widget):
+        self._populate(widget)
+        widget.filter("", "Quảng cáo")
+        assert [not widget.item(i).isHidden() for i in range(3)] == [
+            False, True, False,
+        ]
+
+    def test_vietnamese_system(self, widget):
+        self._populate(widget)
+        widget.filter("", "Hệ thống")
+        assert [not widget.item(i).isHidden() for i in range(3)] == [
+            False, False, True,
+        ]
+
+    def test_vietnamese_all(self, widget):
+        self._populate(widget)
+        widget.filter("", "Tất cả")
+        assert [not widget.item(i).isHidden() for i in range(3)] == [
+            True, True, True,
+        ]
+
+    def test_localized_label_case_insensitive(self, widget):
+        self._populate(widget)
+        widget.filter("", "quảng cáo")
+        assert not widget.item(1).isHidden()
+        assert widget.item(0).isHidden()
 
 
 # ============================================================

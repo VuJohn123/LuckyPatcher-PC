@@ -626,9 +626,29 @@ lifecycle.
 - `_SPECIAL_MODES = {change_perms, resign, clone}`.
 
 ### 10.4 Layout rules
-- Sidebar 3 pages (apps/detail/tools) via `QStackedWidget`.
+- Sidebar 3 pages (apps/detail/tools) via `QStackedWidget`. Always switch with
+  `MainWindow._set_page(index)` — it sets the page **and** the sidebar
+  highlight; direct `stacked.setCurrentIndex()` leaves a stale highlight.
 - `QSplitter` vertical: content (stretch 4) + log panel (stretch 1);
   Ctrl+J collapse → sizes `[total−40, 40]`, expand → `[75%, 25%]`.
+- Toolbar must fit at 1280px: `search_edit` is `Expanding` with min width 160,
+  and `filter_combo` uses `AdjustToMinimumContentsLengthWithIcon` +
+  `minimumContentsLength(9)`. Sizing the combo to its longest localized item
+  ("Kiểm tra License", 268px) pushes buttons into the overflow menu.
+- `APKDetailWidget` paints its own dark background via a **local** stylesheet
+  on `content_widget` (`QWidget#apkDetailContent`). Fusion draws
+  `QScrollArea` viewports from the palette Base (`#ffffff`) and ignores
+  global QSS — verified across 5 QSS variants.
+- `APKDetailWidget.clear()` hides and detaches widgets immediately before
+  `deleteLater()`; otherwise a fast repopulate paints two copies until the
+  event loop runs. `populate()` resets the scrollbar to 0.
+- `LogWidget.append_log()` only auto-scrolls when the view is already at the
+  bottom, so it never yanks the viewport while the user reads.
+- `AppListWidget.filter(text, type)` accepts canonical English keys *and* the
+  localized combo labels (`_FILTER_ALIASES`); the combo passes its raw text.
+- `AppListWidget.add_app()` sets the row `sizeHint` to
+  `max(widget.sizeHint(), widget.minimumHeight())`. `sizeHint()` alone is
+  58px while the card needs 64px, so every row was clipped by 6px.
 - Font base 15 px; log panel uses `Cascadia Code`/`Consolas` 12 px.
 - Color map: green=License, blue=Ads, yellow=Custom, purple=System boot,
   orange=System app, red=Protected/packed, white=Clean.
@@ -652,6 +672,12 @@ Normal+Signature, All, None.
 timestamp/Python version/platform + traceback. Skips `KeyboardInterrupt`.
 Calls `sys.__excepthook__` at end (stderr traceback still works). Guarded so
 hook itself never raises.
+
+**Testing gotcha:** with `show_dialog=True` the hook calls `msg.exec()`, which
+blocks forever once any qtbot test has left a live `QApplication` behind. Any
+test exercising that path must monkeypatch `QApplication.instance` to return
+`None` (see `test_ui_exception_hook.py::test_hook_handles_missing_qt`);
+otherwise the full suite hangs at that test.
 
 ---
 
@@ -774,6 +800,7 @@ guards.
 | Metrics / history | `core/metrics.py`, `core/patch_history.py` |
 | Bundletool | `core/bundletool_utils.py` |
 | i18n | `core/i18n.py`, `assets/i18n/{vi,en}.json` |
+| Version (single source) | `core/version.py` |
 | GUI | `ui/*`, `core/i18n.py` |
 
 **Test entry points**: `test_xposed_generator_compile_real.py` (real smali),
@@ -835,3 +862,19 @@ Pending manual continuation (subagents exhausted). Key areas:
 - `scanner/checks/classifier.py` — heuristics confidence scoring
 - `patcher/*` — smali injection validity (register counts, `.locals`),
   regex ReDoS safety, path prefilter false negatives
+
+### 17.5 GUI audit (fixed 2026-11)
+Eight defects were measured on the real window (1280–1366px, 96 DPI, Segoe UI
+9pt) and fixed; see `CHANGELOG.md` for the numbers. Rules to keep them fixed:
+- Never compare localized combo text against canonical keys — map through
+  `_FILTER_ALIASES` (`src/ui/app_list_widget.py`).
+- Keep the toolbar at `hint ≤ 1049` so 1280px windows show all buttons.
+- Row `sizeHint` must cover the card's `minimumHeight`, or cards get clipped.
+- `QScrollArea` viewport colour must be set by a local stylesheet on the
+  content widget; global QSS cannot reach it under Fusion.
+- Route page switches through `MainWindow._set_page()`.
+- `APKDetailWidget.clear()` must hide/detach, not only `deleteLater()`.
+
+**Outstanding (not a bug):** `src/ui/preview_dialog.py` is fine — the earlier
+`TypeError` came from calling `PreviewDialog("Title", "text")`; the real
+signature is `PreviewDialog(patches: list[dict], parent=None)`.

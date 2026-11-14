@@ -152,8 +152,17 @@ class TestDialogBehavior:
     def test_hook_handles_missing_qt(
         self, clean_hook, tmp_path, monkeypatch,
     ):
-        """Khi show_dialog=True nhưng QApplication.instance()=None."""
+        """Khi show_dialog=True nhưng QApplication.instance()=None.
+
+        Earlier qtbot tests in a full-suite run leave a live QApplication
+        behind, so force instance() to None. Otherwise the hook opens a
+        modal QMessageBox and blocks the whole run.
+        """
         monkeypatch.chdir(tmp_path)
+        from PyQt6.QtWidgets import QApplication
+        monkeypatch.setattr(
+            QApplication, "instance", staticmethod(lambda: None)
+        )
         install_gui_exception_hook(show_dialog=True)
 
         # Không có QApplication → hook không crash

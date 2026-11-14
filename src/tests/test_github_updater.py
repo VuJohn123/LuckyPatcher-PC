@@ -115,6 +115,42 @@ def test_check_sync_missing_version():
         assert updater.check_sync() is None
 
 
+def test_check_sync_404_is_silent(caplog):
+    """A missing manifest is a deployment gap, not startup noise."""
+    import logging
+    updater = GitHubUpdater()
+    with patch("requests.get") as mock_get:
+        mock_resp = MagicMock()
+        mock_resp.status_code = 404
+        mock_get.return_value = mock_resp
+        with caplog.at_level(logging.DEBUG):
+            assert updater.check_sync() is None
+    noisy = [
+        r for r in caplog.records
+        if r.levelno >= logging.INFO
+    ]
+    assert not noisy, [r.getMessage() for r in noisy]
+
+
+def test_default_update_url_points_at_this_repo():
+    from core.github_updater import DEFAULT_UPDATE_URL
+    assert "VuJohn123/LuckyPatcher-PC" in DEFAULT_UPDATE_URL
+    assert "Freezdy413485" not in DEFAULT_UPDATE_URL
+
+
+def test_current_version_matches_shared_version():
+    from core.github_updater import CURRENT_VERSION
+    from core.version import VERSION
+    assert CURRENT_VERSION == VERSION
+
+
+def test_config_update_url_points_at_this_repo():
+    from core.config import _DEFAULTS
+    url = _DEFAULTS["updater"]["update_url"]
+    assert "VuJohn123/LuckyPatcher-PC" in url
+    assert "Freezdy413485" not in url
+
+
 # ---------- check_async ----------
 def test_check_async_calls_callback():
     import time

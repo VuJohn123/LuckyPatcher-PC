@@ -134,6 +134,56 @@ class TestPackerWarning:
         all_labels = _collect_label_texts(widget)
         assert not any("Packed:" in t for t in all_labels)
 
+    def test_packer_not_duplicated_in_features(self, widget):
+        """The packer finding renders once, in the warning box only."""
+        findings = [{
+            "type": "packer",
+            "color": "red",
+            "title": "Packed: PairIP",
+            "description": "APK packed by PairIP",
+        }]
+        widget.populate(_sample_result(findings=findings))
+        texts = _collect_label_texts(widget)
+        # The warning box renders the title once; the feature row (which
+        # used to repeat it) must not be created.
+        assert sum(1 for t in texts if "Packed: PairIP" in t) == 1
+
+
+# ============================================================
+# Repopulate behaviour
+# ============================================================
+class TestRepopulate:
+    def test_clear_hides_widgets_before_event_loop(self, widget):
+        """Stale widgets must not stay painted until deleteLater() runs."""
+        from PyQt6.QtWidgets import QLabel
+        widget.populate(_sample_result())
+        first = [
+            lbl for lbl in widget.content_widget.findChildren(QLabel)
+            if lbl.text() == "Test App"
+        ]
+        assert first
+        widget.clear()
+        # No event loop ran: the old label objects still exist, but they are
+        # detached from the layout and no longer visible.
+        assert widget.content_layout.count() == 0
+        assert all(not lbl.isVisible() for lbl in first)
+
+    def test_populate_resets_scroll_to_top(self, widget, qtbot):
+        widget.resize(700, 220)
+        widget.show()
+        many = [
+            {"type": "license", "color": "green", "title": f"F{i}",
+             "description": "x " * 40}
+            for i in range(12)
+        ]
+        widget.populate(_sample_result(findings=many))
+        bar = widget.scroll_area.verticalScrollBar()
+        qtbot.waitUntil(lambda: bar.maximum() > 0, timeout=3000)
+        bar.setValue(bar.maximum())
+        assert bar.value() > 0
+        widget.populate(_sample_result(findings=many))
+        assert bar.value() == 0
+
 
 # ============================================================
 # Features
