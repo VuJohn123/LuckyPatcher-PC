@@ -88,7 +88,8 @@ def _scan_iap_fast(dex_bytes: bytes) -> tuple[str, str] | None:
     return None
 
 
-def check_iap(apk, get_all_dex_bytes, findings, available_patches) -> None:
+def check_iap(apk, get_all_dex_bytes, findings, available_patches,
+              index=None) -> None:
     try:
         perms = apk.get_permissions()
     except Exception:
@@ -105,6 +106,32 @@ def check_iap(apk, get_all_dex_bytes, findings, available_patches) -> None:
         })
         if "iap" not in available_patches:
             available_patches.append("iap")
+        return
+
+    if index is not None:
+        for prefix, label in _IAP_SIGNATURES:
+            hit = index.class_containing(prefix)
+            if hit:
+                findings.append({
+                    "type": "iap",
+                    "color": "green",
+                    "title": "InApp Purchases Available",
+                    "description": f"{label} — class {hit}",
+                    "details": [label, hit],
+                    "action": "iap_emulation",
+                })
+                if "iap" not in available_patches:
+                    available_patches.append("iap")
+                return
+
+        findings.append({
+            "type": "no_iap",
+            "color": None,
+            "title": "InApp Purchases",
+            "description": "Not detected",
+            "details": ["No billing found"],
+            "action": None,
+        })
         return
 
     for _dex_name, dex_bytes in get_all_dex_bytes():

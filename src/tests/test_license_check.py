@@ -221,3 +221,89 @@ def test_apk_get_activities_raises():
         )
 
     assert findings[0]["type"] == "no_license"
+
+
+# ============================================================
+# False-positive regressions
+# ============================================================
+def test_adjust_license_data_not_reported():
+    """Adjust `LicenseData` là DTO, không phải license check.
+
+    Regression: real APK (Zombie Tsunami) báo "License Verification Found:
+    Lcom/adjust/sdk/LicenseData;" dù class chỉ chứa dữ liệu.
+    """
+    apk = MagicMock()
+    apk.get_activities.return_value = []
+    dex = _make_dex([
+        _make_class("Lcom/adjust/sdk/LicenseData;", ["getData"]),
+    ])
+    findings: list = []
+    patches: list = []
+
+    with patch(
+        "scanner.checks.license_check.DEX", return_value=dex
+    ):
+        check_license(
+            apk, "/tmp/x.apk", lambda: [("classes.dex", b"x")],
+            findings, patches,
+        )
+
+    assert findings[0]["type"] == "no_license"
+    assert "license" not in patches
+
+
+def test_weak_license_name_with_check_method_is_reported():
+    """Tên yếu nhưng có method check thật → vẫn phát hiện."""
+    apk = MagicMock()
+    dex = _make_dex([
+        _make_class("Lcom/example/LicenseData;", ["checkLicense"]),
+    ])
+    findings: list = []
+    patches: list = []
+
+    with patch(
+        "scanner.checks.license_check.DEX", return_value=dex
+    ):
+        check_license(
+            apk, "/tmp/x.apk", lambda: [("classes.dex", b"x")],
+            findings, patches,
+        )
+
+    assert findings[0]["type"] == "license"
+
+
+def test_license_index_path_skips_adjust_dto():
+    """Index path cũng phải bỏ qua Adjust LicenseData."""
+    from scanner.checks.license_check import _scan_license_index
+    from scanner.dex_index import DexIndex
+
+    index = DexIndex(
+        classes=["Lcom/adjust/sdk/LicenseData;"],
+        classes_lower=["lcom/adjust/sdk/licensedata;"],
+        method_owners={},
+        method_display={},
+    )
+    assert _scan_license_index(index) is None
+
+
+def test_license_index_path_reports_pairip_package():
+    """PairIP label phải là package, không phải class con ngẫu nhiên."""
+    from scanner.checks.license_check import _scan_license_index
+    from scanner.dex_index import DexIndex
+
+    index = DexIndex(
+        classes=[
+            "Lcom/pairip/licensecheck/ILicenseV2ResultListener$Stub;",
+            "Lcom/pairip/licensecheck/LicenseClient;",
+        ],
+        classes_lower=[
+            "lcom/pairip/licensecheck/ilicensev2resultlistener$stub;",
+            "lcom/pairip/licensecheck/licenseclient;",
+        ],
+        method_owners={},
+        method_display={},
+    )
+    result = _scan_license_index(index)
+    assert result is not None
+    assert result[0] == "pairip"
+    assert result[1] == "com/pairip/licensecheck"

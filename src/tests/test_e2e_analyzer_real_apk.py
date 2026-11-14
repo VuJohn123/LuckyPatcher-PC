@@ -30,9 +30,10 @@ pytestmark = pytest.mark.skipif(
 def analyzed_apk():
     """One full analysis shared by the read-only E2E assertions.
 
-    A full scan of the 84 MB PairIP APK takes ~50-90 s; these checks used
-    to repeat it once per test. Cache round-trip tests still run their own
-    full scans because they measure the cache.
+    A full scan of the 84 MB PairIP APK takes ~4-5 s after the shared
+    DexIndex change (~70 s before); these checks used to repeat it once
+    per test. Cache round-trip tests still run their own full scans
+    because they measure the cache.
     """
     from scanner.analyzer import AppDeepAnalyzer
 
@@ -119,10 +120,11 @@ class TestPackerE2E:
 class TestAnalyzerCacheE2E:
     def test_second_analyze_is_significantly_faster(self):
         """
-        Cache hit phải nhanh hơn full scan ít nhất 5× (thực tế ~50-100×).
-        Relative threshold tránh flaky test trên máy chậm.
+        Cache hit phải nhanh hơn full scan ít nhất 5×.
 
-        Note: full scan trên Test.apk mất ~60-180s; cache hit ~1s.
+        Guard `full_scan_dt > 1.0` chỉ để bắt trường hợp cache stale
+        (full scan trả về tức thì). Không dùng floor 5s nữa: full scan
+        thật giờ chỉ ~4.5s sau khi share DexIndex, trước đó ~70s.
         """
         import time
 
@@ -133,7 +135,7 @@ class TestAnalyzerCacheE2E:
         t0 = time.monotonic()
         a1.analyze(force_reanalyze=True)
         full_scan_dt = time.monotonic() - t0
-        assert full_scan_dt > 5.0, (
+        assert full_scan_dt > 1.0, (
             f"Full scan quá nhanh ({full_scan_dt:.2f}s) — "
             f"có thể cache bị stale, test invalid"
         )

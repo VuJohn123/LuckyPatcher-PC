@@ -35,3 +35,36 @@ LP core work modes (from screenshot analysis):
 9. **Limitations to respect (no crash):** server-side verify, Play Integrity, native .so ads, WebView dynamic URLs, strong obfuscation — degrade with warnings, never fake success. → Ours: packer warning + signed/original-sig guards. ✓
 
 LP-DeCodes confirms version 12.10.4 + standalone proxy server APK (covered by our ws/iap proxy servers). No additional gap found.
+
+---
+
+## Low-end device optimization research (measured 2026-11-14)
+
+### Measured costs on 4-core, Python 3.11, 84 MB / 9-dex Test.apk
+| operation | time | memory | notes |
+|---|---:|---:|---|
+| `import androguard.core.apk` | 0.89 s | 20 MB | loads 106 top-level modules (lxml, cryptography, loguru, apkinspector, asn1crypto, ...) |
+| `APK(Test.apk)` parse | 1.83 s | 112 MB RSS | full binary manifest + resource parsing |
+| `APK + all getters` | 2.06 s | 116 MB | permissions(25), activities(73), services(15), receivers(9), providers(13), package, version, app_name |
+| `import PyQt6.QtWidgets` | 0.28 s | | |
+| `import scanner.analyzer` | 1.27 s | | includes DexIndex, security/license/iap/packer checks |
+| `orjson.dumps` x200 | 46 ms | | vs stdlib `json.dumps` 500 ms (10.9x) |
+| Python `-O` startup | no gain | | 1.27 s both; bytecode opt doesn't offset cold import |
+| `regex` package | not installed | | stdlib `re` used (`core/regex_safe.py` fallback) |
+| **Binary manifest (stdlib prototype)** | **47 ms read + 0 ms parse** | | **Exact match** on all fields vs androguard 1031 ms |
+| Analyzer full run | 4.1 s | peak 200 MB RSS | 67k classes, 9 method owners, 8 string hits |
+| Without `_dex_cache` | | 94 MB RSS | drops 106 MB; no perf penalty |
+
+### Optimization recommendations for low-end devices
+1. **Keep `orjson` with stdlib fallback** (already in `core/smali_utils.py`) — 10x faster cache I/O.
+2. **Lazy androguard import** — GUI already defers `scanner.analyzer` to worker thread; moves 0.9 s + 1.8 s off cold start. Background download/install paths should also import lazily.
+3. **Adopt stdlib binary manifest parser** — 47 ms vs 1031 ms; exact field parity for analyzer's needs (package, version, permissions, component counts). Can wrap with androguard fallback for edge cases (APKs with unusual manifests).
+4. **Optional `--no-dex-cache` / `drop_dex_after_index`** — after building `DexIndex`, clearing `_dex_cache` frees ~100 MB RSS (200 → 94 MB) with no analyze-time cost.
+5. **Keep `regex` package optional** — the 1031 ms manifest parse is in androguard's binary XML, not regex. stdlib `re` is sufficient.
+6. **Consider PyPy on Linux** — not applicable on Windows; on Linux the JIT can make the pure-Python `DexIndex` even faster.
+
+### Files touched by this research
+- `src/core/smali_utils.py` — orjson/json selection logic
+- `src/scanner/analyzer.py` — lazy androguard already implemented (deferred to `_analyze_worker`)
+- `src/scanner/dex_index.py` — pure-Python structural index (no androguard dependency)
+- `src/scanner/checks/*.py` — all checks accept `index=` kwarg, no androguard in fast path

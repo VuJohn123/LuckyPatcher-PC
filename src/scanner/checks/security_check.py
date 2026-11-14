@@ -42,6 +42,103 @@ _FAST_THRESHOLD = 1024
 # ============================================================
 # ROOT DETECTION PATTERNS
 # ============================================================
+# Names that only appear in an actual root check. `hasrootcause` is
+# deliberately absent: it is Throwable.getCause()'s sibling in the JDK,
+# not a root probe. Kotlin's `FilePathComponents.isRooted` is filtered by
+# `_ROOT_OWNER_DENYLIST` below.
+_ROOT_METHOD_EXACT: tuple[str, ...] = (
+    "ismagiskpresent",
+    "checkmagisk",
+    "checksupersu",
+    "checksuperuser",
+    "isrooted",
+    "isdevicerooted",
+    "isrootpresent",
+    "detectroot",
+    "hasrooted",
+    "rootbeer",
+)
+
+_ROOT_METHOD_PREFIXES: tuple[str, ...] = ("checkroot",)
+
+_ROOT_STRING_MARKERS: tuple[str, ...] = (
+    "com.scottyab.rootbeer",
+    "com.topjohnwu.magisk",
+    "com.noshufou.android.su",
+    "eu.chainfire.supersu",
+    "com.stericson.roottools",
+    "com.thirdparty.root",
+    "com.devadvance.root",
+    "com.koushikdutta.superuser",
+    "magisk",
+    "supersu",
+    "superuser",
+    "busybox",
+    "/system/xbin/su",
+    "/system/bin/su",
+    "/sbin/su",
+    "/su/bin/su",
+    "/data/local/xbin/su",
+    "/data/local/bin/su",
+    "test-keys",
+)
+
+# Root-manager package names only appear when something actively looks for
+# root apps, so they are strong evidence on their own.
+_ROOT_STRING_STRONG: tuple[str, ...] = (
+    "com.scottyab.rootbeer",
+    "com.topjohnwu.magisk",
+    "com.noshufou.android.su",
+    "eu.chainfire.supersu",
+    "com.stericson.roottools",
+    "com.thirdparty.root",
+    "com.devadvance.root",
+    "com.koushikdutta.superuser",
+)
+
+# Owner classes that define a root-ish method name but are not root checks.
+# Kotlin's `FilePathComponents` asks whether a path *has a root component*.
+_ROOT_OWNER_DENYLIST: tuple[str, ...] = (
+    "Lkotlin/io/FilePathComponents;",
+    "Lkotlin/io/FilesKt;",
+    "Lkotlin/io/FilesKt__FilePathComponentsKt;",
+)
+
+# Third-party SDKs that probe for root incidentally (ad fraud checks, crash
+# telemetry, bidding device info). A hit owned only by these is not the app
+# checking for root, so it must not be reported as an alarming finding.
+_ROOT_SDK_PREFIXES: tuple[tuple[str, str], ...] = (
+    ("Lcom/gameanalytics/", "GameAnalytics"),
+    ("Lcom/google/firebase/", "Firebase/Crashlytics"),
+    ("Lcom/google/android/gms/", "Google Play services"),
+    ("Lcom/google/android/recaptcha/", "reCAPTCHA"),
+    ("Lcom/unity3d/", "Unity Ads"),
+    ("Lgatewayprotocol/", "Unity Ads bidding"),
+    ("Lio/bidmachine/", "BidMachine"),
+    ("Lcom/applovin/", "AppLovin"),
+    ("Lcom/facebook/", "Facebook SDK"),
+    ("Lcom/adjust/", "Adjust"),
+    ("Lcom/mbridge/", "Mintegral"),
+    ("Lcom/ironsource/", "IronSource"),
+    ("Lcom/vungle/", "Vungle"),
+    ("Lcom/bytedance/", "ByteDance/Pangle"),
+    ("Lcom/appsflyer/", "AppsFlyer"),
+    ("Lcom/singular/", "Singular"),
+    ("Lcom/onesignal/", "OneSignal"),
+    ("Lcom/amplitude/", "Amplitude"),
+    ("Lcom/mixpanel/", "Mixpanel"),
+    ("Lcom/braze/", "Braze"),
+    ("Lcom/clevertap/", "CleverTap"),
+    ("Lio/sentry/", "Sentry"),
+    ("Lcom/sentry/", "Sentry"),
+    ("Lkotlin/", "Kotlin stdlib"),
+    ("Lkotlinx/", "Kotlin libraries"),
+)
+
+
+# ============================================================
+# ROOT DETECTION PATTERNS (legacy blob matcher)
+# ============================================================
 _ROOT_PATTERNS: tuple[str, ...] = (
     "com.scottyab.rootbeer",
     "com.topjohnwu.magisk",
@@ -88,6 +185,9 @@ _LP_PATTERNS: tuple[str, ...] = (
     "suspatcher",
     "uret patcher",
 )
+
+# Same needles, exposed for the shared DexIndex.
+LP_STRING_MARKERS: tuple[str, ...] = _LP_PATTERNS
 
 
 # ============================================================
@@ -216,44 +316,143 @@ def _match_patterns(
 # ============================================================
 # PUBLIC — ROOT DETECTION
 # ============================================================
+def _sdk_label(owner: str) -> str | None:
+    """Return the SDK name owning `owner`, or None for app/first-party code."""
+    for prefix, label in _ROOT_SDK_PREFIXES:
+        if owner.startswith(prefix):
+            return label
+    return None
+
+
+def _root_hits_from_index(index) -> dict:
+    """Owner-aware root evidence from a :class:`DexIndex`.
+
+    Returns:
+        {
+          "app": [labels],      # first-party / unknown-owner probes
+          "sdk": {sdk: [labels]},
+          "weak_strings": [...],  # su paths, test-keys, generic words
+        }
+    """
+    denylist = set(_ROOT_OWNER_DENYLIST)
+    app_hits: list[str] = []
+    sdk_hits: dict[str, list[str]] = {}
+    seen: set[str] = set()
+
+    def record(method: str, owners: set[str]) -> None:
+        for owner in sorted(owners - denylist):
+            short = owner.rsplit("/", 1)[-1].rstrip(";")
+            label = f"{short}.{index.display_name(method)}"
+            if label in seen:
+                continue
+            seen.add(label)
+            sdk = _sdk_label(owner)
+            if sdk is None:
+                app_hits.append(label)
+            else:
+                sdk_hits.setdefault(sdk, []).append(label)
+
+    for method in _ROOT_METHOD_EXACT:
+        record(method, index.owners_of(method))
+
+    for prefix in _ROOT_METHOD_PREFIXES:
+        for mname, owners in index.method_owners.items():
+            if mname.startswith(prefix):
+                record(mname, owners)
+
+    strong: list[str] = [
+        m for m in _ROOT_STRING_STRONG if index.has_string(m)
+    ]
+    weak: list[str] = [
+        m for m in _ROOT_STRING_MARKERS
+        if m not in _ROOT_STRING_STRONG and index.has_string(m)
+    ]
+
+    return {
+        "app": app_hits + strong,
+        "sdk": sdk_hits,
+        "weak_strings": weak,
+    }
+
+
 def check_root_detection(
     get_all_dex_bytes,
     findings: list[dict],
     all_names: list[str] | None = None,
+    index=None,
 ) -> None:
     """Detect root detection. LUÔN append 1 finding."""
     if findings is None:
         return
 
+    app_hits: list[str] = []
+    sdk_hits: dict[str, list[str]] = {}
+    weak_strings: list[str] = []
+
     try:
-        if all_names is None:
-            all_names = _extract_dex_names(get_all_dex_bytes)
-        hits = _match_patterns(all_names, _ROOT_PATTERNS)
+        if index is not None:
+            evidence = _root_hits_from_index(index)
+            app_hits = evidence["app"]
+            sdk_hits = evidence["sdk"]
+            weak_strings = evidence["weak_strings"]
+        else:
+            if all_names is None:
+                all_names = _extract_dex_names(get_all_dex_bytes)
+            # Legacy blob path has no owner information, so every match is
+            # treated as app-level (conservative).
+            app_hits = _match_patterns(all_names, _ROOT_PATTERNS)
     except Exception as e:
         logger.warning("check_root_detection failed: %s", e)
-        hits = []
+        app_hits = []
 
-    if not hits:
+    # First-party evidence wins; SDK-only evidence is informational.
+    if app_hits:
+        matched_display = ", ".join(app_hits[:3])
         findings.append({
             "type": "root_detection",
-            "color": None,
+            "color": "red",
             "title": "Root Detection",
-            "description": "No root detection detected",
-            "details": [],
+            "description": (
+                f"Yes — app code checks for root "
+                f"(matched: {matched_display})"
+            ),
+            "details": list(app_hits),
             "action": None,
         })
         return
 
-    matched_display = ", ".join(hits[:3])
+    if sdk_hits or weak_strings:
+        sdk_names = sorted(sdk_hits)
+        detail: list[str] = []
+        for sdk in sdk_names:
+            detail.extend(sdk_hits[sdk])
+        detail.extend(weak_strings)
+        if sdk_names:
+            summary = (
+                f"No — app code does not check root; only bundled SDKs "
+                f"probe for it ({', '.join(sdk_names)})"
+            )
+        else:
+            summary = (
+                "No — app code does not check root; only incidental "
+                "root-related strings were found"
+            )
+        findings.append({
+            "type": "root_detection",
+            "color": None,
+            "title": "Root Detection",
+            "description": summary,
+            "details": detail,
+            "action": None,
+        })
+        return
+
     findings.append({
         "type": "root_detection",
-        "color": "red",
+        "color": None,
         "title": "Root Detection",
-        "description": (
-            f"Yes — App may detect root access "
-            f"(matched: {matched_display})"
-        ),
-        "details": list(hits),
+        "description": "No root detection detected",
+        "details": [],
         "action": None,
     })
 
@@ -265,15 +464,22 @@ def check_lp_detection(
     get_all_dex_bytes,
     findings: list[dict],
     all_names: list[str] | None = None,
+    index=None,
 ) -> None:
     """Detect LP artifacts. LUÔN append 1 finding."""
     if findings is None:
         return
 
     try:
-        if all_names is None:
-            all_names = _extract_dex_names(get_all_dex_bytes)
-        hits = _match_patterns(all_names, _LP_PATTERNS)
+        if index is not None:
+            hits = [
+                index.string_hits[m.lower()] for m in _LP_PATTERNS
+                if index.has_string(m)
+            ]
+        else:
+            if all_names is None:
+                all_names = _extract_dex_names(get_all_dex_bytes)
+            hits = _match_patterns(all_names, _LP_PATTERNS)
     except Exception as e:
         logger.warning("check_lp_detection failed: %s", e)
         hits = []

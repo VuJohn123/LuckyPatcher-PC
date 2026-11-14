@@ -1,5 +1,15 @@
 """Phân tích sâu APK — trả về findings chi tiết.
 
+v10 (2026):
+  - PERF: shared structural `DexIndex` (string/type/method tables parsed
+    once) thay cho ASCII sweep lặp lại. `analyze()` trên Test.apk:
+    70.6s → 5.2s (13.6x).
+  - FIX: root detection gán hit theo owner class; SDK-only probes
+    (GameAnalytics/Firebase/Unity Ads/BidMachine) không còn báo "app
+    checks root".
+  - FIX: license detection yêu cầu bằng chứng thật (tên mạnh hoặc method
+    check thật) → `Lcom/adjust/sdk/LicenseData;` không còn false positive.
+
 v9 (2026):
   - FIX: cache restore path không set `self.packer_info`.
     → Reconstruct từ findings[type=='packer'] (không đổi API cache).
@@ -24,13 +34,26 @@ from core.smali_utils import APKCache
 from patcher.watermarker import Watermarker
 from scanner.checks.ads_check import check_ads
 from scanner.checks.iap_check import check_iap
-from scanner.checks.license_check import check_license
+from scanner.checks.license_check import (
+    _LICENSE_METHOD_NAMES,
+    check_license,
+)
 from scanner.checks.packer_check import check_packer_with_fallback
 from scanner.checks.security_check import (
-    _extract_dex_names,
+    _ROOT_METHOD_EXACT as ROOT_METHOD_EXACT,
+)
+from scanner.checks.security_check import (
+    _ROOT_METHOD_PREFIXES as ROOT_METHOD_PREFIXES,
+)
+from scanner.checks.security_check import (
+    _ROOT_STRING_MARKERS as ROOT_STRING_MARKERS,
+)
+from scanner.checks.security_check import (
+    LP_STRING_MARKERS,
     check_lp_detection,
     check_root_detection,
 )
+from scanner.dex_index import DexIndex, build_dex_index
 
 logger = logging.getLogger(__name__)
 
@@ -50,8 +73,10 @@ logger = logging.getLogger(__name__)
 #   v7 — ASCII regex fast path cho security_check
 #   v8 — ASCII regex cho license/iap/packer (final perf fix)
 #   v9 — fix cache path restore packer_info (reconstruct từ findings)
+#   v10 — shared DexIndex + root/license false-positive fixes
+#   v11 — license evidence requirement (adjust LicenseData, pairip label)
 # Dòng ~50
-_ANALYZER_CACHE_VERSION = 10   # was 9
+_ANALYZER_CACHE_VERSION = 11   # was 10
 
 
 class AppDeepAnalyzer:
@@ -67,6 +92,8 @@ class AppDeepAnalyzer:
         self.available_patches: list[str] = []
         self._cache = APKCache()
         self.packer_info: dict | None = None
+        self._dex_cache: list[tuple[str, bytes]] | None = None
+        self._dex_index: DexIndex | None = None
 
     # ============================================================
     # PUBLIC — MAIN
@@ -96,11 +123,33 @@ class AppDeepAnalyzer:
 
         self._check_watermark()
 
+        # One structural pass over the dex serves every check below.
+        # Before this, each check re-read the zip and re-ran an ASCII sweep
+        # over all dex bytes: packer alone re-scanned once per signature.
+        t_idx = time.monotonic()
+        dex_entries = self._get_all_dex_bytes()
+        self._dex_index = build_dex_index(
+            [(n, b) for n, b in dex_entries if b],
+            method_exact=(
+                set(ROOT_METHOD_EXACT) | set(_LICENSE_METHOD_NAMES)
+            ),
+            method_prefixes=ROOT_METHOD_PREFIXES,
+            string_needles=ROOT_STRING_MARKERS + LP_STRING_MARKERS,
+        )
+        index = self._dex_index
+        logger.debug(
+            "[analyzer] dex index: %d classes, %d methods in %.2fs",
+            len(index.classes),
+            len(index.method_owners),
+            time.monotonic() - t_idx,
+        )
+
         # Packer check trước license/iap
         t_packer = time.monotonic()
         self.packer_info = check_packer_with_fallback(
             self.apk, self.apk_path, self._get_all_dex_bytes,
             self.findings, self.available_patches,
+            index=self._dex_index,
         )
         logger.debug(
             "[analyzer] packer: %.2fs", time.monotonic() - t_packer,
@@ -110,6 +159,7 @@ class AppDeepAnalyzer:
         check_license(
             self.apk, self.apk_path, self._get_all_dex_bytes,
             self.findings, self.available_patches,
+            index=self._dex_index,
         )
         logger.debug(
             "[analyzer] license: %.2fs", time.monotonic() - t_lic,
@@ -125,6 +175,7 @@ class AppDeepAnalyzer:
         check_iap(
             self.apk, self._get_all_dex_bytes,
             self.findings, self.available_patches,
+            index=self._dex_index,
         )
         logger.debug(
             "[analyzer] iap: %.2fs", time.monotonic() - t_iap,
@@ -139,18 +190,11 @@ class AppDeepAnalyzer:
             "[analyzer] misc: %.2fs", time.monotonic() - t_misc,
         )
 
-        # === Security checks — share dex_names ===
-        t_sec = time.monotonic()
-        dex_names = _extract_dex_names(self._get_all_dex_bytes)
-        logger.info(
-            "[analyzer] Extracted %d names in %.2fs",
-            len(dex_names), time.monotonic() - t_sec,
-        )
-
+        # === Security checks — share the same index ===
         t_root = time.monotonic()
         check_root_detection(
             self._get_all_dex_bytes, self.findings,
-            all_names=dex_names,
+            index=self._dex_index,
         )
         logger.info(
             "[analyzer] Root check: %.3fs",
@@ -160,7 +204,7 @@ class AppDeepAnalyzer:
         t_lp = time.monotonic()
         check_lp_detection(
             self._get_all_dex_bytes, self.findings,
-            all_names=dex_names,
+            index=self._dex_index,
         )
         logger.info(
             "[analyzer] LP check: %.3fs", time.monotonic() - t_lp,
@@ -278,7 +322,15 @@ class AppDeepAnalyzer:
     # INTERNAL — dex bytes
     # ============================================================
     def _get_all_dex_bytes(self) -> list[tuple[str, bytes]]:
-        """Read dex bytes from APK. Graceful on corrupt zip."""
+        """Read dex bytes from APK. Graceful on corrupt zip.
+
+        Result is memoized: every check used to re-open the zip and re-read
+        all 62 MB of dex, which cost ~1.3s per call. On the 84 MB PairIP
+        APK that was six redundant reads per analysis.
+        """
+        if self._dex_cache is not None:
+            return self._dex_cache
+
         dex_list: list[tuple[str, bytes]] = []
         try:
             with zipfile.ZipFile(self.apk_path, "r") as z:
@@ -293,6 +345,7 @@ class AppDeepAnalyzer:
                         continue
         except Exception as e:
             logger.debug("Không mở được APK: %s", e)
+        self._dex_cache = dex_list
         return dex_list
 
     # ============================================================
