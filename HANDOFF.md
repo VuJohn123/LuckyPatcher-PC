@@ -1,8 +1,8 @@
 # HANDOFF.md — LP-PC Suite
 
-**Version:** 5.0.0 · **Last commit:** `9651a58` (origin/main)  
+**Version:** 5.0.0 · **Last commit:** `c273589` (origin/main)  
 **Python:** 3.11 · **Platform:** Windows (win32)  
-**Test suite:** 1998 passed, 8 skipped (~188s)  
+**Test suite:** 1998 passed, 8 skipped (~332s)  
 **Lint:** `ruff check src/` clean · **Types:** `mypy` clean across `core/patcher/scanner/ui/adb/mcp/plugins`
 
 ---
@@ -24,7 +24,7 @@ LP-PC Suite is the desktop port of **Lucky Patcher v12.10.4** (mobile). It analy
 ```
 LuckyPatcher-PC/
 ├── .github/workflows/ci.yml       # CI + GitHub Releases automation
-├── assets/i18n/                   # 8 language files (349 keys each)
+├── assets/i18n/                   # 8 language files (267 keys each)
 │   ├── en.json  vi.json  zh.json  tr.json
 │   ├── ru.json  pt.json  id.json  es.json
 ├── tools/keys/                    # Real AOSP signing keys (from LP-DeCodes)
@@ -171,31 +171,31 @@ From LP-DeCodes: `Proxy server for inapp purchases_1.0.6_1/smali/com` — extern
 ### 4.4 Performance
 - Analyzer: 70.6s → 4.1s (17.3x) via shared `DexIndex`
 - Cache version: 12
-- Full suite: 1998 passed, 8 skipped in ~188s
+- Full suite: 1998 passed, 8 skipped in ~332s
 ---
 
 ## 5. Internationalization (i18n)
 
 ### 5.1 Files
-`assets/i18n/*.json` — 8 languages, **349 keys each**, identical key structures.
+`assets/i18n/*.json` — 8 languages, **267 keys each**, identical key structures.
 
 | File | Status |
 |------|--------|
 | `en.json` | Complete (source/translation) |
 | `vi.json` | Complete (source) |
-| `zh.json` | English placeholders (needs translation) |
-| `tr.json` | English placeholders (needs translation) |
-| `ru.json` | English placeholders (needs translation) |
-| `pt.json` | English placeholders (needs translation) |
-| `id.json` | English placeholders (needs translation) |
-| `es.json` | English placeholders (needs translation) |
+| `zh.json` | **Translated** (was English placeholders) |
+| `tr.json` | **Translated** (was English placeholders) |
+| `ru.json` | **Translated** (was English placeholders) |
+| `pt.json` | **Translated** (was English placeholders) |
+| `id.json` | **Translated** (was English placeholders) |
+| `es.json` | **Translated** (was English placeholders) |
 
 ### 5.2 Behavior
 - **Default language:** `en` (changed from `vi` — English is now the default/fallback)
 - Fallback chain: current lang → `en` → source string
 - Env override: `LP_LANG=vi|en|...`
 - Runtime switch: `set_language("en")` + emit `language_changed`
-- `t("main_window.title")` → `"LP-PC Suite v4"`
+- `t("main_window.title")` → `"LP-PC Suite v5 – Professional Modding Tool"`
 - `t("status.loaded", count=5)` → `"Đã tải 5 ứng dụng"`
 
 ### 5.3 Key Sections
@@ -292,7 +292,6 @@ python src/main.py --apk Test.apk --output workspace/output
 ### 8.1 Blocked (by design)
 - **Truly encrypted payloads** (PairIP/Tencent/360 encrypted variants) still require an external unpacker — `UNPACK_REQUIRED`, not a code blocker
 - **ADB modules** are import-verified but never exercised against a real device (no device available)
-- **Placeholder i18n translations** (zh/tr/ru/pt/id/es) — English values need native-language translation
 
 ### 8.2 Minor
 - Analyzer internal log messages are hardcoded in Vietnamese (GUI text is properly localized)
@@ -301,31 +300,31 @@ python src/main.py --apk Test.apk --output workspace/output
 
 ---
 
-## 9. Uncommitted Work (not yet on origin/main)
+## 9. Completed Work (committed to origin/main)
+
+All previously uncommitted work has been committed in `c273589`:
 
 ### 9.1 Modified (27 files)
 `.github/workflows/ci.yml`, `assets/i18n/en.json`, `assets/i18n/vi.json`, `src/core/i18n.py`, `src/core/plugin_manager.py`, `src/main.py`, `src/patcher/custom_patch_downloader.py`, `src/plugins/__init__.py`, `src/scanner/analyzer.py`, `src/scanner/checks/packer_bytecode.py`, `src/tests/test_custom_patch_downloader.py`, `src/tests/test_e2e_analyzer_real_apk.py`, `src/tests/test_i18n_dialog_coverage.py`, `src/ui/apk_detail_widget.py`, `src/ui/app_controller.py`, `src/ui/app_list_widget.py`, `src/ui/log_widget.py`, `src/ui/main_window.py`, `src/ui/menu_of_patches.py`, `tools/keys/*.pk8`, `tools/keys/*.x509.pem`
 
-### 9.2 Untracked (16 files/dirs)
-- `assets/i18n/es.json`, `id.json`, `pt.json`, `ru.json`, `tr.json`, `zh.json`
-- `src/adb/` (entire new directory)
-- `src/core/ui_mode.py`
-- `src/mcp/` (entire new directory)
-- `src/patcher/packer_bypass.py`
-- `src/plugins/base.py`, `src/plugins/manager.py`
-- `src/scanner/checks/packer_fusion.py`
-- `src/tests/test_packer_bypass.py`, `test_packer_fusion.py`, `test_ui_mode.py`
+### 9.2 New Files (34 files)
+- `assets/i18n/es.json`, `id.json`, `pt.json`, `ru.json`, `tr.json`, `zh.json` — translated i18n files
+- `src/adb/` — entire ADB orchestration layer (12 modules)
+- `src/core/ui_mode.py` — UI mode system
+- `src/mcp/` — MCP server (4 modules)
+- `src/patcher/packer_bypass.py` — packer bypass patcher
+- `src/plugins/base.py`, `src/plugins/manager.py` — plugin architecture
+- `src/scanner/checks/packer_fusion.py` — packer detection fusion
+- `src/tests/test_packer_bypass.py`, `test_packer_fusion.py`, `test_ui_mode.py` — new tests
 
 ---
 
 ## 10. Next Steps (for future AI agents)
 
-1. **Commit all uncommitted work** to `origin/main`
-2. **Translate placeholder English values** in zh/tr/ru/pt/id/es i18n files to native languages
-3. **Exercise ADB modules** against a real Android device (all modules are import-verified)
-4. **Add real device tests** for ODEX patching, Patch to Android, BootList, Widgets, Xposed
-5. **Expand i18n** beyond 8 languages if community demand exists
-6. **HANDOFF.md** is the canonical architecture reference — update it when adding new modules
+1. **Exercise ADB modules** against a real Android device (all modules are import-verified)
+2. **Add real device tests** for ODEX patching, Patch to Android, BootList, Widgets, Xposed
+3. **Expand i18n** beyond 8 languages if community demand exists
+4. **HANDOFF.md** is the canonical architecture reference — update it when adding new modules
 
 ---
 
