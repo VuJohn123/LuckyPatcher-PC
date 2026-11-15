@@ -1,0 +1,349 @@
+{
+  "main_window": {
+    "title": "LP-PC Suite v5 – Profesyonel Modding Aracı"
+  },
+  "sidebar": {
+    "logo": "🛠 LP-PC Suite",
+    "apps": "📱  Yüklü Uygulamalar",
+    "detail": "🔍  APK Detayları",
+    "tools": "⚙️  Araçlar",
+    "version": "v5.0.0"
+  },
+  "toolbar": {
+    "search_placeholder": "🔍  Uygulama ara...",
+    "filter_all": "Tümü",
+    "filter_license": "Lisans Kontrolü",
+    "filter_ads": "Reklamlar",
+    "filter_custom": "Özel Yama",
+    "filter_system": "Sistem",
+    "browse": "📁  APK Seç",
+    "download": "📥  APK İndir",
+    "workspace": "📂  Çalışma Alanı",
+    "reload": "🔄  Yenile",
+    "toolbox": "🧰  Araç Kutusu"
+  },
+  "status": {
+    "ready": "Hazır",
+    "loaded": "Yüklendi: {name}",
+    "completed": "Tamamlandı: {output}",
+    "failed": "Yama Başarısız",
+    "loaded_apps": "Cihazdan {count} uygulama yüklendi",
+    "loaded_demo": "{count} demo uygulama yüklendi (ADB cihazı yok)"
+  },
+  "log_panel": {
+    "title": "📋  Etkinlik Günlüğü",
+    "clear": "Temizle",
+    "expand_tooltip": "Günlük panelini genişlet/daralt",
+    "copy": "Kopyala",
+    "copy_all": "Tümünü Kopyala",
+    "save": "Günlüğü Kaydet"
+  },
+  "app_list": {
+    "name": "İsim",
+    "package": "Paket",
+    "version": "Sürüm",
+    "size": "Boyut",
+    "license": "Lisans",
+    "ads": "Reklamlar",
+    "iap": "Uygulama İçi Satın Alma",
+    "custom": "Özel",
+    "system": "Sistem",
+    "status_original": "Orijinal",
+    "status_patched": "Yamalı",
+    "status_backup": "Yedek",
+    "context_patch": "Yama Uygula",
+    "context_backup": "Yedekle",
+    "context_restore": "Geri Yükle",
+    "context_uninstall": "Kaldır",
+    "context_open_folder": "Klasörü Aç",
+    "context_copy_package": "Paketi Kopyala",
+    "context_copy_path": "Yolu Kopyala"
+  },
+  "detail_panel": {
+    "title": "APK Detayları",
+    "tabs": {
+      "info": "Bilgi",
+      "analysis": "Analiz",
+      "patches": "Yamalar",
+      "manifest": "Manifest",
+      "signatures": "İmzalar",
+      "dex": "DEX"
+    },
+    "fields": {
+      "package_name": "Paket Adı",
+      "version_name": "Sürüm Adı",
+      "version_code": "Sürüm Kodu",
+      "min_sdk": "Min SDK",
+      "target_sdk": "Hedef SDK",
+      "size": "Dosya Boyutu",
+      "sha256": "SHA256",
+      "signature": "İmza",
+      "install_location": "Kurulum Yeri"
+    },
+    "analysis": {
+      "license_detected": "Lisans Doğrulaması Tespit Edildi",
+      "ads_detected": "Reklam Kütüphaneleri Tespit Edildi",
+      "iap_detected": "Uygulama İçi Satın Alma Tespit Edildi",
+      "root_detected": "Root Kontrolleri Tespit Edildi",
+      "packer_detected": "Packer Tespit Edildi",
+      "custom_patches": "Özel Yamalar Mevcut",
+      "no_issues": "Sorun Tespit Edilmedi"
+    },
+    "colors": {
+      "green": "Yama Lanabilir",
+      "yellow": "Kısmen Yama Lanabilir",
+      "orange": "Zor",
+      "red": "Yama Lanamaz / Packer",
+      "gray": "Bilinmiyor"
+    }
+  },
+  "patch_dialog": {
+    "title": "Yama Seçenekleri",
+    "modes": {
+      "license": "Lisans",
+      "ads": "Reklamlar",
+      "iap": "Satın Almalar",
+      "signature": "İmza",
+      "custom": "Özel",
+      "backup": "Yedek",
+      "clone": "Klon"
+    },
+    "license_modes": {
+      "auto": "Otomatik (DEX)",
+      "reverse_auto": "Ters Otomatik",
+      "extreme": "Aşırı",
+      "amazon": "Amazon DRM",
+      "samsung": "Samsung IAP"
+    },
+    "ads_modes": {
+      "remove_links": "Bağlantıları Kaldır",
+      "break_receiver": "Alıcıyı Boz",
+      "offline": "Çevrimdışı Mod",
+      "full_offline": "Tam Çevrimdışı"
+    },
+    "iap_modes": {
+      "dex": "DEX Yaması",
+      "proxy": "Proxy Modu"
+    },
+    "signature_modes": {
+      "disable_verify": "Doğrulamayı Devre Dışı Bırak",
+      "remove_integrity": "Bütünlüğü Kaldır",
+      "fake_archive": "Sahte Arşiv"
+    },
+    "key_type": "Anahtar Türü",
+    "key_types": {
+      "testkey": "Test Anahtarı",
+      "platform": "Platform Anahtarı",
+      "media": "Medya Anahtarı",
+      "shared": "Paylaşımlı Anahtar"
+    },
+    "buttons": {
+      "patch": "Yamayı Başlat",
+      "cancel": "İptal",
+      "advanced": "Gelişmiş"
+    }
+  },
+  "messages": {
+    "no_device": "Cihaz algılanmadı. Android cihazını bağla ve USB hata ayıklamayı etkinleştir.",
+    "no_root": "Root izinleri gereklidir. Root erişimi verip tekrar dene.",
+    "patch_success": "Yama başarılı! Çıktı: {path}",
+    "patch_failed": "Yama başarısız: {error}",
+    "install_success": "Kurulum başarılı",
+    "install_failed": "Kurulum başarısız: {error}",
+    "download_started": "İndirme başladı...",
+    "download_completed": "İndirme tamamlandı: {path}",
+    "download_failed": "İndirme başarısız: {error}",
+    "analysis_complete": "Analiz tamamlandı",
+    "confirm_uninstall": "{name} kaldırılsın mı?",
+    "confirm_restore": "{name} orijinaline geri yüklensin mi?"
+  },
+  "mcp": {
+    "server_started": "MCP Sunucusu başlatıldı",
+    "server_stopped": "MCP Sunucusu durduruldu",
+    "client_connected": "İstemci bağlandı: {name}",
+    "tool_called": "Araç çağrıldı: {tool}"
+  },
+  "adb_features": {
+    "odex_patching": "ODEX Yamalama",
+    "patch_to_android": "Patch to Android",
+    "modded_play_store": "Modifiye Play Store",
+    "bootlist": "BootList",
+    "widgets": "Widget'lar",
+    "lpzip_import": "lpzip İçe Aktar",
+    "xposed_install": "Xposed Modülü Kur",
+    "require_root": "Root Gerekli",
+    "require_api21": "Android 5.0+ (API 21+) Gerekli",
+    "deploying": "Dağıtılıyor...",
+    "deployed": "Dağıtım Tamamlandı",
+    "reboot_required": "Yeniden Başlatma Gerekli"
+  },
+  "settings": {
+    "title": "Ayarlar",
+    "language": "Dil",
+    "theme": "Tema",
+    "auto_update": "Otomatik Güncelleme",
+    "backup_before_patch": "Yamadan Önce Yedek",
+    "verify_signatures": "İmzaları Doğrula",
+    "log_level": "Günlük Seviyesi",
+    "max_log_lines": "Maks. Günlük Satırı"
+  },
+  "toolbox": {
+    "title": "Araç Kutusu",
+    "tools": {
+      "permission_changer": "İzin Değiştirici",
+      "gms_spoofer": "GMS Spoofer",
+      "event_logger": "Olay Kaydedici",
+      "custom_patches": "Özel Yamalar",
+      "patch_downloader": "Yama İndirici",
+      "apk_downloader": "APK İndirici",
+      "batch_patcher": "Toplu Yama",
+      "signature_tools": "İmza Araçları",
+      "resource_editor": "Kaynak Düzenleyici",
+      "manifest_editor": "Manifest Düzenleyici"
+    }
+  },
+  "progress": {
+    "analyzing": "Analiz Ediliyor...",
+    "decompiling": "Decompile Ediliyor...",
+    "patching": "Yama Lanıyor...",
+    "recompiling": "Recompile Ediliyor...",
+    "signing": "İmzalanıyor...",
+    "installing": "Kuruluyor...",
+    "downloading": "İndiriliyor...",
+    "extracting": "Çıkarılıyor...",
+    "completed": "Tamamlandı",
+    "cancelled": "İptal Edildi"
+  },
+  "ui_mode": {
+    "label": "Mod",
+    "beginner": "Yeni Başlayan",
+    "mitigative": "Güvenli",
+    "advanced": "Gelişmiş",
+    "tooltip": "Arayüzün ne kadar ayrıntı göstereceğini seçin",
+    "beginner_hint": "Yalnızca en güvenli ve yaygın işlemler gösterilir.",
+    "mitigative_hint": "Risk uyarılarıyla gelişmiş işlemler eklenir.",
+    "advanced_hint": "Tüm işlemler ve gelişmiş seçenekler gösterilir.",
+    "caution_badge": "⚠",
+    "danger_badge": "⛔",
+    "backup_reminder": "Yamalamadan önce APK'yı yedeklemeniz önerilir. Devam edilsin mi?"
+  },
+  "actions": {
+    "open_rebuild": "Değiştirilmiş APK Oluştur",
+    "remove_license": "Lisans Doğrulamayı Kaldır",
+    "remove_ads": "Google Reklamlarını Kaldır",
+    "iap_emulation": "Uygulama İçi Satın Alma Emülasyonu",
+    "apply_custom_patch": "Özel Yama Uygula",
+    "change_perms": "İzinleri Değiştir",
+    "resign": "APK'yı Yeniden İmzala",
+    "backup": "Uygulamayı Yedekle",
+    "launch": "Uygulamayı Aç",
+    "info": "Uygulama Bilgisi",
+    "license_auto": "Lisansı Kaldır (oto)",
+    "ads_remove": "Reklamları Kaldır",
+    "iap_dex": "DEX ile IAP",
+    "custom": "Özel Yama",
+    "sig_disable": "İmza Kontrolünü Devre Dışı Bırak",
+    "sig_integrity": "Bütünlük Kontrolünü Kaldır",
+    "sig_fake_archive": "Sahte İmza (arşiv)",
+    "aidl_proxy": "AIDL Proxy",
+    "clone": "Uygulamayı Klonla"
+  },
+  "detail": {
+    "back": "←  Back",
+    "rebuild_btn": "🔨 Create Modified APK (Rebuild)",
+    "menu_btn": "📋 Menu of Patches",
+    "features_title": "🔍 Detected Features",
+    "quick_actions": "🛠 Quick Actions",
+    "action_remove_license": "🔑 Remove License Verification",
+    "action_remove_ads": "🚫 Remove Google Ads",
+    "action_iap": "💳 Emulate IAP (Rebuild)",
+    "action_custom": "📄 Custom Patch",
+    "action_perms": "⚙️ Change Permissions",
+    "action_resign": "✍️ Re-sign APK"
+  },
+  "switches": {
+    "billing": "💰 Billing",
+    "proxy": "🌐 Proxy",
+    "autorepeat": "🔄 Auto-Repeat",
+    "save": "💾 Save",
+    "reset": "♻️ Reset",
+    "billing_tip": "Enable/disable Google Billing emulation",
+    "proxy_tip": "Enable/disable local IAP proxy",
+    "autorepeat_tip": "Auto-repeat saved IAP transactions",
+    "save_tip": "Save IAP transactions for later replay",
+    "on": "ON",
+    "off": "OFF"
+  },
+  "dialog": {
+    "common": {
+      "ok": "OK",
+      "cancel": "Cancel",
+      "close": "Close",
+      "error": "Error",
+      "warning_title": "⚠️ Safety Warning",
+      "continue": "Continue",
+      "stop": "Stop"
+    },
+    "resign": {
+      "title": "Re-sign APK",
+      "header": "Select signing key and configuration",
+      "key_group": "Key Type",
+      "pkg_group": "Forced Package ID",
+      "pkg_label": "ID (127 = auto):",
+      "btn_ok": "Re-sign",
+      "key": {
+        "testkey": "testkey",
+        "platform": "platform",
+        "media": "media",
+        "shared": "shared"
+      },
+      "desc": {
+        "testkey": "Default test key — works for most apps",
+        "platform": "Platform key — Android system apps",
+        "media": "Media key — system media apps",
+        "shared": "Shared key — shared libraries"
+      }
+    },
+    "clone": {
+      "title": "Clone App",
+      "header": "Clone: {name}",
+      "orig_pkg": "Original Package:",
+      "new_pkg": "New Package:",
+      "new_name": "New Name:",
+      "hint": "💡 Cloned app runs alongside original. Needs different signature (use testkey to auto-sign).",
+      "btn_ok": "Clone",
+      "suffix_pkg": ".clone",
+      "suffix_name": " (Clone)",
+      "warn_empty_pkg": "Invalid package",
+      "warn_regex_pkg": "Package must start with letter and contain only letters, numbers, dots.",
+      "warn_same_pkg": "New package must differ from original."
+    },
+    "patch_config": {
+      "title": "Configure {name}",
+      "btn_ok": "OK",
+      "btn_cancel": "Cancel"
+    },
+    "wizard": {
+      "title": "LP-PC Suite Wizard",
+      "header": "What do you want to do?",
+      "btn_ok": "Start",
+      "btn_cancel": "Exit",
+      "opt": {
+        "iap_dex": "🎮 Play games free (IAP bypass)",
+        "ads_full_offline": "🚫 Remove ads",
+        "license_extreme": "🔑 Use paid apps free",
+        "multi_full": "⭐ Full patch (all)"
+      }
+    },
+    "ads_patch": {
+      "title": "Remove Ads - {name}",
+      "choose_mode": "<b>Choose Ads Mode:</b>",
+      "opt_remove": "Remove ad activities from manifest",
+      "opt_offline": "Make module think offline",
+      "opt_links": "Remove ad URLs from smali",
+      "opt_full_offline": "Full offline (combined)",
+      "btn_apply": "Apply",
+      "btn_cancel": "Cancel"
+    }
+  }
+}

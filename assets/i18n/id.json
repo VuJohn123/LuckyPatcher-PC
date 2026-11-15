@@ -1,0 +1,349 @@
+{
+  "main_window": {
+    "title": "LP-PC Suite v5 – Alat Modding Profesional"
+  },
+  "sidebar": {
+    "logo": "🛠 LP-PC Suite",
+    "apps": "📱  Aplikasi Terpasang",
+    "detail": "🔍  Detail APK",
+    "tools": "⚙️  Alat",
+    "version": "v5.0.0"
+  },
+  "toolbar": {
+    "search_placeholder": "🔍  Cari aplikasi...",
+    "filter_all": "Semua",
+    "filter_license": "Cek Lisensi",
+    "filter_ads": "Iklan",
+    "filter_custom": "Patch Kustom",
+    "filter_system": "Sistem",
+    "browse": "📁  Telusuri APK",
+    "download": "📥  Unduh APK",
+    "workspace": "📂  Ruang Kerja",
+    "reload": "🔄  Muat Ulang",
+    "toolbox": "🧰  Kotak Alat"
+  },
+  "status": {
+    "ready": "Siap",
+    "loaded": "Dimuat: {name}",
+    "completed": "Selesai: {output}",
+    "failed": "Patch Gagal",
+    "loaded_apps": "Dimuat {count} aplikasi dari perangkat",
+    "loaded_demo": "Dimuat {count} aplikasi demo (tanpa perangkat ADB)"
+  },
+  "log_panel": {
+    "title": "📋  Log Aktivitas",
+    "clear": "Bersihkan",
+    "expand_tooltip": "Perluas/ciutkan panel log",
+    "copy": "Salin",
+    "copy_all": "Salin Semua",
+    "save": "Simpan Log"
+  },
+  "app_list": {
+    "name": "Nama",
+    "package": "Paket",
+    "version": "Versi",
+    "size": "Ukuran",
+    "license": "Lisensi",
+    "ads": "Iklan",
+    "iap": "Pembelian In-App",
+    "custom": "Kustom",
+    "system": "Sistem",
+    "status_original": "Asli",
+    "status_patched": "Dipatch",
+    "status_backup": "Cadangan",
+    "context_patch": "Patch",
+    "context_backup": "Cadangkan",
+    "context_restore": "Pulihkan",
+    "context_uninstall": "Hapus",
+    "context_open_folder": "Buka Folder",
+    "context_copy_package": "Salin Paket",
+    "context_copy_path": "Salin Jalur"
+  },
+  "detail_panel": {
+    "title": "Detail APK",
+    "tabs": {
+      "info": "Info",
+      "analysis": "Analisis",
+      "patches": "Patch",
+      "manifest": "Manifest",
+      "signatures": "Tanda Tangan",
+      "dex": "DEX"
+    },
+    "fields": {
+      "package_name": "Nama Paket",
+      "version_name": "Nama Versi",
+      "version_code": "Kode Versi",
+      "min_sdk": "Min SDK",
+      "target_sdk": "Target SDK",
+      "size": "Ukuran File",
+      "sha256": "SHA256",
+      "signature": "Tanda Tangan",
+      "install_location": "Lokasi Instalasi"
+    },
+    "analysis": {
+      "license_detected": "Verifikasi Lisensi Terdeteksi",
+      "ads_detected": "Library Iklan Terdeteksi",
+      "iap_detected": "Pembelian In-App Terdeteksi",
+      "root_detected": "Cek Root Terdeteksi",
+      "packer_detected": "Packer Terdeteksi",
+      "custom_patches": "Patch Kustom Tersedia",
+      "no_issues": "Tidak Ada Masalah"
+    },
+    "colors": {
+      "green": "Dapat Dipatch",
+      "yellow": "Sebagian Dapat Dipatch",
+      "orange": "Sulit",
+      "red": "Tidak Dapat Dipatch / Packer",
+      "gray": "Tidak Diketahui"
+    }
+  },
+  "patch_dialog": {
+    "title": "Opsi Patch",
+    "modes": {
+      "license": "Lisensi",
+      "ads": "Iklan",
+      "iap": "Beli",
+      "signature": "Tanda Tangan",
+      "custom": "Kustom",
+      "backup": "Cadangan",
+      "clone": "Klon"
+    },
+    "license_modes": {
+      "auto": "Otomatis (DEX)",
+      "reverse_auto": "Balik Otomatis",
+      "extreme": "Ekstrem",
+      "amazon": "Amazon DRM",
+      "samsung": "Samsung IAP"
+    },
+    "ads_modes": {
+      "remove_links": "Hapus Link",
+      "break_receiver": "Hancurkan Penerima",
+      "offline": "Mode Offline",
+      "full_offline": "Offline Penuh"
+    },
+    "iap_modes": {
+      "dex": "Patch DEX",
+      "proxy": "Mode Proxy"
+    },
+    "signature_modes": {
+      "disable_verify": "Nonaktifkan Verifikasi",
+      "remove_integrity": "Hapus Integritas",
+      "fake_archive": "Arsip Palsu"
+    },
+    "key_type": "Jenis Kunci",
+    "key_types": {
+      "testkey": "Kunci Uji",
+      "platform": "Kunci Platform",
+      "media": "Kunci Media",
+      "shared": "Kunci Bersama"
+    },
+    "buttons": {
+      "patch": "Mulai Patch",
+      "cancel": "Batal",
+      "advanced": "Lanjutan"
+    }
+  },
+  "messages": {
+    "no_device": "Perangkat tidak terdeteksi. Hubungkan perangkat Android dan aktifkan debug USB.",
+    "no_root": "Diperlukan akses Root. Berikan izin Root dan coba lagi.",
+    "patch_success": "Patch berhasil! Output: {path}",
+    "patch_failed": "Patch gagal: {error}",
+    "install_success": "Instalasi berhasil",
+    "install_failed": "Instalasi gagal: {error}",
+    "download_started": "Memulai unduhan...",
+    "download_completed": "Unduhan selesai: {path}",
+    "download_failed": "Unduhan gagal: {error}",
+    "analysis_complete": "Analisis selesai",
+    "confirm_uninstall": "Hapus {name}?",
+    "confirm_restore": "Pulihkan asli {name}?"
+  },
+  "mcp": {
+    "server_started": "Server MCP dimulai",
+    "server_stopped": "Server MCP dihentikan",
+    "client_connected": "Koneksi klien: {name}",
+    "tool_called": "Alat dipanggil: {tool}"
+  },
+  "adb_features": {
+    "odex_patching": "Patching ODEX",
+    "patch_to_android": "Patch to Android",
+    "modded_play_store": "Play Store Modifikasi",
+    "bootlist": "BootList",
+    "widgets": "Widget",
+    "lpzip_import": "Impor lpzip",
+    "xposed_install": "Pasang Modul Xposed",
+    "require_root": "Memerlukan Root",
+    "require_api21": "Memerlukan Android 5.0+ (API 21+)",
+    "deploying": "Men-deploy...",
+    "deployed": "Deploy Selesai",
+    "reboot_required": "Perlu Reboot"
+  },
+  "settings": {
+    "title": "Pengaturan",
+    "language": "Bahasa",
+    "theme": "Tema",
+    "auto_update": "Update Otomatis",
+    "backup_before_patch": "Cadangkan Sebelum Patch",
+    "verify_signatures": "Verifikasi Tanda Tangan",
+    "log_level": "Level Log",
+    "max_log_lines": "Maks. Baris Log"
+  },
+  "toolbox": {
+    "title": "Kotak Alat",
+    "tools": {
+      "permission_changer": "Pengubah Izin",
+      "gms_spoofer": "GMS Spoofer",
+      "event_logger": "Pencatat Event",
+      "custom_patches": "Patch Kustom",
+      "patch_downloader": "Pengunduh Patch",
+      "apk_downloader": "Pengunduh APK",
+      "batch_patcher": "Patch Batch",
+      "signature_tools": "Alat Tanda Tangan",
+      "resource_editor": "Editor Sumber Daya",
+      "manifest_editor": "Editor Manifest"
+    }
+  },
+  "progress": {
+    "analyzing": "Menganalisis...",
+    "decompiling": "Mendekompilasi...",
+    "patching": "Mem-patch...",
+    "recompiling": "Mengompilasi Ulang...",
+    "signing": "Menandatangani...",
+    "installing": "Menginstal...",
+    "downloading": "Mengunduh...",
+    "extracting": "Mengekstrak...",
+    "completed": "Selesai",
+    "cancelled": "Dibatalkan"
+  },
+  "ui_mode": {
+    "label": "Mode",
+    "beginner": "Pemula",
+    "mitigative": "Aman",
+    "advanced": "Lanjutan",
+    "tooltip": "Pilih seberapa detail antarmuka ditampilkan",
+    "beginner_hint": "Hanya tindakan paling aman dan umum yang ditampilkan.",
+    "mitigative_hint": "Menambahkan tindakan lanjutan dengan peringatan risiko.",
+    "advanced_hint": "Menampilkan semua tindakan dan opsi lanjutan.",
+    "caution_badge": "⚠",
+    "danger_badge": "⛔",
+    "backup_reminder": "Disarankan mencadangkan APK sebelum menambal. Lanjutkan?"
+  },
+  "actions": {
+    "open_rebuild": "Buat APK Termodifikasi",
+    "remove_license": "Hapus Verifikasi Lisensi",
+    "remove_ads": "Hapus Iklan Google",
+    "iap_emulation": "Emulasi Pembelian Dalam Aplikasi",
+    "apply_custom_patch": "Terapkan Patch Kustom",
+    "change_perms": "Ubah Izin",
+    "resign": "Tandatangani Ulang APK",
+    "backup": "Cadangkan Aplikasi",
+    "launch": "Jalankan Aplikasi",
+    "info": "Info Aplikasi",
+    "license_auto": "Hapus Lisensi (otomatis)",
+    "ads_remove": "Hapus Iklan",
+    "iap_dex": "IAP via DEX",
+    "custom": "Patch Kustom",
+    "sig_disable": "Nonaktifkan Cek Tanda Tangan",
+    "sig_integrity": "Hapus Cek Integritas",
+    "sig_fake_archive": "Tanda Tangan Palsu (arsip)",
+    "aidl_proxy": "Proxy AIDL",
+    "clone": "Klon Aplikasi"
+  },
+  "detail": {
+    "back": "←  Back",
+    "rebuild_btn": "🔨 Create Modified APK (Rebuild)",
+    "menu_btn": "📋 Menu of Patches",
+    "features_title": "🔍 Detected Features",
+    "quick_actions": "🛠 Quick Actions",
+    "action_remove_license": "🔑 Remove License Verification",
+    "action_remove_ads": "🚫 Remove Google Ads",
+    "action_iap": "💳 Emulate IAP (Rebuild)",
+    "action_custom": "📄 Custom Patch",
+    "action_perms": "⚙️ Change Permissions",
+    "action_resign": "✍️ Re-sign APK"
+  },
+  "switches": {
+    "billing": "💰 Billing",
+    "proxy": "🌐 Proxy",
+    "autorepeat": "🔄 Auto-Repeat",
+    "save": "💾 Save",
+    "reset": "♻️ Reset",
+    "billing_tip": "Enable/disable Google Billing emulation",
+    "proxy_tip": "Enable/disable local IAP proxy",
+    "autorepeat_tip": "Auto-repeat saved IAP transactions",
+    "save_tip": "Save IAP transactions for later replay",
+    "on": "ON",
+    "off": "OFF"
+  },
+  "dialog": {
+    "common": {
+      "ok": "OK",
+      "cancel": "Cancel",
+      "close": "Close",
+      "error": "Error",
+      "warning_title": "⚠️ Safety Warning",
+      "continue": "Continue",
+      "stop": "Stop"
+    },
+    "resign": {
+      "title": "Re-sign APK",
+      "header": "Select signing key and configuration",
+      "key_group": "Key Type",
+      "pkg_group": "Forced Package ID",
+      "pkg_label": "ID (127 = auto):",
+      "btn_ok": "Re-sign",
+      "key": {
+        "testkey": "testkey",
+        "platform": "platform",
+        "media": "media",
+        "shared": "shared"
+      },
+      "desc": {
+        "testkey": "Default test key — works for most apps",
+        "platform": "Platform key — Android system apps",
+        "media": "Media key — system media apps",
+        "shared": "Shared key — shared libraries"
+      }
+    },
+    "clone": {
+      "title": "Clone App",
+      "header": "Clone: {name}",
+      "orig_pkg": "Original Package:",
+      "new_pkg": "New Package:",
+      "new_name": "New Name:",
+      "hint": "💡 Cloned app runs alongside original. Needs different signature (use testkey to auto-sign).",
+      "btn_ok": "Clone",
+      "suffix_pkg": ".clone",
+      "suffix_name": " (Clone)",
+      "warn_empty_pkg": "Invalid package",
+      "warn_regex_pkg": "Package must start with letter and contain only letters, numbers, dots.",
+      "warn_same_pkg": "New package must differ from original."
+    },
+    "patch_config": {
+      "title": "Configure {name}",
+      "btn_ok": "OK",
+      "btn_cancel": "Cancel"
+    },
+    "wizard": {
+      "title": "LP-PC Suite Wizard",
+      "header": "What do you want to do?",
+      "btn_ok": "Start",
+      "btn_cancel": "Exit",
+      "opt": {
+        "iap_dex": "🎮 Play games free (IAP bypass)",
+        "ads_full_offline": "🚫 Remove ads",
+        "license_extreme": "🔑 Use paid apps free",
+        "multi_full": "⭐ Full patch (all)"
+      }
+    },
+    "ads_patch": {
+      "title": "Remove Ads - {name}",
+      "choose_mode": "<b>Choose Ads Mode:</b>",
+      "opt_remove": "Remove ad activities from manifest",
+      "opt_offline": "Make module think offline",
+      "opt_links": "Remove ad URLs from smali",
+      "opt_full_offline": "Full offline (combined)",
+      "btn_apply": "Apply",
+      "btn_cancel": "Cancel"
+    }
+  }
+}

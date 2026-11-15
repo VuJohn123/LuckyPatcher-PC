@@ -20,10 +20,18 @@ def test_download_success(tmp_path):
         download_dir=str(tmp_path),
         log_callback=lambda *_: None,
     )
-    with patch.object(dl.session, "get") as mock_get:
+    with patch.object(dl.session, "head") as mock_head, \
+         patch.object(dl.session, "get") as mock_get:
+        # Mock HEAD response
+        mock_head_resp = MagicMock()
+        mock_head_resp.status_code = 200
+        mock_head_resp.headers = {"content-length": "100"}
+        mock_head.return_value = mock_head_resp
+
+        # Mock GET response
         mock_resp = MagicMock()
         mock_resp.raise_for_status.return_value = None
-        mock_resp.iter_content.return_value = [b"data1", b"data2"]
+        mock_resp.content = b"data1data2"
         mock_get.return_value = mock_resp
 
         result = dl.download_patch("test.lpzip")

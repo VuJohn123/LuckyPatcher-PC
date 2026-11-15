@@ -1,0 +1,349 @@
+{
+  "main_window": {
+    "title": "LP-PC Suite v5 – Профессиональный инструмент моддинга"
+  },
+  "sidebar": {
+    "logo": "🛠 LP-PC Suite",
+    "apps": "📱  Установленные приложения",
+    "detail": "🔍  Детали APK",
+    "tools": "⚙️  Инструменты",
+    "version": "v5.0.0"
+  },
+  "toolbar": {
+    "search_placeholder": "🔍  Поиск приложений...",
+    "filter_all": "Все",
+    "filter_license": "Проверка лицензии",
+    "filter_ads": "Реклама",
+    "filter_custom": "Кастомные патчи",
+    "filter_system": "Система",
+    "browse": "📁  Выбрать APK",
+    "download": "📥  Скачать APK",
+    "workspace": "📂  Рабочая папка",
+    "reload": "🔄  Обновить",
+    "toolbox": "🧰  Ящик инструментов"
+  },
+  "status": {
+    "ready": "Готово",
+    "loaded": "Загружено: {name}",
+    "completed": "Завершено: {output}",
+    "failed": "Патчинг не удался",
+    "loaded_apps": "Загружено {count} приложений с устройства",
+    "loaded_demo": "Загружено {count} демо-приложений (нет ADB устройства)"
+  },
+  "log_panel": {
+    "title": "📋  Журнал активности",
+    "clear": "Очистить",
+    "expand_tooltip": "Развернуть/свернуть панель журнала",
+    "copy": "Копировать",
+    "copy_all": "Копировать всё",
+    "save": "Сохранить журнал"
+  },
+  "app_list": {
+    "name": "Имя",
+    "package": "Пакет",
+    "version": "Версия",
+    "size": "Размер",
+    "license": "Лицензия",
+    "ads": "Реклама",
+    "iap": "Внутренние покупки",
+    "custom": "Кастом",
+    "system": "Система",
+    "status_original": "Оригинал",
+    "status_patched": "Пропатчено",
+    "status_backup": "Бэкап",
+    "context_patch": "Патчить",
+    "context_backup": "Бэкап",
+    "context_restore": "Восстановить",
+    "context_uninstall": "Удалить",
+    "context_open_folder": "Открыть папку",
+    "context_copy_package": "Копировать пакет",
+    "context_copy_path": "Копировать путь"
+  },
+  "detail_panel": {
+    "title": "Детали APK",
+    "tabs": {
+      "info": "Инфо",
+      "analysis": "Анализ",
+      "patches": "Патчи",
+      "manifest": "Манифест",
+      "signatures": "Подписи",
+      "dex": "DEX"
+    },
+    "fields": {
+      "package_name": "Имя пакета",
+      "version_name": "Имя версии",
+      "version_code": "Код версии",
+      "min_sdk": "Мин. SDK",
+      "target_sdk": "Целевой SDK",
+      "size": "Размер файла",
+      "sha256": "SHA256",
+      "signature": "Подпись",
+      "install_location": "Место установки"
+    },
+    "analysis": {
+      "license_detected": "Обнаружена проверка лицензии",
+      "ads_detected": "Обнаружены рекламные библиотеки",
+      "iap_detected": "Обнаружены внутренние покупки",
+      "root_detected": "Обнаружены проверки Root",
+      "packer_detected": "Обнаружен пакер",
+      "custom_patches": "Доступны кастомные патчи",
+      "no_issues": "Проблем не найдено"
+    },
+    "colors": {
+      "green": "Можно пропатчить",
+      "yellow": "Частично можно пропатчить",
+      "orange": "Сложно",
+      "red": "Нельзя пропатчить / Пакер",
+      "gray": "Неизвестно"
+    }
+  },
+  "patch_dialog": {
+    "title": "Опции патчинга",
+    "modes": {
+      "license": "Лицензия",
+      "ads": "Реклама",
+      "iap": "Покупки",
+      "signature": "Подпись",
+      "custom": "Кастом",
+      "backup": "Бэкап",
+      "clone": "Клон"
+    },
+    "license_modes": {
+      "auto": "Авто (DEX)",
+      "reverse_auto": "Обратный авто",
+      "extreme": "Экстремальный",
+      "amazon": "Amazon DRM",
+      "samsung": "Samsung IAP"
+    },
+    "ads_modes": {
+      "remove_links": "Удалить ссылки",
+      "break_receiver": "Сломать получатель",
+      "offline": "Офлайн режим",
+      "full_offline": "Полный офлайн"
+    },
+    "iap_modes": {
+      "dex": "DEX патч",
+      "proxy": "Прокси режим"
+    },
+    "signature_modes": {
+      "disable_verify": "Отключить проверку",
+      "remove_integrity": "Удалить проверку целостности",
+      "fake_archive": "Поддельный архив"
+    },
+    "key_type": "Тип ключа",
+    "key_types": {
+      "testkey": "Тестовый ключ",
+      "platform": "Платформенный ключ",
+      "media": "Медиа ключ",
+      "shared": "Общий ключ"
+    },
+    "buttons": {
+      "patch": "Начать патчинг",
+      "cancel": "Отмена",
+      "advanced": "Дополнительно"
+    }
+  },
+  "messages": {
+    "no_device": "Устройство не обнаружено. Подключите Android устройство и включите USB отладку.",
+    "no_root": "Требуются права Root. Предоставьте Root доступ и повторите.",
+    "patch_success": "Патчинг успешен! Выход: {path}",
+    "patch_failed": "Патчинг не удался: {error}",
+    "install_success": "Установка успешна",
+    "install_failed": "Установка не удалась: {error}",
+    "download_started": "Начато скачивание...",
+    "download_completed": "Скачивание завершено: {path}",
+    "download_failed": "Скачивание не удалось: {error}",
+    "analysis_complete": "Анализ завершен",
+    "confirm_uninstall": "Удалить {name}?",
+    "confirm_restore": "Восстановить оригинал {name}?"
+  },
+  "mcp": {
+    "server_started": "MCP сервер запущен",
+    "server_stopped": "MCP сервер остановлен",
+    "client_connected": "Клиент подключен: {name}",
+    "tool_called": "Вызов инструмента: {tool}"
+  },
+  "adb_features": {
+    "odex_patching": "ODEX патчинг",
+    "patch_to_android": "Patch to Android",
+    "modded_play_store": "Модифицированный Play Store",
+    "bootlist": "BootList",
+    "widgets": "Виджеты",
+    "lpzip_import": "Импорт lpzip",
+    "xposed_install": "Установка Xposed модуля",
+    "require_root": "Требуются права Root",
+    "require_api21": "Требуется Android 5.0+ (API 21+)",
+    "deploying": "Развертывание...",
+    "deployed": "Развертывание завершено",
+    "reboot_required": "Требуется перезагрузка"
+  },
+  "settings": {
+    "title": "Настройки",
+    "language": "Язык",
+    "theme": "Тема",
+    "auto_update": "Автообновление",
+    "backup_before_patch": "Бэкап перед патчингом",
+    "verify_signatures": "Проверка подписей",
+    "log_level": "Уровень логов",
+    "max_log_lines": "Макс. строк лога"
+  },
+  "toolbox": {
+    "title": "Ящик инструментов",
+    "tools": {
+      "permission_changer": "Изменение разрешений",
+      "gms_spoofer": "GMS спуфер",
+      "event_logger": "Логгер событий",
+      "custom_patches": "Кастомные патчи",
+      "patch_downloader": "Загрузчик патчей",
+      "apk_downloader": "Загрузчик APK",
+      "batch_patcher": "Пакетный патчинг",
+      "signature_tools": "Инструменты подписи",
+      "resource_editor": "Редактор ресурсов",
+      "manifest_editor": "Редактор манифеста"
+    }
+  },
+  "progress": {
+    "analyzing": "Анализ...",
+    "decompiling": "Декомпиляция...",
+    "patching": "Патчинг...",
+    "recompiling": "Рекомпиляция...",
+    "signing": "Подписание...",
+    "installing": "Установка...",
+    "downloading": "Скачивание...",
+    "extracting": "Распаковка...",
+    "completed": "Готово",
+    "cancelled": "Отменено"
+  },
+  "ui_mode": {
+    "label": "Режим",
+    "beginner": "Новичок",
+    "mitigative": "Безопасный",
+    "advanced": "Продвинутый",
+    "tooltip": "Выберите уровень детализации интерфейса",
+    "beginner_hint": "Показаны только самые безопасные и частые действия.",
+    "mitigative_hint": "Добавляет продвинутые действия с предупреждениями.",
+    "advanced_hint": "Показаны все действия и продвинутые параметры.",
+    "caution_badge": "⚠",
+    "danger_badge": "⛔",
+    "backup_reminder": "Рекомендуется создать резервную копию APK перед патчем. Продолжить?"
+  },
+  "actions": {
+    "open_rebuild": "Создать изменённый APK",
+    "remove_license": "Удалить проверку лицензии",
+    "remove_ads": "Удалить рекламу Google",
+    "iap_emulation": "Эмуляция покупок в приложении",
+    "apply_custom_patch": "Применить пользовательский патч",
+    "change_perms": "Изменить разрешения",
+    "resign": "Переподписать APK",
+    "backup": "Резервная копия",
+    "launch": "Запустить приложение",
+    "info": "Информация о приложении",
+    "license_auto": "Удалить лицензию (авто)",
+    "ads_remove": "Удалить рекламу",
+    "iap_dex": "IAP через DEX",
+    "custom": "Пользовательский патч",
+    "sig_disable": "Отключить проверку подписи",
+    "sig_integrity": "Удалить проверку целостности",
+    "sig_fake_archive": "Поддельная подпись (архив)",
+    "aidl_proxy": "AIDL-прокси",
+    "clone": "Клонировать приложение"
+  },
+  "detail": {
+    "back": "←  Back",
+    "rebuild_btn": "🔨 Create Modified APK (Rebuild)",
+    "menu_btn": "📋 Menu of Patches",
+    "features_title": "🔍 Detected Features",
+    "quick_actions": "🛠 Quick Actions",
+    "action_remove_license": "🔑 Remove License Verification",
+    "action_remove_ads": "🚫 Remove Google Ads",
+    "action_iap": "💳 Emulate IAP (Rebuild)",
+    "action_custom": "📄 Custom Patch",
+    "action_perms": "⚙️ Change Permissions",
+    "action_resign": "✍️ Re-sign APK"
+  },
+  "switches": {
+    "billing": "💰 Billing",
+    "proxy": "🌐 Proxy",
+    "autorepeat": "🔄 Auto-Repeat",
+    "save": "💾 Save",
+    "reset": "♻️ Reset",
+    "billing_tip": "Enable/disable Google Billing emulation",
+    "proxy_tip": "Enable/disable local IAP proxy",
+    "autorepeat_tip": "Auto-repeat saved IAP transactions",
+    "save_tip": "Save IAP transactions for later replay",
+    "on": "ON",
+    "off": "OFF"
+  },
+  "dialog": {
+    "common": {
+      "ok": "OK",
+      "cancel": "Cancel",
+      "close": "Close",
+      "error": "Error",
+      "warning_title": "⚠️ Safety Warning",
+      "continue": "Continue",
+      "stop": "Stop"
+    },
+    "resign": {
+      "title": "Re-sign APK",
+      "header": "Select signing key and configuration",
+      "key_group": "Key Type",
+      "pkg_group": "Forced Package ID",
+      "pkg_label": "ID (127 = auto):",
+      "btn_ok": "Re-sign",
+      "key": {
+        "testkey": "testkey",
+        "platform": "platform",
+        "media": "media",
+        "shared": "shared"
+      },
+      "desc": {
+        "testkey": "Default test key — works for most apps",
+        "platform": "Platform key — Android system apps",
+        "media": "Media key — system media apps",
+        "shared": "Shared key — shared libraries"
+      }
+    },
+    "clone": {
+      "title": "Clone App",
+      "header": "Clone: {name}",
+      "orig_pkg": "Original Package:",
+      "new_pkg": "New Package:",
+      "new_name": "New Name:",
+      "hint": "💡 Cloned app runs alongside original. Needs different signature (use testkey to auto-sign).",
+      "btn_ok": "Clone",
+      "suffix_pkg": ".clone",
+      "suffix_name": " (Clone)",
+      "warn_empty_pkg": "Invalid package",
+      "warn_regex_pkg": "Package must start with letter and contain only letters, numbers, dots.",
+      "warn_same_pkg": "New package must differ from original."
+    },
+    "patch_config": {
+      "title": "Configure {name}",
+      "btn_ok": "OK",
+      "btn_cancel": "Cancel"
+    },
+    "wizard": {
+      "title": "LP-PC Suite Wizard",
+      "header": "What do you want to do?",
+      "btn_ok": "Start",
+      "btn_cancel": "Exit",
+      "opt": {
+        "iap_dex": "🎮 Play games free (IAP bypass)",
+        "ads_full_offline": "🚫 Remove ads",
+        "license_extreme": "🔑 Use paid apps free",
+        "multi_full": "⭐ Full patch (all)"
+      }
+    },
+    "ads_patch": {
+      "title": "Remove Ads - {name}",
+      "choose_mode": "<b>Choose Ads Mode:</b>",
+      "opt_remove": "Remove ad activities from manifest",
+      "opt_offline": "Make module think offline",
+      "opt_links": "Remove ad URLs from smali",
+      "opt_full_offline": "Full offline (combined)",
+      "btn_apply": "Apply",
+      "btn_cancel": "Cancel"
+    }
+  }
+}

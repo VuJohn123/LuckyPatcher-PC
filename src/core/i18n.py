@@ -30,7 +30,7 @@ from threading import RLock
 logger = logging.getLogger(__name__)
 
 _LANG_DIR = Path(__file__).resolve().parent.parent.parent / "assets" / "i18n"
-_DEFAULT_LANG = "vi"
+_DEFAULT_LANG = "en"
 _FALLBACK_LANG = "en"
 
 _current_lang: str = os.environ.get("LP_LANG", _DEFAULT_LANG)

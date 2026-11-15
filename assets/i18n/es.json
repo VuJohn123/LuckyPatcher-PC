@@ -1,0 +1,349 @@
+{
+  "main_window": {
+    "title": "LP-PC Suite v5 – Herramienta profesional de modding"
+  },
+  "sidebar": {
+    "logo": "🛠 LP-PC Suite",
+    "apps": "📱  Apps instaladas",
+    "detail": "🔍  Detalles APK",
+    "tools": "⚙️  Herramientas",
+    "version": "v5.0.0"
+  },
+  "toolbar": {
+    "search_placeholder": "🔍  Buscar apps...",
+    "filter_all": "Todas",
+    "filter_license": "Verif. licencia",
+    "filter_ads": "Anuncios",
+    "filter_custom": "Parche personalizado",
+    "filter_system": "Sistema",
+    "browse": "📁  Examinar APK",
+    "download": "📥  Descargar APK",
+    "workspace": "📂  Espacio de trabajo",
+    "reload": "🔄  Recargar",
+    "toolbox": "🧰  Caja de herramientas"
+  },
+  "status": {
+    "ready": "Listo",
+    "loaded": "Cargado: {name}",
+    "completed": "Completado: {output}",
+    "failed": "Parcheo fallido",
+    "loaded_apps": "Cargadas {count} apps del dispositivo",
+    "loaded_demo": "Cargadas {count} apps demo (sin dispositivo ADB)"
+  },
+  "log_panel": {
+    "title": "📋  Registro de actividad",
+    "clear": "Limpiar",
+    "expand_tooltip": "Expandir/contraer panel de registro",
+    "copy": "Copiar",
+    "copy_all": "Copiar todo",
+    "save": "Guardar registro"
+  },
+  "app_list": {
+    "name": "Nombre",
+    "package": "Paquete",
+    "version": "Versión",
+    "size": "Tamaño",
+    "license": "Licencia",
+    "ads": "Anuncios",
+    "iap": "Compras in-app",
+    "custom": "Personalizado",
+    "system": "Sistema",
+    "status_original": "Original",
+    "status_patched": "Parcheado",
+    "status_backup": "Respaldo",
+    "context_patch": "Parchear",
+    "context_backup": "Respaldo",
+    "context_restore": "Restaurar",
+    "context_uninstall": "Desinstalar",
+    "context_open_folder": "Abrir carpeta",
+    "context_copy_package": "Copiar paquete",
+    "context_copy_path": "Copiar ruta"
+  },
+  "detail_panel": {
+    "title": "Detalles APK",
+    "tabs": {
+      "info": "Info",
+      "analysis": "Análisis",
+      "patches": "Parches",
+      "manifest": "Manifiesto",
+      "signatures": "Firmas",
+      "dex": "DEX"
+    },
+    "fields": {
+      "package_name": "Nombre del paquete",
+      "version_name": "Nombre de versión",
+      "version_code": "Código de versión",
+      "min_sdk": "SDK mínimo",
+      "target_sdk": "SDK objetivo",
+      "size": "Tamaño del archivo",
+      "sha256": "SHA256",
+      "signature": "Firma",
+      "install_location": "Ubicación de instalación"
+    },
+    "analysis": {
+      "license_detected": "Detección de verificación de licencia",
+      "ads_detected": "Detección de librerías de anuncios",
+      "iap_detected": "Detección de compras in-app",
+      "root_detected": "Detección de comprobaciones Root",
+      "packer_detected": "Detección de packer",
+      "custom_patches": "Parches personalizados disponibles",
+      "no_issues": "No se detectaron problemas"
+    },
+    "colors": {
+      "green": "Se puede parchear",
+      "yellow": "Parcialmente parcheable",
+      "orange": "Difícil",
+      "red": "No parcheable / Packer",
+      "gray": "Desconocido"
+    }
+  },
+  "patch_dialog": {
+    "title": "Opciones de parcheo",
+    "modes": {
+      "license": "Licencia",
+      "ads": "Anuncios",
+      "iap": "Compras",
+      "signature": "Firma",
+      "custom": "Personalizado",
+      "backup": "Respaldo",
+      "clone": "Clonar"
+    },
+    "license_modes": {
+      "auto": "Auto (DEX)",
+      "reverse_auto": "Auto inverso",
+      "extreme": "Extremo",
+      "amazon": "Amazon DRM",
+      "samsung": "Samsung IAP"
+    },
+    "ads_modes": {
+      "remove_links": "Eliminar enlaces",
+      "break_receiver": "Romper receptor",
+      "offline": "Modo offline",
+      "full_offline": "Offline completo"
+    },
+    "iap_modes": {
+      "dex": "Parche DEX",
+      "proxy": "Modo proxy"
+    },
+    "signature_modes": {
+      "disable_verify": "Deshabilitar verificación",
+      "remove_integrity": "Eliminar integridad",
+      "fake_archive": "Archivo falso"
+    },
+    "key_type": "Tipo de clave",
+    "key_types": {
+      "testkey": "Clave de prueba",
+      "platform": "Clave de plataforma",
+      "media": "Clave de medios",
+      "shared": "Clave compartida"
+    },
+    "buttons": {
+      "patch": "Iniciar parcheo",
+      "cancel": "Cancelar",
+      "advanced": "Avanzado"
+    }
+  },
+  "messages": {
+    "no_device": "No se detectó dispositivo. Conecte un dispositivo Android y active depuración USB.",
+    "no_root": "Se requieren permisos Root. Conceda acceso Root e intente de nuevo.",
+    "patch_success": "¡Parcheo exitoso! Salida: {path}",
+    "patch_failed": "Parcheo fallido: {error}",
+    "install_success": "Instalación exitosa",
+    "install_failed": "Instalación fallida: {error}",
+    "download_started": "Iniciando descarga...",
+    "download_completed": "Descarga completada: {path}",
+    "download_failed": "Descarga fallida: {error}",
+    "analysis_complete": "Análisis completado",
+    "confirm_uninstall": "¿Desinstalar {name}?",
+    "confirm_restore": "¿Restaurar original de {name}?"
+  },
+  "mcp": {
+    "server_started": "Servidor MCP iniciado",
+    "server_stopped": "Servidor MCP detenido",
+    "client_connected": "Cliente conectado: {name}",
+    "tool_called": "Herramienta invocada: {tool}"
+  },
+  "adb_features": {
+    "odex_patching": "Parcheo ODEX",
+    "patch_to_android": "Patch to Android",
+    "modded_play_store": "Play Store modificado",
+    "bootlist": "BootList",
+    "widgets": "Widgets",
+    "lpzip_import": "Importar lpzip",
+    "xposed_install": "Instalar módulo Xposed",
+    "require_root": "Requiere Root",
+    "require_api21": "Requiere Android 5.0+ (API 21+)",
+    "deploying": "Desplegando...",
+    "deployed": "Desplegado",
+    "reboot_required": "Se requiere reinicio"
+  },
+  "settings": {
+    "title": "Ajustes",
+    "language": "Idioma",
+    "theme": "Tema",
+    "auto_update": "Actualización automática",
+    "backup_before_patch": "Respaldo antes de parchear",
+    "verify_signatures": "Verificar firmas",
+    "log_level": "Nivel de registro",
+    "max_log_lines": "Máx. líneas de registro"
+  },
+  "toolbox": {
+    "title": "Caja de herramientas",
+    "tools": {
+      "permission_changer": "Cambiar permisos",
+      "gms_spoofer": "GMS Spoofer",
+      "event_logger": "Registro de eventos",
+      "custom_patches": "Parches personalizados",
+      "patch_downloader": "Descargador de parches",
+      "apk_downloader": "Descargador de APK",
+      "batch_patcher": "Parcheo por lotes",
+      "signature_tools": "Herramientas de firma",
+      "resource_editor": "Editor de recursos",
+      "manifest_editor": "Editor de manifiesto"
+    }
+  },
+  "progress": {
+    "analyzing": "Analizando...",
+    "decompiling": "Descompilando...",
+    "patching": "Parcheando...",
+    "recompiling": "Recompilando...",
+    "signing": "Firmando...",
+    "installing": "Instalando...",
+    "downloading": "Descargando...",
+    "extracting": "Extrayendo...",
+    "completed": "Completado",
+    "cancelled": "Cancelado"
+  },
+  "ui_mode": {
+    "label": "Modo",
+    "beginner": "Principiante",
+    "mitigative": "Seguro",
+    "advanced": "Avanzado",
+    "tooltip": "Elige cuánto detalle muestra la interfaz",
+    "beginner_hint": "Solo se muestran las acciones más seguras y comunes.",
+    "mitigative_hint": "Añade acciones avanzadas con advertencias de riesgo.",
+    "advanced_hint": "Muestra todas las acciones y opciones avanzadas.",
+    "caution_badge": "⚠",
+    "danger_badge": "⛔",
+    "backup_reminder": "Se recomienda hacer una copia de seguridad del APK antes de parchear. ¿Continuar?"
+  },
+  "actions": {
+    "open_rebuild": "Crear APK modificado",
+    "remove_license": "Eliminar verificación de licencia",
+    "remove_ads": "Eliminar anuncios de Google",
+    "iap_emulation": "Emulación de compras integradas",
+    "apply_custom_patch": "Aplicar parche personalizado",
+    "change_perms": "Cambiar permisos",
+    "resign": "Firmar APK de nuevo",
+    "backup": "Copia de seguridad",
+    "launch": "Abrir aplicación",
+    "info": "Información de la app",
+    "license_auto": "Eliminar licencia (auto)",
+    "ads_remove": "Eliminar anuncios",
+    "iap_dex": "IAP vía DEX",
+    "custom": "Parche personalizado",
+    "sig_disable": "Desactivar verificación de firma",
+    "sig_integrity": "Eliminar verificación de integridad",
+    "sig_fake_archive": "Firma falsa (archivo)",
+    "aidl_proxy": "Proxy AIDL",
+    "clone": "Clonar aplicación"
+  },
+  "detail": {
+    "back": "←  Back",
+    "rebuild_btn": "🔨 Create Modified APK (Rebuild)",
+    "menu_btn": "📋 Menu of Patches",
+    "features_title": "🔍 Detected Features",
+    "quick_actions": "🛠 Quick Actions",
+    "action_remove_license": "🔑 Remove License Verification",
+    "action_remove_ads": "🚫 Remove Google Ads",
+    "action_iap": "💳 Emulate IAP (Rebuild)",
+    "action_custom": "📄 Custom Patch",
+    "action_perms": "⚙️ Change Permissions",
+    "action_resign": "✍️ Re-sign APK"
+  },
+  "switches": {
+    "billing": "💰 Billing",
+    "proxy": "🌐 Proxy",
+    "autorepeat": "🔄 Auto-Repeat",
+    "save": "💾 Save",
+    "reset": "♻️ Reset",
+    "billing_tip": "Enable/disable Google Billing emulation",
+    "proxy_tip": "Enable/disable local IAP proxy",
+    "autorepeat_tip": "Auto-repeat saved IAP transactions",
+    "save_tip": "Save IAP transactions for later replay",
+    "on": "ON",
+    "off": "OFF"
+  },
+  "dialog": {
+    "common": {
+      "ok": "OK",
+      "cancel": "Cancel",
+      "close": "Close",
+      "error": "Error",
+      "warning_title": "⚠️ Safety Warning",
+      "continue": "Continue",
+      "stop": "Stop"
+    },
+    "resign": {
+      "title": "Re-sign APK",
+      "header": "Select signing key and configuration",
+      "key_group": "Key Type",
+      "pkg_group": "Forced Package ID",
+      "pkg_label": "ID (127 = auto):",
+      "btn_ok": "Re-sign",
+      "key": {
+        "testkey": "testkey",
+        "platform": "platform",
+        "media": "media",
+        "shared": "shared"
+      },
+      "desc": {
+        "testkey": "Default test key — works for most apps",
+        "platform": "Platform key — Android system apps",
+        "media": "Media key — system media apps",
+        "shared": "Shared key — shared libraries"
+      }
+    },
+    "clone": {
+      "title": "Clone App",
+      "header": "Clone: {name}",
+      "orig_pkg": "Original Package:",
+      "new_pkg": "New Package:",
+      "new_name": "New Name:",
+      "hint": "💡 Cloned app runs alongside original. Needs different signature (use testkey to auto-sign).",
+      "btn_ok": "Clone",
+      "suffix_pkg": ".clone",
+      "suffix_name": " (Clone)",
+      "warn_empty_pkg": "Invalid package",
+      "warn_regex_pkg": "Package must start with letter and contain only letters, numbers, dots.",
+      "warn_same_pkg": "New package must differ from original."
+    },
+    "patch_config": {
+      "title": "Configure {name}",
+      "btn_ok": "OK",
+      "btn_cancel": "Cancel"
+    },
+    "wizard": {
+      "title": "LP-PC Suite Wizard",
+      "header": "What do you want to do?",
+      "btn_ok": "Start",
+      "btn_cancel": "Exit",
+      "opt": {
+        "iap_dex": "🎮 Play games free (IAP bypass)",
+        "ads_full_offline": "🚫 Remove ads",
+        "license_extreme": "🔑 Use paid apps free",
+        "multi_full": "⭐ Full patch (all)"
+      }
+    },
+    "ads_patch": {
+      "title": "Remove Ads - {name}",
+      "choose_mode": "<b>Choose Ads Mode:</b>",
+      "opt_remove": "Remove ad activities from manifest",
+      "opt_offline": "Make module think offline",
+      "opt_links": "Remove ad URLs from smali",
+      "opt_full_offline": "Full offline (combined)",
+      "btn_apply": "Apply",
+      "btn_cancel": "Cancel"
+    }
+  }
+}

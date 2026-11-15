@@ -1,0 +1,91 @@
+main_window.title: EN=LP-PC Suite v5 – Professional Modding Tool | ZH=LP-PC Suite v5 – 专业修改工具
+sidebar.apps: EN=📱  Installed Apps | ZH=📱  已安装应用
+toolbar.browse: EN=📁  Browse APK | ZH=📁  浏览 APK
+actions.remove_license: EN=Remove License Verification | ZH=移除许可证验证
+actions.remove_ads: EN=Remove Google Ads | ZH=移除 Google 广告
+actions.apply_custom_patch: EN=Apply Custom Patch | ZH=应用自定义补丁
+dialog.confirm_title: EN= | ZH=
+MATCH: sidebar.logo: EN=🛠 LP-PC Suite | ZH=🛠 LP-PC Suite
+MATCH: sidebar.version: EN=v5.0.0 | ZH=v5.0.0
+MATCH: detail_panel.tabs.dex: EN=DEX | ZH=DEX
+MATCH: detail_panel.fields.sha256: EN=SHA256 | ZH=SHA256
+MATCH: patch_dialog.license_modes.amazon: EN=Amazon DRM | ZH=Amazon DRM
+MATCH: patch_dialog.license_modes.samsung: EN=Samsung IAP | ZH=Samsung IAP
+MATCH: adb_features.patch_to_android: EN=Patch to Android | ZH=Patch to Android
+MATCH: detail.back: EN=←  Back | ZH=←  Back
+MATCH: detail.rebuild_btn: EN=🔨 Create Modified APK (Rebuild) | ZH=🔨 Create Modified APK (Rebuild)
+MATCH: detail.menu_btn: EN=📋 Menu of Patches | ZH=📋 Menu of Patches
+MATCH: detail.features_title: EN=🔍 Detected Features | ZH=🔍 Detected Features
+MATCH: detail.quick_actions: EN=🛠 Quick Actions | ZH=🛠 Quick Actions
+MATCH: detail.action_remove_license: EN=🔑 Remove License Verification | ZH=🔑 Remove License Verification
+MATCH: detail.action_remove_ads: EN=🚫 Remove Google Ads | ZH=🚫 Remove Google Ads
+MATCH: detail.action_iap: EN=💳 Emulate IAP (Rebuild) | ZH=💳 Emulate IAP (Rebuild)
+MATCH: detail.action_custom: EN=📄 Custom Patch | ZH=📄 Custom Patch
+MATCH: detail.action_perms: EN=⚙️ Change Permissions | ZH=⚙️ Change Permissions
+MATCH: detail.action_resign: EN=✍️ Re-sign APK | ZH=✍️ Re-sign APK
+MATCH: switches.billing: EN=💰 Billing | ZH=💰 Billing
+MATCH: switches.proxy: EN=🌐 Proxy | ZH=🌐 Proxy
+MATCH: switches.autorepeat: EN=🔄 Auto-Repeat | ZH=🔄 Auto-Repeat
+MATCH: switches.save: EN=💾 Save | ZH=💾 Save
+MATCH: switches.reset: EN=♻️ Reset | ZH=♻️ Reset
+MATCH: switches.billing_tip: EN=Enable/disable Google Billing emulation | ZH=Enable/disable Google Billing emulation
+MATCH: switches.proxy_tip: EN=Enable/disable local IAP proxy | ZH=Enable/disable local IAP proxy
+MATCH: switches.autorepeat_tip: EN=Auto-repeat saved IAP transactions | ZH=Auto-repeat saved IAP transactions
+MATCH: switches.save_tip: EN=Save IAP transactions for later replay | ZH=Save IAP transactions for later replay
+MATCH: switches.on: EN=ON | ZH=ON
+MATCH: switches.off: EN=OFF | ZH=OFF
+MATCH: dialog.common.ok: EN=OK | ZH=OK
+MATCH: dialog.common.cancel: EN=Cancel | ZH=Cancel
+MATCH: dialog.common.close: EN=Close | ZH=Close
+MATCH: dialog.common.error: EN=Error | ZH=Error
+MATCH: dialog.common.warning_title: EN=⚠️ Safety Warning | ZH=⚠️ Safety Warning
+MATCH: dialog.common.continue: EN=Continue | ZH=Continue
+MATCH: dialog.common.stop: EN=Stop | ZH=Stop
+MATCH: dialog.resign.title: EN=Re-sign APK | ZH=Re-sign APK
+MATCH: dialog.resign.header: EN=Select signing key and configuration | ZH=Select signing key and configuration
+MATCH: dialog.resign.key_group: EN=Key Type | ZH=Key Type
+MATCH: dialog.resign.pkg_group: EN=Forced Package ID | ZH=Forced Package ID
+MATCH: dialog.resign.pkg_label: EN=ID (127 = auto): | ZH=ID (127 = auto):
+MATCH: dialog.resign.btn_ok: EN=Re-sign | ZH=Re-sign
+MATCH: dialog.resign.key.testkey: EN=testkey | ZH=testkey
+MATCH: dialog.resign.key.platform: EN=platform | ZH=platform
+MATCH: dialog.resign.key.media: EN=media | ZH=media
+MATCH: dialog.resign.key.shared: EN=shared | ZH=shared
+MATCH: dialog.resign.desc.testkey: EN=Default test key — works for most apps | ZH=Default test key — works for most apps
+MATCH: dialog.resign.desc.platform: EN=Platform key — Android system apps | ZH=Platform key — Android system apps
+MATCH: dialog.resign.desc.media: EN=Media key — system media apps | ZH=Media key — system media apps
+MATCH: dialog.resign.desc.shared: EN=Shared key — shared libraries | ZH=Shared key — shared libraries
+MATCH: dialog.clone.title: EN=Clone App | ZH=Clone App
+MATCH: dialog.clone.header: EN=Clone: {name} | ZH=Clone: {name}
+MATCH: dialog.clone.orig_pkg: EN=Original Package: | ZH=Original Package:
+MATCH: dialog.clone.new_pkg: EN=New Package: | ZH=New Package:
+MATCH: dialog.clone.new_name: EN=New Name: | ZH=New Name:
+MATCH: dialog.clone.hint: EN=💡 Cloned app runs alongside original. Needs different signature (use testkey to auto-sign). | ZH=💡 Cloned app runs alongside original. Needs different signature (use testkey to auto-sign).
+MATCH: dialog.clone.btn_ok: EN=Clone | ZH=Clone
+MATCH: dialog.clone.suffix_pkg: EN=.clone | ZH=.clone
+MATCH: dialog.clone.suffix_name: EN= (Clone) | ZH= (Clone)
+MATCH: dialog.clone.warn_empty_pkg: EN=Invalid package | ZH=Invalid package
+MATCH: dialog.clone.warn_regex_pkg: EN=Package must start with letter and contain only letters, numbers, dots. | ZH=Package must start with letter and contain only letters, numbers, dots.
+MATCH: dialog.clone.warn_same_pkg: EN=New package must differ from original. | ZH=New package must differ from original.
+MATCH: dialog.patch_config.title: EN=Configure {name} | ZH=Configure {name}
+MATCH: dialog.patch_config.btn_ok: EN=OK | ZH=OK
+MATCH: dialog.patch_config.btn_cancel: EN=Cancel | ZH=Cancel
+MATCH: dialog.wizard.title: EN=LP-PC Suite Wizard | ZH=LP-PC Suite Wizard
+MATCH: dialog.wizard.header: EN=What do you want to do? | ZH=What do you want to do?
+MATCH: dialog.wizard.btn_ok: EN=Start | ZH=Start
+MATCH: dialog.wizard.btn_cancel: EN=Exit | ZH=Exit
+MATCH: dialog.wizard.opt.iap_dex: EN=🎮 Play games free (IAP bypass) | ZH=🎮 Play games free (IAP bypass)
+MATCH: dialog.wizard.opt.ads_full_offline: EN=🚫 Remove ads | ZH=🚫 Remove ads
+MATCH: dialog.wizard.opt.license_extreme: EN=🔑 Use paid apps free | ZH=🔑 Use paid apps free
+MATCH: dialog.wizard.opt.multi_full: EN=⭐ Full patch (all) | ZH=⭐ Full patch (all)
+MATCH: dialog.ads_patch.title: EN=Remove Ads - {name} | ZH=Remove Ads - {name}
+MATCH: dialog.ads_patch.choose_mode: EN=<b>Choose Ads Mode:</b> | ZH=<b>Choose Ads Mode:</b>
+MATCH: dialog.ads_patch.opt_remove: EN=Remove ad activities from manifest | ZH=Remove ad activities from manifest
+MATCH: dialog.ads_patch.opt_offline: EN=Make module think offline | ZH=Make module think offline
+MATCH: dialog.ads_patch.opt_links: EN=Remove ad URLs from smali | ZH=Remove ad URLs from smali
+MATCH: dialog.ads_patch.opt_full_offline: EN=Full offline (combined) | ZH=Full offline (combined)
+MATCH: dialog.ads_patch.btn_apply: EN=Apply | ZH=Apply
+MATCH: dialog.ads_patch.btn_cancel: EN=Cancel | ZH=Cancel
+MATCH: ui_mode.caution_badge: EN=⚠ | ZH=⚠
+MATCH: ui_mode.danger_badge: EN=⛔ | ZH=⛔
+Total exact matches (English placeholders): 83

@@ -1,10 +1,9 @@
 """Plugin manager — load động từ thư mục plugins/."""
 from __future__ import annotations
 
-import importlib
+import importlib.util
 import logging
 import os
-import sys
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -29,16 +28,25 @@ class PluginManager:
         if not self.plugin_dir.exists():
             return
 
-        parent = str(self.plugin_dir.parent)
-        if parent not in sys.path:
-            sys.path.insert(0, parent)
-
         for file in self.plugin_dir.glob("*.py"):
             if file.name.startswith("_"):
                 continue
             module_name = file.stem
             try:
-                module = importlib.import_module(f"plugins.{module_name}")
+                # Load by file path so plugin modules never collide with the
+                # built-in ``plugins`` package or with plugins from other
+                # directories that happen to share a module name.
+                unique_name = f"_lp_plugin_{module_name}_{id(file)}"
+                spec = importlib.util.spec_from_file_location(
+                    unique_name, file
+                )
+                if spec is None or spec.loader is None:
+                    logger.warning(
+                        "Plugin %s has no importable spec", module_name
+                    )
+                    continue
+                module = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(module)
                 if hasattr(module, "register"):
                     info = module.register()
                     if isinstance(info, dict):

@@ -408,6 +408,7 @@ def entropy_window_analysis(
     window_size: int = _WINDOW_SIZE,
     sample_stride: int = _WINDOW_SAMPLE_STRIDE,
     threshold: float = _ENCRYPTED_ENTROPY_MIN,
+    max_windows: int | None = None,
 ) -> WindowEntropyResult:
     """
     Sliding-window Shannon entropy detect partial encryption.
@@ -426,6 +427,9 @@ def entropy_window_analysis(
         window_size: kích thước 1 window (default 16KB)
         sample_stride: sample mỗi N byte để tăng tốc (default 4)
         threshold: entropy threshold để coi window là "encrypted"
+        max_windows: nếu tổng số window vượt ngưỡng này, chỉ phân tích
+            một tập con phân bố đều (giữ coverage toàn dex, ~tuyến tính
+            với `max_windows` thay vì kích thước dex). None = tất cả.
 
     Returns:
         WindowEntropyResult
@@ -454,7 +458,19 @@ def entropy_window_analysis(
     sum_e = 0.0
 
     stride = max(1, sample_stride)
-    for offset in range(0, n - window_size + 1, window_size):
+
+    offsets = list(range(0, n - window_size + 1, window_size))
+    tail_start = len(offsets) * window_size
+    has_tail = tail_start < n and (n - tail_start) >= 512
+    if has_tail:
+        offsets.append(tail_start)
+
+    # Bound work on very large dex: analyse an evenly spaced subset.
+    if max_windows is not None and len(offsets) > max_windows:
+        step = math.ceil(len(offsets) / max_windows)
+        offsets = offsets[::step]
+
+    for offset in offsets:
         window = dex_bytes[offset:offset + window_size]
         # Sample để tăng tốc — random vẫn random
         sample = window[::stride]
@@ -466,21 +482,6 @@ def entropy_window_analysis(
             max_off = offset
         if e >= threshold:
             high_count += 1
-
-    # Tail (nếu còn dư < window_size, sample riêng)
-    tail_start = total * window_size
-    if tail_start < n:
-        tail = dex_bytes[tail_start:]
-        if len(tail) >= 512:  # bỏ qua tail quá nhỏ
-            sample = tail[::stride]
-            e = _fast_entropy(sample)
-            total += 1
-            sum_e += e
-            if e > max_e:
-                max_e = e
-                max_off = tail_start
-            if e >= threshold:
-                high_count += 1
 
     return WindowEntropyResult(
         max_entropy=max_e,

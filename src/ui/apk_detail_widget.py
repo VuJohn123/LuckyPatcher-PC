@@ -1,21 +1,23 @@
 """
 APKDetailWidget — hiển thị thông tin chi tiết APK.
 
-v4 (2026):
-  - i18n integration: dùng core.i18n.t() cho label chính.
-  - Row background color cho mỗi finding theo loại.
-  - Packer warning box.
-  - "Open Menu of Patches" button.
+v5 (2026):
+- i18n integration: dùng core.i18n.t() cho label chính.
+- Row background color cho mỗi finding theo loại.
+- Packer warning box.
+- "Open Menu of Patches" button.
+- Copy-paste support for package name, app name, etc.
 """
 from __future__ import annotations
 
 from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QFont
+from PyQt6.QtGui import QAction, QFont, QKeySequence
 from PyQt6.QtWidgets import (
     QFrame,
     QGroupBox,
     QHBoxLayout,
     QLabel,
+    QMenu,
     QPushButton,
     QScrollArea,
     QVBoxLayout,
@@ -109,6 +111,136 @@ class APKDetailWidget(QWidget):
         scroll.setWidget(self.content_widget)
         main_layout.addWidget(scroll)
 
+        # Enable context menu for copy-paste
+        self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.customContextMenuRequested.connect(self._show_context_menu)
+        self._setup_shortcuts()
+
+    def _setup_shortcuts(self):
+        """Setup keyboard shortcuts for copy/select all."""
+        copy_action = QAction(self)
+        copy_action.setShortcut(QKeySequence.StandardKey.Copy)
+        copy_action.triggered.connect(self._copy_selection)
+        self.addAction(copy_action)
+
+        select_all_action = QAction(self)
+        select_all_action.setShortcut(QKeySequence.StandardKey.SelectAll)
+        select_all_action.triggered.connect(self._select_all)
+        self.addAction(select_all_action)
+
+    def _show_context_menu(self, pos):
+        """Show context menu with copy options."""
+        menu = QMenu(self)
+
+        # Check if there's selected text
+        has_selection = self._has_text_selection()
+
+        copy_action = menu.addAction("📋 Copy")
+        copy_action.triggered.connect(self._copy_selection)
+        copy_action.setEnabled(has_selection)
+
+        copy_all_action = menu.addAction("📋 Copy All Details")
+        copy_all_action.triggered.connect(self._copy_all_details)
+
+        menu.addSeparator()
+
+        # Copy specific fields
+        copy_pkg_action = menu.addAction("📋 Copy Package Name")
+        copy_pkg_action.triggered.connect(self._copy_package_name)
+
+        copy_name_action = menu.addAction("📋 Copy App Name")
+        copy_name_action.triggered.connect(self._copy_app_name)
+
+        copy_version_action = menu.addAction("📋 Copy Version")
+        copy_version_action.triggered.connect(self._copy_version)
+
+        copy_sha256_action = menu.addAction("📋 Copy SHA256")
+        copy_sha256_action.triggered.connect(self._copy_sha256)
+
+        menu.exec(self.mapToGlobal(pos))
+
+    def _has_text_selection(self) -> bool:
+        """Check if any child widget has text selection."""
+        # Check content widget and its children
+        for child in self.content_widget.findChildren(QLabel):
+            if child.hasSelectedText():
+                return True
+        return False
+
+    def _copy_selection(self):
+        """Copy currently selected text from any label."""
+        from PyQt6.QtWidgets import QApplication
+        clipboard = QApplication.clipboard()
+        for child in self.content_widget.findChildren(QLabel):
+            if child.hasSelectedText():
+                clipboard.setText(child.selectedText())
+                return
+
+    def _select_all(self):
+        """Select all text in all labels (not practical, but standard shortcut)."""
+        # In a detail widget, select all isn't very useful
+        # but we provide it for completeness
+        pass
+
+    def _copy_all_details(self):
+        """Copy all detail text to clipboard."""
+        from PyQt6.QtWidgets import QApplication
+        clipboard = QApplication.clipboard()
+        texts = []
+        for child in self.content_widget.findChildren(QLabel):
+            text = child.text()
+            if text and text.strip():
+                texts.append(text)
+        clipboard.setText("\n".join(texts))
+
+    def _copy_package_name(self):
+        """Copy package name to clipboard."""
+        from PyQt6.QtWidgets import QApplication
+        clipboard = QApplication.clipboard()
+        # Find the package label
+        for child in self.content_widget.findChildren(QLabel):
+            text = child.text()
+            if text.startswith("Package:") or text.startswith("包名:") or text.startswith("Пакет:") or text.startswith("Nombre del paquete:") or text.startswith("Nome do Pacote:") or text.startswith("Paket Adı:") or text.startswith("Nama Paket:"):
+                # Extract package name after the colon
+                parts = text.split(":", 1)
+                if len(parts) > 1:
+                    clipboard.setText(parts[1].strip())
+                return
+
+    def _copy_app_name(self):
+        """Copy app name to clipboard."""
+        from PyQt6.QtWidgets import QApplication
+        clipboard = QApplication.clipboard()
+        for child in self.content_widget.findChildren(QLabel):
+            text = child.text()
+            if child.font().bold() and child.font().pointSize() >= 16:
+                clipboard.setText(text)
+                return
+
+    def _copy_version(self):
+        """Copy version to clipboard."""
+        from PyQt6.QtWidgets import QApplication
+        clipboard = QApplication.clipboard()
+        for child in self.content_widget.findChildren(QLabel):
+            text = child.text()
+            if text.startswith("Version:") or text.startswith("Versión:") or text.startswith("Версия:") or text.startswith("Versão:") or text.startswith("Sürüm:") or text.startswith("Versi:"):
+                parts = text.split(":", 1)
+                if len(parts) > 1:
+                    clipboard.setText(parts[1].strip().split("|")[0].strip())
+                return
+
+    def _copy_sha256(self):
+        """Copy SHA256 to clipboard."""
+        from PyQt6.QtWidgets import QApplication
+        clipboard = QApplication.clipboard()
+        for child in self.content_widget.findChildren(QLabel):
+            text = child.text()
+            if text.startswith("SHA256:") or text.startswith("SHA256") and len(text) > 10:
+                parts = text.split(":", 1)
+                if len(parts) > 1:
+                    clipboard.setText(parts[1].strip())
+                return
+
     # ============================================================
     # PUBLIC
     # ============================================================
@@ -118,9 +250,6 @@ class APKDetailWidget(QWidget):
             widget = child.widget()
             if widget is None:
                 continue
-            # Hide immediately: deleteLater() leaves the widget as a visible
-            # child until the event loop runs, so a fast repopulate would
-            # briefly paint two overlapping copies.
             widget.hide()
             widget.setParent(None)
             widget.deleteLater()
@@ -138,8 +267,6 @@ class APKDetailWidget(QWidget):
         self._add_features(findings)
         self._add_quick_actions(findings)
         self.content_layout.addStretch()
-        # New content should start at the top; otherwise the previous
-        # scroll offset is kept and the header is scrolled out of view.
         bar = self.scroll_area.verticalScrollBar()
         if bar is not None:
             bar.setValue(0)
@@ -172,6 +299,7 @@ class APKDetailWidget(QWidget):
         name.setStyleSheet("color: #f0f6fc;")
         name.setText(self._elide(app_name, 60))
         name.setToolTip(app_name)
+        name.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         info.addWidget(name)
 
         package = summary.get("package", "N/A")
@@ -179,6 +307,7 @@ class APKDetailWidget(QWidget):
         pkg.setStyleSheet("color: #8b949e; font-size: 12px;")
         pkg.setText(f"Package: {self._elide(package, 55)}")
         pkg.setToolTip(package)
+        pkg.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         info.addWidget(pkg)
 
         ver = QLabel(
@@ -186,7 +315,17 @@ class APKDetailWidget(QWidget):
             f"Size: {self._format_size(summary.get('size', 0))}"
         )
         ver.setStyleSheet("color: #6e7681; font-size: 11px;")
+        ver.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         info.addWidget(ver)
+
+        # SHA256
+        sha256 = summary.get("sha256", "")
+        if sha256:
+            sha_lbl = QLabel(f"SHA256: {sha256[:64]}...")
+            sha_lbl.setStyleSheet("color: #6e7681; font-size: 10px; font-family: monospace;")
+            sha_lbl.setToolTip(sha256)
+            sha_lbl.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+            info.addWidget(sha_lbl)
 
         h.addLayout(info, 1)
         self.content_layout.addWidget(header)
@@ -285,8 +424,6 @@ class APKDetailWidget(QWidget):
     # FEATURES — with colored rows
     # ============================================================
     def _add_features(self, findings: list[dict]) -> None:
-        # Packer findings already render in the dedicated warning box above.
-        # Re-listing them here duplicates the same row on screen.
         rows = [f for f in findings if f.get("type") != "packer"]
         if not rows:
             return
@@ -341,6 +478,7 @@ class APKDetailWidget(QWidget):
             "color: #f0f6fc; background: transparent;"
         )
         title.setWordWrap(True)
+        title.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         text_col.addWidget(title)
 
         desc_text = finding.get("description", "")
@@ -351,6 +489,7 @@ class APKDetailWidget(QWidget):
             )
             desc.setWordWrap(True)
             desc.setToolTip(desc_text)
+            desc.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
             text_col.addWidget(desc)
 
         h.addLayout(text_col, 1)
@@ -401,7 +540,6 @@ class APKDetailWidget(QWidget):
     def _create_action_button(
         self, action: str,
     ) -> QPushButton | None:
-        # action_key → (i18n_key, style_key)
         action_map = {
             "remove_license": (
                 "detail.action_remove_license", "green",

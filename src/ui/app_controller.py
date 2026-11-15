@@ -31,6 +31,7 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
 )
 
+from core.i18n import get_language, set_language
 from core.pipeline_signals import PipelineSignals
 from patcher.iap_manager import IAPManager
 from scanner.installed_apps import get_installed_apps
@@ -70,6 +71,14 @@ class AppController(QObject):
         self._suggest_signal.connect(
             self._handle_suggestions_on_main
         )
+
+    def get_language(self) -> str:
+        """Get current language."""
+        return get_language()
+
+    def set_language(self, lang: str) -> None:
+        """Set current language."""
+        set_language(lang)
 
     # ============================================================
     # APK LOADING

@@ -1,5 +1,11 @@
-name: ci
-on: [push, pull_request]
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
 jobs:
   test:
     runs-on: windows-latest
@@ -13,3 +19,93 @@ jobs:
       - run: pip install ruff==0.16.8 mypy==2.3.1
       - run: ruff check src
       - run: mypy src
+
+  release:
+    name: Create Release
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Need full history for changelog
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install pytest pytest-cov pytest-timeout pytest-qt
+      - name: Run tests
+        run: pytest src/tests -q
+      - name: Lint
+        run: |
+          pip install ruff==0.16.8 mypy==2.3.1
+          ruff check src
+          mypy src
+      - name: Generate changelog
+        id: changelog
+        run: |
+          python -c "
+import re
+with open('CHANGELOG.md', 'r', encoding='utf-8') as f:
+    content = f.read()
+# Extract latest version section
+match = re.search(r'## \[(.*?)\] - (.*?)\n(.*?)(?=\n## \[|$)', content, re.DOTALL)
+if match:
+    version = match.group(1)
+    date = match.group(2)
+    changes = match.group(3).strip()
+    print(f'version={version}')
+    print(f'date={date}')
+    print(f'changes={changes}')
+" > changelog.txt
+      - name: Build release zip
+        run: |
+          python -c "
+import zipfile
+import os
+from pathlib import Path
+
+version = '0.0.0'
+try:
+    with open('changelog.txt', 'r') as f:
+        for line in f:
+            if line.startswith('version='):
+                version = line.split('=', 1)[1].strip()
+                break
+except:
+    pass
+
+zip_name = f'LP-PC-Suite-v{version}.zip'
+with zipfile.ZipFile(zip_name, 'w', zipfile.ZIP_DEFLATED) as zf:
+    for root, dirs, files in os.walk('.'):
+        # Skip .git, __pycache__, .pytest_cache, .venv, etc.
+        skip_dirs = {'.git', '__pycache__', '.pytest_cache', '.venv', 'venv', 'env', '.github', 'node_modules', 'dist', 'build'}
+        dirs[:] = [d for d in dirs if d not in skip_dirs]
+        
+        for file in files:
+            # Skip certain files
+            if file.endswith(('.pyc', '.pyo', '.pyd', '.log', '.tmp', '.bak')):
+                continue
+            if file in {'.gitignore', '.gitattributes', '.DS_Store'}:
+                continue
+            filepath = os.path.join(root, file)
+            arcname = os.path.relpath(filepath, '.')
+            if not arcname.startswith('.github'):
+                zf.write(filepath, arcname)
+
+print(f'Created {zip_name}')
+"
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.changelog.outputs.version }}
+          name: LP-PC Suite v${{ steps.changelog.outputs.version }}
+          body_path: changelog.txt
+          files: LP-PC-Suite-v${{ steps.changelog.outputs.version }}.zip
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -75,8 +75,9 @@ logger = logging.getLogger(__name__)
 #   v9 — fix cache path restore packer_info (reconstruct từ findings)
 #   v10 — shared DexIndex + root/license false-positive fixes
 #   v11 — license evidence requirement (adjust LicenseData, pairip label)
+#   v12 — packer precision fusion (patchable theo dex readability)
 # Dòng ~50
-_ANALYZER_CACHE_VERSION = 11   # was 10
+_ANALYZER_CACHE_VERSION = 12   # was 11
 
 
 class AppDeepAnalyzer:
@@ -151,6 +152,11 @@ class AppDeepAnalyzer:
             self.findings, self.available_patches,
             index=self._dex_index,
         )
+        # Precision fusion — refine "patchable" from real dex readability
+        # (own-package classes + entropy windows + bytecode score) instead
+        # of the coarse static signature flag. Reuses the shared index and
+        # the memoised dex bytes, so it costs one entropy pass only.
+        self._apply_packer_fusion()
         logger.debug(
             "[analyzer] packer: %.2fs", time.monotonic() - t_packer,
         )
@@ -227,6 +233,77 @@ class AppDeepAnalyzer:
         return self.findings
 
     # ============================================================
+    # INTERNAL — packer precision fusion
+    # ============================================================
+    def _apply_packer_fusion(self) -> None:
+        """Refine `packer_info` from real dex readability.
+
+        The static signature table flags a packer as "not patchable" purely
+        from its name, even when the app's own dex is fully readable (a
+        bundled PairIP integrity shell is the common case). The fusion layer
+        fuses own-package class density, entropy windows and the bytecode
+        score into a verdict plus a `BypassStrategy`, then rewrites the
+        packer finding so the UI colour matches reality.
+        """
+        info = self.packer_info
+        if not isinstance(info, dict) or not info.get("name"):
+            return
+
+        try:
+            package = self.apk.get_package()
+        except Exception:
+            package = ""
+
+        try:
+            from scanner.checks.packer_fusion import assess_packability
+
+            assessment = assess_packability(
+                self.apk_path,
+                info.get("name"),
+                index=self._dex_index,
+                package=package or None,
+                dex_entries=self._get_all_dex_bytes(),
+            )
+        except Exception as e:
+            logger.debug("Packer fusion failed: %s", e)
+            return
+
+        info["patchable"] = assessment.patchable
+        info["confidence"] = assessment.confidence
+        info["strategy"] = assessment.strategy.value
+        info["rationale"] = assessment.rationale
+        info["fusion"] = assessment.to_dict()
+
+        self._rewrite_packer_finding(assessment)
+
+    def _rewrite_packer_finding(self, assessment) -> None:
+        """Apply a fused verdict to the existing packer finding."""
+        for f in self.findings:
+            if f.get("type") != "packer":
+                continue
+
+            f["color"] = "yellow" if assessment.patchable else "red"
+
+            details = [
+                d for d in (f.get("details") or [])
+                if not (
+                    isinstance(d, str)
+                    and d.startswith(("Strategy: ", "Rationale: "))
+                )
+            ]
+            details.append(f"Strategy: {assessment.strategy.value}")
+            details.append(f"Rationale: {assessment.rationale}")
+            f["details"] = details
+
+            if assessment.patchable:
+                f["description"] = (
+                    "APK có packer shell nhưng code ứng dụng vẫn đọc được "
+                    "— patch license/iap/ads thường áp dụng được. "
+                    "Xem Strategy/Rationale để biết cách xử lý."
+                )
+            return
+
+    # ============================================================
     # INTERNAL — cache packer reconstruction
     # ============================================================
     @staticmethod
@@ -241,6 +318,7 @@ class AppDeepAnalyzer:
 
         Shape khớp với `check_packer_with_fallback` trả về:
             {name, confidence, patchable, evidence}
+        Cộng thêm `strategy` / `rationale` khi finding có (fusion layer).
 
         Return None nếu không có finding 'packer' (APK clean).
         """
@@ -257,9 +335,15 @@ class AppDeepAnalyzer:
             details = f.get("details", []) or []
             confidence = "unknown"
             evidence: list[str] = []
+            strategy = ""
+            rationale = ""
             for d in details:
                 if isinstance(d, str) and d.startswith("Confidence: "):
                     confidence = d.split(": ", 1)[1].strip()
+                elif isinstance(d, str) and d.startswith("Strategy: "):
+                    strategy = d.split(": ", 1)[1].strip()
+                elif isinstance(d, str) and d.startswith("Rationale: "):
+                    rationale = d.split(": ", 1)[1].strip()
                 elif isinstance(d, str) and d.startswith(
                     "Source: "
                 ):
@@ -268,17 +352,22 @@ class AppDeepAnalyzer:
                 else:
                     evidence.append(d)
 
-            # Color mapping khớp với packer_check.py:
-            #   yellow → patchable=True (obfuscator)
-            #   red    → patchable=False (hard packer)
+            # Color mapping khớp với packer_check.py + fusion layer:
+            #   yellow → patchable=True
+            #   red    → patchable=False
             patchable = f.get("color") == "yellow"
 
-            return {
+            info = {
                 "name": name,
                 "confidence": confidence,
                 "patchable": patchable,
                 "evidence": evidence,
             }
+            if strategy:
+                info["strategy"] = strategy
+            if rationale:
+                info["rationale"] = rationale
+            return info
 
         # Không có finding 'packer' → APK clean (khớp full scan path)
         return None

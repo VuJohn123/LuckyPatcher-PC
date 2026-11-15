@@ -33,7 +33,186 @@
   "log_panel": {
     "title": "📋  Nhật ký hoạt động",
     "clear": "Xóa",
-    "expand_tooltip": "Mở rộng / thu gọn log"
+    "expand_tooltip": "Mở rộng / thu gọn log",
+    "copy": "Sao chép",
+    "copy_all": "Sao chép tất cả",
+    "save": "Lưu nhật ký"
+  },
+  "app_list": {
+    "name": "Tên",
+    "package": "Package",
+    "version": "Phiên bản",
+    "size": "Kích thước",
+    "license": "License",
+    "ads": "Quảng cáo",
+    "iap": "Mua trong ứng dụng",
+    "custom": "Tùy chỉnh",
+    "system": "Hệ thống",
+    "status_original": "Gốc",
+    "status_patched": "Đã patch",
+    "status_backup": "Đã sao lưu",
+    "context_patch": "Patch",
+    "context_backup": "Sao lưu",
+    "context_restore": "Khôi phục",
+    "context_uninstall": "Gỡ cài đặt",
+    "context_open_folder": "Mở thư mục",
+    "context_copy_package": "Sao chép package",
+    "context_copy_path": "Sao chép đường dẫn"
+  },
+  "detail_panel": {
+    "title": "Chi tiết APK",
+    "tabs": {
+      "info": "Thông tin",
+      "analysis": "Phân tích",
+      "patches": "Patch",
+      "manifest": "Manifest",
+      "signatures": "Chữ ký",
+      "dex": "DEX"
+    },
+    "fields": {
+      "package_name": "Package name",
+      "version_name": "Version name",
+      "version_code": "Version code",
+      "min_sdk": "Min SDK",
+      "target_sdk": "Target SDK",
+      "size": "File size",
+      "sha256": "SHA256",
+      "signature": "Signature",
+      "install_location": "Install location"
+    },
+    "analysis": {
+      "license_detected": "Phát hiện xác minh license",
+      "ads_detected": "Phát hiện thư viện quảng cáo",
+      "iap_detected": "Phát hiện IAP",
+      "root_detected": "Phát hiện kiểm tra Root",
+      "packer_detected": "Phát hiện packer",
+      "custom_patches": "Có custom patch khả dụng",
+      "no_issues": "Không phát hiện vấn đề"
+    },
+    "colors": {
+      "green": "Có thể patch",
+      "yellow": "Một phần có thể patch",
+      "orange": "Khó",
+      "red": "Không thể patch / Packer",
+      "gray": "Không xác định"
+    }
+  },
+  "patch_dialog": {
+    "title": "Tùy chọn Patch",
+    "modes": {
+      "license": "License",
+      "ads": "Quảng cáo",
+      "iap": "IAP",
+      "signature": "Chữ ký",
+      "custom": "Tùy chỉnh",
+      "backup": "Sao lưu",
+      "clone": "Clone"
+    },
+    "license_modes": {
+      "auto": "Tự động (DEX)",
+      "reverse_auto": "Ngược tự động",
+      "extreme": "Cực đoan",
+      "amazon": "Amazon DRM",
+      "samsung": "Samsung IAP"
+    },
+    "ads_modes": {
+      "remove_links": "Xóa liên kết",
+      "break_receiver": "Phá vỡ receiver",
+      "offline": "Chế độ ngoại tuyến",
+      "full_offline": "Ngoại tuyến hoàn toàn"
+    },
+    "iap_modes": {
+      "dex": "Patch DEX",
+      "proxy": "Chế độ proxy"
+    },
+    "signature_modes": {
+      "disable_verify": "Vô hiệu hóa xác minh",
+      "remove_integrity": "Xóa kiểm tra toàn vẹn",
+      "fake_archive": "Archive giả"
+    },
+    "key_type": "Loại khóa ký",
+    "key_types": {
+      "testkey": "Test key",
+      "platform": "Platform key",
+      "media": "Media key",
+      "shared": "Shared key"
+    },
+    "buttons": {
+      "patch": "Bắt đầu Patch",
+      "cancel": "Hủy",
+      "advanced": "Nâng cao"
+    }
+  },
+  "messages": {
+    "no_device": "Không phát hiện thiết bị. Hãy kết nối thiết bị Android và bật USB debugging.",
+    "no_root": "Cần quyền Root. Hãy cấp quyền Root và thử lại.",
+    "patch_success": "Patch thành công! Output: {path}",
+    "patch_failed": "Patch thất bại: {error}",
+    "install_success": "Cài đặt thành công",
+    "install_failed": "Cài đặt thất bại: {error}",
+    "download_started": "Bắt đầu tải...",
+    "download_completed": "Tải xong: {path}",
+    "download_failed": "Tải thất bại: {error}",
+    "analysis_complete": "Phân tích xong",
+    "confirm_uninstall": "Gỡ cài đặt {name}?",
+    "confirm_restore": "Khôi phục gốc {name}?"
+  },
+  "mcp": {
+    "server_started": "MCP server đã khởi động",
+    "server_stopped": "MCP server đã dừng",
+    "client_connected": "Client đã kết nối: {name}",
+    "tool_called": "Tool được gọi: {tool}"
+  },
+  "adb_features": {
+    "odex_patching": "ODEX Patching",
+    "patch_to_android": "Patch to Android",
+    "modded_play_store": "Play Store đã mod",
+    "bootlist": "BootList",
+    "widgets": "Widget",
+    "lpzip_import": "Import lpzip",
+    "xposed_install": "Cài Xposed module",
+    "require_root": "Cần Root",
+    "require_api21": "Cần Android 5.0+ (API 21+)",
+    "deploying": "Đang triển khai...",
+    "deployed": "Đã triển khai",
+    "reboot_required": "Cần reboot thiết bị"
+  },
+  "settings": {
+    "title": "Cài đặt",
+    "language": "Ngôn ngữ",
+    "theme": "Chủ đề",
+    "auto_update": "Tự động cập nhật",
+    "backup_before_patch": "Sao lưu trước khi patch",
+    "verify_signatures": "Xác minh chữ ký",
+    "log_level": "Mức log",
+    "max_log_lines": "Số dòng log tối đa"
+  },
+  "toolbox": {
+    "title": "Hộp công cụ",
+    "tools": {
+      "permission_changer": "Thay đổi quyền",
+      "gms_spoofer": "GMS Spoofer",
+      "event_logger": "Event Logger",
+      "custom_patches": "Custom Patches",
+      "patch_downloader": "Patch Downloader",
+      "apk_downloader": "APK Downloader",
+      "batch_patcher": "Batch Patcher",
+      "signature_tools": "Signature Tools",
+      "resource_editor": "Resource Editor",
+      "manifest_editor": "Manifest Editor"
+    }
+  },
+  "progress": {
+    "analyzing": "Đang phân tích...",
+    "decompiling": "Đang decompile...",
+    "patching": "Đang patch...",
+    "recompiling": "Đang recompile...",
+    "signing": "Đang ký...",
+    "installing": "Đang cài đặt...",
+    "downloading": "Đang tải...",
+    "extracting": "Đang giải nén...",
+    "completed": "Hoàn tất",
+    "cancelled": "Đã hủy"
   },
   "detail": {
     "back": "←  Quay lại",
@@ -132,5 +311,39 @@
       "btn_apply": "Áp dụng",
       "btn_cancel": "Hủy"
     }
+  },
+  "ui_mode": {
+    "label": "Chế độ",
+    "beginner": "Người mới",
+    "mitigative": "An toàn",
+    "advanced": "Nâng cao",
+    "tooltip": "Chọn mức độ chi tiết của giao diện",
+    "beginner_hint": "Chỉ hiển thị các thao tác an toàn và phổ biến nhất.",
+    "mitigative_hint": "Hiển thị thêm thao tác nâng cao, có cảnh báo rủi ro.",
+    "advanced_hint": "Hiển thị toàn bộ thao tác và tùy chọn nâng cao.",
+    "caution_badge": "⚠",
+    "danger_badge": "⛔",
+    "backup_reminder": "Nên sao lưu APK trước khi vá. Tiếp tục?"
+  },
+  "actions": {
+    "open_rebuild": "Tạo APK đã chỉnh sửa",
+    "remove_license": "Xóa kiểm tra bản quyền",
+    "remove_ads": "Xóa quảng cáo Google",
+    "iap_emulation": "Giả lập mua trong ứng dụng (IAP)",
+    "apply_custom_patch": "Áp dụng custom patch",
+    "change_perms": "Thay đổi quyền",
+    "resign": "Ký lại APK",
+    "backup": "Sao lưu ứng dụng",
+    "launch": "Mở ứng dụng",
+    "info": "Thông tin ứng dụng",
+    "license_auto": "Xóa license (tự động)",
+    "ads_remove": "Xóa quảng cáo",
+    "iap_dex": "IAP qua DEX",
+    "custom": "Custom patch",
+    "sig_disable": "Tắt kiểm tra chữ ký",
+    "sig_integrity": "Xóa kiểm tra toàn vẹn",
+    "sig_fake_archive": "Giả chữ ký (archive)",
+    "aidl_proxy": "AIDL proxy",
+    "clone": "Nhân bản ứng dụng"
   }
 }

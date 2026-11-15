@@ -18,6 +18,8 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
 )
 
+from core.i18n import t
+
 
 class MenuOfPatchesDialog(QDialog):
     action_requested = pyqtSignal(str)
@@ -99,7 +101,7 @@ class MenuOfPatchesDialog(QDialog):
         has_iap = self._has_finding("iap")
         has_custom = self._has_finding("custom_patch")
 
-        # === Primary actions ===
+        # === Primary actions (filtered by current UI mode) ===
         self._add_button(
             layout, "🔨 Create Modified APK File",
             "open_rebuild",
@@ -148,6 +150,18 @@ class MenuOfPatchesDialog(QDialog):
 
         layout.addStretch()
 
+        # Mode hint footer
+        from core.ui_mode import get_ui_mode
+
+        mode = get_ui_mode()
+        hint = QLabel(
+            f"<i style='color:#8b949e; font-size:10px;'>"
+            f"{t('ui_mode.label')}: {mode.label} — "
+            f"{t(f'ui_mode.{mode.value}_hint')}</i>"
+        )
+        hint.setWordWrap(True)
+        layout.addWidget(hint)
+
         # Close
         btns = QHBoxLayout()
         btns.addStretch()
@@ -175,10 +189,33 @@ class MenuOfPatchesDialog(QDialog):
         action: str,
         enabled: bool = True,
     ) -> None:
-        btn = QPushButton(label)
+        from core.ui_mode import (
+            RiskLevel,
+            action_meta,
+            action_visible,
+            get_ui_mode,
+        )
+
+        mode = get_ui_mode()
+        if not action_visible(action, mode):
+            return
+
+        meta = action_meta(action)
+
+        # Annotate risky actions in mitigative mode so the user knows what
+        # they are about to do before clicking.
+        badge = ""
+        if mode.value == "mitigative":
+            if meta.risk is RiskLevel.DANGEROUS:
+                badge = f"  {t('ui_mode.danger_badge')}"
+            elif meta.risk is RiskLevel.CAUTION:
+                badge = f"  {t('ui_mode.caution_badge')}"
+
+        btn = QPushButton(f"{label}{badge}")
         btn.setEnabled(enabled)
         btn.setMinimumHeight(38)
         btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn.setToolTip(meta.tooltip)
         btn.setStyleSheet("""
             QPushButton {
                 text-align: left;

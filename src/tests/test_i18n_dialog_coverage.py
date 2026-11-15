@@ -132,7 +132,7 @@ class TestI18nRuntime:
         assert t("dialog.resign.title") == "Ký lại APK"
         assert t("dialog.clone.btn_ok") == "Clone"
         set_language("en")
-        assert t("dialog.resign.title") == "Resign APK"
+        assert t("dialog.resign.title") == "Re-sign APK"
         assert t("dialog.clone.btn_ok") == "Clone"
         # Restore
         set_language("vi")

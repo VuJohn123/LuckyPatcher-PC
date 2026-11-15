@@ -1,0 +1,349 @@
+{
+  "main_window": {
+    "title": "LP-PC Suite v5 – 专业修改工具"
+  },
+  "sidebar": {
+    "logo": "🛠 LP-PC Suite",
+    "apps": "📱  已安装应用",
+    "detail": "🔍  APK 详情",
+    "tools": "⚙️  工具",
+    "version": "v5.0.0"
+  },
+  "toolbar": {
+    "search_placeholder": "🔍  搜索应用...",
+    "filter_all": "全部",
+    "filter_license": "许可证检查",
+    "filter_ads": "广告",
+    "filter_custom": "自定义补丁",
+    "filter_system": "系统",
+    "browse": "📁  浏览 APK",
+    "download": "📥  下载 APK",
+    "workspace": "📂  工作区",
+    "reload": "🔄  重新加载",
+    "toolbox": "🧰  工具箱"
+  },
+  "status": {
+    "ready": "就绪",
+    "loaded": "已加载: {name}",
+    "completed": "完成: {output}",
+    "failed": "修补失败",
+    "loaded_apps": "从设备加载了 {count} 个应用",
+    "loaded_demo": "加载了 {count} 个演示应用 (未连接 ADB 设备)"
+  },
+  "log_panel": {
+    "title": "📋  活动日志",
+    "clear": "清除",
+    "expand_tooltip": "展开/折叠日志面板",
+    "copy": "复制",
+    "copy_all": "全部复制",
+    "save": "保存日志"
+  },
+  "app_list": {
+    "name": "名称",
+    "package": "包名",
+    "version": "版本",
+    "size": "大小",
+    "license": "许可证",
+    "ads": "广告",
+    "iap": "内购",
+    "custom": "自定义",
+    "system": "系统",
+    "status_original": "原始",
+    "status_patched": "已修补",
+    "status_backup": "已备份",
+    "context_patch": "修补",
+    "context_backup": "备份",
+    "context_restore": "恢复",
+    "context_uninstall": "卸载",
+    "context_open_folder": "打开文件夹",
+    "context_copy_package": "复制包名",
+    "context_copy_path": "复制路径"
+  },
+  "detail_panel": {
+    "title": "APK 详细信息",
+    "tabs": {
+      "info": "信息",
+      "analysis": "分析",
+      "patches": "补丁",
+      "manifest": "清单",
+      "signatures": "签名",
+      "dex": "DEX"
+    },
+    "fields": {
+      "package_name": "包名",
+      "version_name": "版本名",
+      "version_code": "版本号",
+      "min_sdk": "最低 SDK",
+      "target_sdk": "目标 SDK",
+      "size": "文件大小",
+      "sha256": "SHA256",
+      "signature": "签名",
+      "install_location": "安装位置"
+    },
+    "analysis": {
+      "license_detected": "检测到许可证验证",
+      "ads_detected": "检测到广告库",
+      "iap_detected": "检测到内购",
+      "root_detected": "检测到 Root 检查",
+      "packer_detected": "检测到加壳",
+      "custom_patches": "可用自定义补丁",
+      "no_issues": "未发现问题"
+    },
+    "colors": {
+      "green": "可修补",
+      "yellow": "部分可修补",
+      "orange": "困难",
+      "red": "无法修补 / 加壳",
+      "gray": "未知"
+    }
+  },
+  "patch_dialog": {
+    "title": "修补选项",
+    "modes": {
+      "license": "许可证",
+      "ads": "广告",
+      "iap": "内购",
+      "signature": "签名",
+      "custom": "自定义",
+      "backup": "备份",
+      "clone": "克隆"
+    },
+    "license_modes": {
+      "auto": "自动 (DEX)",
+      "reverse_auto": "反向自动",
+      "extreme": "极限模式",
+      "amazon": "Amazon DRM",
+      "samsung": "Samsung IAP"
+    },
+    "ads_modes": {
+      "remove_links": "移除链接",
+      "break_receiver": "破坏接收器",
+      "offline": "离线模式",
+      "full_offline": "完全离线"
+    },
+    "iap_modes": {
+      "dex": "DEX 修补",
+      "proxy": "代理模式"
+    },
+    "signature_modes": {
+      "disable_verify": "禁用验证",
+      "remove_integrity": "移除完整性检查",
+      "fake_archive": "伪造归档"
+    },
+    "key_type": "签名密钥",
+    "key_types": {
+      "testkey": "测试密钥",
+      "platform": "平台密钥",
+      "media": "媒体密钥",
+      "shared": "共享密钥"
+    },
+    "buttons": {
+      "patch": "开始修补",
+      "cancel": "取消",
+      "advanced": "高级选项"
+    }
+  },
+  "messages": {
+    "no_device": "未检测到设备。请连接 Android 设备并启用 USB 调试。",
+    "no_root": "需要 Root 权限。请授予 Root 权限后重试。",
+    "patch_success": "修补成功！输出: {path}",
+    "patch_failed": "修补失败: {error}",
+    "install_success": "安装成功",
+    "install_failed": "安装失败: {error}",
+    "download_started": "开始下载...",
+    "download_completed": "下载完成: {path}",
+    "download_failed": "下载失败: {error}",
+    "analysis_complete": "分析完成",
+    "confirm_uninstall": "确定要卸载 {name} 吗？",
+    "confirm_restore": "确定要恢复 {name} 的原始版本吗？"
+  },
+  "mcp": {
+    "server_started": "MCP 服务器已启动",
+    "server_stopped": "MCP 服务器已停止",
+    "client_connected": "客户端已连接: {name}",
+    "tool_called": "工具调用: {tool}"
+  },
+  "adb_features": {
+    "odex_patching": "ODEX 修补",
+    "patch_to_android": "Patch to Android",
+    "modded_play_store": "修改版 Play Store",
+    "bootlist": "启动列表",
+    "widgets": "桌面小部件",
+    "lpzip_import": "导入 lpzip",
+    "xposed_install": "安装 Xposed 模块",
+    "require_root": "需要 Root 权限",
+    "require_api21": "需要 Android 5.0+ (API 21+)",
+    "deploying": "部署中...",
+    "deployed": "部署完成",
+    "reboot_required": "需要重启设备"
+  },
+  "settings": {
+    "title": "设置",
+    "language": "语言",
+    "theme": "主题",
+    "auto_update": "自动更新",
+    "backup_before_patch": "修补前备份",
+    "verify_signatures": "验证签名",
+    "log_level": "日志级别",
+    "max_log_lines": "最大日志行数"
+  },
+  "toolbox": {
+    "title": "工具箱",
+    "tools": {
+      "permission_changer": "权限修改器",
+      "gms_spoofer": "GMS 伪装",
+      "event_logger": "事件记录器",
+      "custom_patches": "自定义补丁",
+      "patch_downloader": "补丁下载器",
+      "apk_downloader": "APK 下载器",
+      "batch_patcher": "批量修补",
+      "signature_tools": "签名工具",
+      "resource_editor": "资源编辑器",
+      "manifest_editor": "清单编辑器"
+    }
+  },
+  "progress": {
+    "analyzing": "分析中...",
+    "decompiling": "反编译中...",
+    "patching": "修补中...",
+    "recompiling": "重新编译中...",
+    "signing": "签名中...",
+    "installing": "安装中...",
+    "downloading": "下载中...",
+    "extracting": "解压中...",
+    "completed": "完成",
+    "cancelled": "已取消"
+  },
+  "ui_mode": {
+    "label": "模式",
+    "beginner": "新手",
+    "mitigative": "安全",
+    "advanced": "高级",
+    "tooltip": "选择界面显示的详细程度",
+    "beginner_hint": "仅显示最安全、最常用的操作。",
+    "mitigative_hint": "增加带风险提示的高级操作。",
+    "advanced_hint": "显示所有操作和高级选项。",
+    "caution_badge": "⚠",
+    "danger_badge": "⛔",
+    "backup_reminder": "建议在修改前备份 APK。是否继续？"
+  },
+  "actions": {
+    "open_rebuild": "创建已修改的 APK",
+    "remove_license": "移除许可证验证",
+    "remove_ads": "移除 Google 广告",
+    "iap_emulation": "模拟应用内购买",
+    "apply_custom_patch": "应用自定义补丁",
+    "change_perms": "更改权限",
+    "resign": "重新签名 APK",
+    "backup": "备份应用",
+    "launch": "启动应用",
+    "info": "应用信息",
+    "license_auto": "移除许可证（自动）",
+    "ads_remove": "移除广告",
+    "iap_dex": "通过 DEX 模拟 IAP",
+    "custom": "自定义补丁",
+    "sig_disable": "禁用签名检查",
+    "sig_integrity": "移除完整性检查",
+    "sig_fake_archive": "伪造签名（归档）",
+    "aidl_proxy": "AIDL 代理",
+    "clone": "克隆应用"
+  },
+  "detail": {
+    "back": "←  Back",
+    "rebuild_btn": "🔨 Create Modified APK (Rebuild)",
+    "menu_btn": "📋 Menu of Patches",
+    "features_title": "🔍 Detected Features",
+    "quick_actions": "🛠 Quick Actions",
+    "action_remove_license": "🔑 Remove License Verification",
+    "action_remove_ads": "🚫 Remove Google Ads",
+    "action_iap": "💳 Emulate IAP (Rebuild)",
+    "action_custom": "📄 Custom Patch",
+    "action_perms": "⚙️ Change Permissions",
+    "action_resign": "✍️ Re-sign APK"
+  },
+  "switches": {
+    "billing": "💰 Billing",
+    "proxy": "🌐 Proxy",
+    "autorepeat": "🔄 Auto-Repeat",
+    "save": "💾 Save",
+    "reset": "♻️ Reset",
+    "billing_tip": "Enable/disable Google Billing emulation",
+    "proxy_tip": "Enable/disable local IAP proxy",
+    "autorepeat_tip": "Auto-repeat saved IAP transactions",
+    "save_tip": "Save IAP transactions for later replay",
+    "on": "ON",
+    "off": "OFF"
+  },
+  "dialog": {
+    "common": {
+      "ok": "OK",
+      "cancel": "Cancel",
+      "close": "Close",
+      "error": "Error",
+      "warning_title": "⚠️ Safety Warning",
+      "continue": "Continue",
+      "stop": "Stop"
+    },
+    "resign": {
+      "title": "Re-sign APK",
+      "header": "Select signing key and configuration",
+      "key_group": "Key Type",
+      "pkg_group": "Forced Package ID",
+      "pkg_label": "ID (127 = auto):",
+      "btn_ok": "Re-sign",
+      "key": {
+        "testkey": "testkey",
+        "platform": "platform",
+        "media": "media",
+        "shared": "shared"
+      },
+      "desc": {
+        "testkey": "Default test key — works for most apps",
+        "platform": "Platform key — Android system apps",
+        "media": "Media key — system media apps",
+        "shared": "Shared key — shared libraries"
+      }
+    },
+    "clone": {
+      "title": "Clone App",
+      "header": "Clone: {name}",
+      "orig_pkg": "Original Package:",
+      "new_pkg": "New Package:",
+      "new_name": "New Name:",
+      "hint": "💡 Cloned app runs alongside original. Needs different signature (use testkey to auto-sign).",
+      "btn_ok": "Clone",
+      "suffix_pkg": ".clone",
+      "suffix_name": " (Clone)",
+      "warn_empty_pkg": "Invalid package",
+      "warn_regex_pkg": "Package must start with letter and contain only letters, numbers, dots.",
+      "warn_same_pkg": "New package must differ from original."
+    },
+    "patch_config": {
+      "title": "Configure {name}",
+      "btn_ok": "OK",
+      "btn_cancel": "Cancel"
+    },
+    "wizard": {
+      "title": "LP-PC Suite Wizard",
+      "header": "What do you want to do?",
+      "btn_ok": "Start",
+      "btn_cancel": "Exit",
+      "opt": {
+        "iap_dex": "🎮 Play games free (IAP bypass)",
+        "ads_full_offline": "🚫 Remove ads",
+        "license_extreme": "🔑 Use paid apps free",
+        "multi_full": "⭐ Full patch (all)"
+      }
+    },
+    "ads_patch": {
+      "title": "Remove Ads - {name}",
+      "choose_mode": "<b>Choose Ads Mode:</b>",
+      "opt_remove": "Remove ad activities from manifest",
+      "opt_offline": "Make module think offline",
+      "opt_links": "Remove ad URLs from smali",
+      "opt_full_offline": "Full offline (combined)",
+      "btn_apply": "Apply",
+      "btn_cancel": "Cancel"
+    }
+  }
+}

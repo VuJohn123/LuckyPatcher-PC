@@ -1,7 +1,8 @@
-"""App list widget — card-style items với màu phân loại."""
+"""App list widget — card-style items với màu phân loại + copy-paste support."""
 from __future__ import annotations
 
 from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtGui import QAction, QKeySequence
 from PyQt6.QtWidgets import (
     QApplication,
     QFrame,
@@ -202,7 +203,7 @@ class _AppItemWidget(QWidget):
 
 
 class AppListWidget(QListWidget):
-    """List widget — card-style items, hover/selected do widget tự xử lý."""
+    """List widget — card-style items, hover/selected do widget tự xử lý + copy-paste support."""
 
     app_context_menu_requested = pyqtSignal(str, str, list, list)
 
@@ -236,6 +237,32 @@ class AppListWidget(QListWidget):
 
         self.all_items: list[QListWidgetItem] = []
         self.currentItemChanged.connect(self._on_current_changed)
+
+        # Setup keyboard shortcuts for copy-paste
+        self._setup_shortcuts()
+
+    def _setup_shortcuts(self):
+        """Setup keyboard shortcuts for copy operations."""
+        copy_action = QAction(self)
+        copy_action.setShortcut(QKeySequence.StandardKey.Copy)
+        copy_action.triggered.connect(self._copy_selected_item)
+        self.addAction(copy_action)
+
+        select_all_action = QAction(self)
+        select_all_action.setShortcut(QKeySequence.StandardKey.SelectAll)
+        select_all_action.triggered.connect(self.selectAll)
+        self.addAction(select_all_action)
+
+    def _copy_selected_item(self):
+        """Copy selected item's package name and app name to clipboard."""
+        current = self.currentItem()
+        if not current:
+            return
+        data = current.data(Qt.ItemDataRole.UserRole)
+        if not data:
+            return
+        text = f"Name: {data.get('name', '')}\nPackage: {data.get('package', '')}"
+        QApplication.clipboard().setText(text)
 
     # ------------------------------------------------------------------
     def add_app(self, name: str, package: str, colors: list[str],
@@ -324,14 +351,26 @@ class AppListWidget(QListWidget):
 
         menu.addSeparator()
 
-        act_copy_pkg = menu.addAction("📋  Copy package")
+        act_copy_pkg = menu.addAction("📋  Copy Package Name")
         act_copy_pkg.triggered.connect(
             lambda: QApplication.clipboard().setText(data["package"])
         )
 
-        act_copy_name = menu.addAction("📋  Copy app name")
+        act_copy_name = menu.addAction("📋  Copy App Name")
         act_copy_name.triggered.connect(
             lambda: QApplication.clipboard().setText(data["name"])
+        )
+
+        act_copy_both = menu.addAction("📋  Copy Both (Name + Package)")
+        act_copy_both.triggered.connect(
+            lambda: QApplication.clipboard().setText(f"Name: {data['name']}\nPackage: {data['package']}")
+        )
+
+        menu.addSeparator()
+
+        act_copy_path = menu.addAction("📋  Copy APK Path")
+        act_copy_path.triggered.connect(
+            lambda: QApplication.clipboard().setText(f"Package: {data['package']}")
         )
 
         menu.exec(self.viewport().mapToGlobal(pos))

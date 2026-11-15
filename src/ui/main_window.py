@@ -193,6 +193,8 @@ class MainWindow(QMainWindow):
         tb.setObjectName("mainToolbar")
         tb.setMovable(False)
         tb.setIconSize(QSize(18, 18))
+        # Ensure Toolbox button never gets clipped on narrow windows
+        tb.setMinimumWidth(860)
 
         self.search_edit = QLineEdit()
         self.search_edit.setPlaceholderText(
@@ -230,21 +232,45 @@ class MainWindow(QMainWindow):
         tb.addWidget(self.filter_combo)
         tb.addSeparator()
 
-        btn_browse = QPushButton(t("toolbar.browse"))
-        btn_browse.clicked.connect(self._on_browse_clicked)
-        tb.addWidget(btn_browse)
+        self.btn_browse = QPushButton(t("toolbar.browse"))
+        self.btn_browse.clicked.connect(self._on_browse_clicked)
+        tb.addWidget(self.btn_browse)
 
-        btn_download = QPushButton(t("toolbar.download"))
-        btn_download.clicked.connect(self._on_download_clicked)
-        tb.addWidget(btn_download)
+        self.btn_download = QPushButton(t("toolbar.download"))
+        self.btn_download.clicked.connect(self._on_download_clicked)
+        tb.addWidget(self.btn_download)
 
-        btn_workspace = QPushButton(t("toolbar.workspace"))
-        btn_workspace.clicked.connect(self._on_workspace_clicked)
-        tb.addWidget(btn_workspace)
+        # Language selector
+        self.lang_combo = QComboBox()
+        self.lang_combo.addItems([
+            "Tiếng Việt", "English", "中文", "Русский", "Español", "Português", "Türkçe", "Bahasa Indonesia"
+        ])
+        lang_codes = ["vi", "en", "zh", "ru", "es", "pt", "tr", "id"]
+        current_lang = self.controller.get_language()
+        try:
+            idx = lang_codes.index(current_lang)
+            self.lang_combo.setCurrentIndex(idx)
+        except ValueError:
+            self.lang_combo.setCurrentIndex(0)
+        self.lang_combo.currentIndexChanged.connect(self._on_language_changed)
+        self.lang_combo.setFixedWidth(140)
+        tb.addWidget(self.lang_combo)
 
-        btn_reload = QPushButton(t("toolbar.reload"))
-        btn_reload.clicked.connect(self._on_reload_clicked)
-        tb.addWidget(btn_reload)
+        # UI mode selector — Beginner / Safe / Advanced progressive disclosure
+        self.mode_combo = QComboBox()
+        self.mode_combo.setToolTip(t("ui_mode.tooltip"))
+        self.mode_combo.setFixedWidth(120)
+        self._populate_mode_combo()
+        self.mode_combo.currentIndexChanged.connect(self._on_ui_mode_changed)
+        tb.addWidget(self.mode_combo)
+
+        self.btn_workspace = QPushButton(t("toolbar.workspace"))
+        self.btn_workspace.clicked.connect(self._on_workspace_clicked)
+        tb.addWidget(self.btn_workspace)
+
+        self.btn_reload = QPushButton(t("toolbar.reload"))
+        self.btn_reload.clicked.connect(self._on_reload_clicked)
+        tb.addWidget(self.btn_reload)
 
         tb.addSeparator()
 
@@ -485,6 +511,62 @@ class MainWindow(QMainWindow):
 
     def _on_download_clicked(self) -> None:
         self.controller.download_apk_dialog()
+
+    def _on_language_changed(self, index: int) -> None:
+        lang_codes = ["vi", "en", "zh", "ru", "es", "pt", "tr", "id"]
+        lang = lang_codes[index]
+        self.controller.set_language(lang)
+        # Update UI text
+        self.setWindowTitle(t("main_window.title"))
+        self.btn_apps.setText(t("sidebar.apps"))
+        self.btn_detail.setText(t("sidebar.detail"))
+        self.btn_tools.setText(t("sidebar.tools"))
+        self.search_edit.setPlaceholderText(t("toolbar.search_placeholder"))
+        self.filter_combo.clear()
+        self.filter_combo.addItems([
+            t("toolbar.filter_all"),
+            t("toolbar.filter_license"),
+            t("toolbar.filter_ads"),
+            t("toolbar.filter_custom"),
+            t("toolbar.filter_system"),
+        ])
+        self.btn_browse.setText(t("toolbar.browse"))
+        self.btn_download.setText(t("toolbar.download"))
+        self.btn_workspace.setText(t("toolbar.workspace"))
+        self.btn_reload.setText(t("toolbar.reload"))
+        self.btn_toolbox.setText(t("toolbar.toolbox"))
+        self.btn_clear_log.setText(t("log_panel.clear"))
+        self.btn_collapse_log.setToolTip(t("log_panel.expand_tooltip"))
+        self.mode_combo.setToolTip(t("ui_mode.tooltip"))
+        self._populate_mode_combo()
+        self.status_bar.showMessage(t("status.ready"))
+        # Rebuild app list to refresh localized text
+        self.controller.load_device_apps()
+
+    # ------------------------------------------------------------
+    def _populate_mode_combo(self) -> None:
+        """Fill the mode selector, preserving the current selection."""
+        from core.ui_mode import UIMode, get_ui_mode
+
+        self.mode_combo.blockSignals(True)
+        self.mode_combo.clear()
+        self.mode_combo.addItems([m.label for m in UIMode])
+        try:
+            self.mode_combo.setCurrentIndex(
+                list(UIMode).index(get_ui_mode())
+            )
+        except ValueError:
+            self.mode_combo.setCurrentIndex(1)
+        self.mode_combo.blockSignals(False)
+
+    def _on_ui_mode_changed(self, index: int) -> None:
+        from core.ui_mode import UIMode, set_ui_mode
+
+        modes = list(UIMode)
+        if 0 <= index < len(modes):
+            mode = set_ui_mode(modes[index])
+            self._on_log(f"[i] UI mode: {mode.label}")
+            self.status_bar.showMessage(t(f"ui_mode.{mode.value}_hint"))
 
     def _on_workspace_clicked(self) -> None:
         self.controller.open_workspace()

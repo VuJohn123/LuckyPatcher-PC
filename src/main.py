@@ -361,6 +361,29 @@ def _apply_strategy(config: dict, apk_path: str, log_callback) -> str:
     return strategy
 
 
+def _apply_packer_bypass(
+    decompiled_dir: str,
+    bypass: dict,
+    log_callback,
+) -> int:
+    """Apply the fusion layer's BypassStrategy to the decompiled tree."""
+    try:
+        from patcher.packer_bypass import PackerBypassPatcher
+
+        patcher = PackerBypassPatcher(
+            decompiled_dir,
+            log_callback=log_callback,
+            strategy=bypass.get("strategy", "dex_plaintext"),
+            shell_application=bypass.get("shell_application"),
+            real_application=bypass.get("real_application"),
+        )
+        return patcher.patch()
+    except Exception as e:
+        logger.warning("Packer bypass failed: %s", e)
+        log_callback(f"[!] [Bypass] {e}")
+        return 0
+
+
 # =============================================================
 # SAFETY GUARD
 # =============================================================
@@ -658,6 +681,7 @@ def _run_pipeline_body(
     _emit_step(signals, "Phân tích APK...", 10, _log)
     app_name = ""
     package_name = ""
+    packer_bypass: dict | None = None
     with _StageTimer(apk_path, mode, "analyze", _log):
         try:
             from scanner.analyzer import AppDeepAnalyzer
@@ -682,6 +706,25 @@ def _run_pipeline_body(
                     f"patch license/iap/ads có thể patch 0 files "
                     f"(silent fail)"
                 )
+                strategy = packer.get("strategy")
+                if strategy:
+                    _log(f"[!] Bypass strategy: {strategy}")
+                rationale = packer.get("rationale")
+                if rationale:
+                    _log(f"[i] {rationale}")
+            elif isinstance(packer, dict) and packer.get("name"):
+                strategy = packer.get("strategy")
+                if strategy and strategy != "dex_plaintext":
+                    _log(
+                        f"[*] Packer shell: {packer.get('name', '?')} — "
+                        f"strategy {strategy} (code vẫn đọc được)"
+                    )
+            if isinstance(packer, dict):
+                packer_bypass = {
+                    "strategy": packer.get("strategy", "dex_plaintext"),
+                    "shell_application": None,
+                    "real_application": None,
+                }
         except Exception as e:
             _log(f"[i] Analysis failed (tiếp tục): {e}")
             logger.warning("Analysis failed: %s", e)
@@ -805,6 +848,13 @@ def _run_pipeline_body(
                 log_callback=_log,
             )
         _emit_step(signals, "Decompile xong", 40, _log)
+
+        # ---- Packer bypass (act on the fusion strategy) ----
+        if packer_bypass and packer_bypass.get("strategy") not in (
+            None, "", "dex_plaintext",
+        ):
+            with _StageTimer(apk_path, mode, "packer_bypass", _log):
+                _apply_packer_bypass(decompiled_dir, packer_bypass, _log)
 
         # ---- Patch ----
         _check_safety_abort(guard, _log)
